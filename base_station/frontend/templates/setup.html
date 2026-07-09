@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Setup</h1>
+
+<!-- ── Global pilot registry ── -->
+<section class="bg-gray-800 rounded-lg p-5 mb-6">
+    <h2 class="text-lg font-semibold mb-4 text-gray-200">Pilot Registry</h2>
+
+    <table class="w-full mb-4 text-sm">
+        <thead>
+            <tr class="text-gray-400 text-left border-b border-gray-700">
+                <th class="pb-2 w-12">ID</th>
+                <th class="pb-2">Name</th>
+                <th class="pb-2"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pilot in all_pilots %}
+            <tr class="border-b border-gray-700">
+                <td class="py-2 text-gray-500">{{ pilot['id'] }}</td>
+                <td class="py-2">{{ pilot['name'] }}</td>
+                <td class="py-2 text-right">
+                    <form method="post" action="/setup/pilot/{{ pilot['id'] }}/delete" x-data
+                          @submit.prevent="confirm('Remove {{ pilot['name'] }} from registry?') && $el.submit()">
+                        <button type="submit" class="text-red-400 hover:text-red-300 text-xs">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="3" class="py-3 text-gray-500 text-sm">No pilots yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <form method="post" action="/setup/pilot/add" class="flex gap-3">
+        <input name="name" type="text" placeholder="Pilot name" required autofocus
+               class="bg-gray-700 rounded px-3 py-2 text-white flex-1 focus:outline-none focus:ring-2 focus:ring-yellow-400">
+        <button type="submit" class="bg-green-600 hover:bg-green-500 px-5 py-2 rounded font-medium transition-colors">
+            Add Pilot
+        </button>
+    </form>
+</section>
+
+<!-- ── Competitions ── -->
+<section x-data="{ showNew: false }">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-200">Competitions</h2>
+        <button @click="showNew = !showNew"
+                class="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-sm font-medium transition-colors">
+            + New Competition
+        </button>
+    </div>
+
+    <!-- New competition form (hidden by default) -->
+    <div x-show="showNew" class="bg-gray-800 rounded-lg p-5 mb-4">
+        <h3 class="text-sm font-semibold text-gray-300 mb-4">New Competition</h3>
+        <form method="post" action="/setup/competition/new" class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Name</label>
+                <input name="name" type="text" required placeholder="e.g. F3K Open 2026"
+                       class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Discipline</label>
+                <select name="discipline" class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    <option value="F3K">F3K</option>
+                    <option value="F5K">F5K</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Date</label>
+                <input name="date" type="date" required
+                       class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">GliderScore Comp No <span class="text-gray-500">(optional)</span></label>
+                <input name="gliderscore_comp_no" type="number"
+                       class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+            </div>
+            <div class="col-span-2 border-t border-gray-700 pt-3">
+                <p class="text-xs text-gray-400 mb-3 uppercase tracking-wide">Timing Parameters</p>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Prep time (s)</label>
+                        <input name="prep_time_s" type="number" min="0" value="120"
+                               class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Landing time (s)</label>
+                        <input name="land_time_s" type="number" min="0" value="30"
+                               class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Heat gap (s)</label>
+                        <input name="heat_gap_s" type="number" min="0" value="30"
+                               class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Round gap (s)</label>
+                        <input name="round_gap_s" type="number" min="0" value="30"
+                               class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Focus bell (s into prep)</label>
+                        <input name="focus_time_s" type="number" min="0" value="45"
+                               class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">Count last (s)</label>
+                        <input name="count_last_s" type="number" min="0" value="15"
+                               class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    </div>
+                </div>
+            </div>
+            <div class="col-span-2 pt-1">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded font-medium transition-colors">
+                    Create Competition
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Competition cards -->
+    {% for item in comp_data %}
+    {% set comp = item.comp %}
+    <div class="bg-gray-800 rounded-lg p-5 mb-4">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <span class="text-base font-semibold">{{ comp['name'] }}</span>
+                <span class="ml-3 px-2 py-0.5 rounded text-xs font-medium
+                    {% if comp['discipline'] == 'F3K' %}bg-blue-700 text-blue-200{% else %}bg-purple-700 text-purple-200{% endif %}">
+                    {{ comp['discipline'] }}
+                </span>
+                <span class="ml-2 text-sm text-gray-400">{{ comp['date'] }}</span>
+            </div>
+            <form method="post" action="/setup/competition/{{ comp['id'] }}/delete" x-data
+                  @submit.prevent="confirm('Delete {{ comp['name'] }}?') && $el.submit()">
+                <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Delete</button>
+            </form>
+        </div>
+
+        <!-- Pilots in this competition -->
+        <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Pilots</p>
+        <div class="flex flex-wrap gap-2 mb-3">
+            {% for pilot in item.pilots %}
+            <div class="flex items-center gap-1 bg-gray-700 rounded px-2 py-1 text-sm">
+                <span>{{ pilot['name'] }}</span>
+                <form method="post" action="/setup/competition/{{ comp['id'] }}/pilot/{{ pilot['id'] }}/remove">
+                    <button type="submit" class="text-gray-400 hover:text-red-400 text-xs ml-1">✕</button>
+                </form>
+            </div>
+            {% else %}
+            <span class="text-gray-500 text-sm">No pilots assigned yet.</span>
+            {% endfor %}
+        </div>
+
+        {% if item.available %}
+        <form method="post" action="/setup/competition/{{ comp['id'] }}/pilot/add" class="flex gap-2">
+            <select name="pilot_id" class="bg-gray-700 rounded px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                {% for pilot in item.available %}
+                <option value="{{ pilot['id'] }}">{{ pilot['name'] }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                Add to Competition
+            </button>
+        </form>
+        {% else %}
+        <p class="text-xs text-gray-500">All registered pilots assigned.</p>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 text-sm">No competitions yet — click "+ New Competition" above.</p>
+    {% endfor %}
+</section>
+{% endblock %}
