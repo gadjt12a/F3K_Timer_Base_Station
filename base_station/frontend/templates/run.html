@@ -4,6 +4,7 @@
 
 <script>
 const INITIAL_STATE = {{ initial_state | safe }};
+const TASKS = {{ tasks | tojson }};  // { discipline: { letter: {name, desc} } }
 
 function runner(initialState) {
     return {
@@ -62,6 +63,20 @@ function runner(initialState) {
                      WORKING:'bg-green-600', LANDING:'bg-red-600' }[this.state] || 'bg-gray-600';
         },
 
+        compClass() {
+            // Match the Heat Queue scheme: F3K = orange, F5K = fuchsia (bright on dark)
+            return (this.loaded && this.loaded.discipline === 'F3K')
+                ? 'text-orange-400' : 'text-fuchsia-400';
+        },
+
+        taskInfo() {
+            if (!this.loaded) return null;
+            const d = TASKS[this.loaded.discipline];
+            return (d && d[this.loaded.task]) || null;
+        },
+        taskName() { const t = this.taskInfo(); return t ? t.name : (this.loaded ? this.loaded.task : ''); },
+        taskDesc() { const t = this.taskInfo(); return t ? t.desc : ''; },
+
         async loadHeat(roundId, groupId) {
             const r = await fetch(`/api/run/load?round_id=${roundId}&group_id=${groupId}`,
                                   {method:'POST'});
@@ -83,26 +98,27 @@ function runner(initialState) {
 
     <!-- Left: heat queue -->
     <div class="w-72 flex-shrink-0 bg-gray-800 rounded-lg p-4 overflow-y-auto">
-        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Heat Queue</h2>
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3">Heat Queue</h2>
 
         {% if not heats %}
-        <p class="text-gray-500 text-sm">No heats — build rounds first.</p>
+        <p class="text-gray-300 text-sm">No heats — build rounds first.</p>
         {% endif %}
 
         {% for h in heats %}
         <div class="mb-3 p-3 bg-gray-700 rounded">
             <div class="flex items-center justify-between mb-1">
-                <span class="text-xs font-medium
-                    {% if h.discipline == 'F3K' %}text-blue-300{% else %}text-purple-300{% endif %}">
+                <span class="text-xs font-bold
+                    {% if h.discipline == 'F3K' %}text-orange-400{% else %}text-fuchsia-400{% endif %}">
                     {{ h.comp_name }}
                 </span>
-                <span class="text-xs text-gray-400">Task {{ h.task }}</span>
+                <span class="text-xs text-gray-300">Task {{ h.task }}</span>
             </div>
             <div class="text-sm font-semibold mb-1">
                 Round {{ h.round_no }} · Heat {{ h.heat }}
-                <span class="text-gray-400 font-normal">({{ h.working_time_s // 60 }}min)</span>
+                <span class="text-gray-300 font-normal">({{ h.working_time_s // 60 }}min)</span>
             </div>
-            <div class="text-xs text-gray-400 mb-2">{{ h.pilots | join(', ') }}</div>
+            <div class="text-xs text-gray-200 mb-1">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
+            <div class="text-xs text-gray-300 mb-2">{{ h.pilots | join(', ') }}</div>
             <button @click="loadHeat({{ h.round_id }}, {{ h.group_id }})"
                     :disabled="state !== 'IDLE'"
                     class="w-full bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
@@ -127,21 +143,21 @@ function runner(initialState) {
             </div>
 
             <template x-if="loaded">
-                <div class="text-gray-300 text-sm space-y-1">
+                <div class="text-gray-200 text-sm space-y-1">
                     <div>
-                        <span x-text="loaded.comp_name" class="font-medium"></span>
-                        <span class="text-gray-500 mx-1">·</span>
-                        Round <span x-text="loaded.round_no"></span>
-                        <span class="text-gray-500 mx-1">·</span>
-                        Heat <span x-text="loaded.heat"></span>
-                        <span class="text-gray-500 mx-1">·</span>
+                        <span x-text="loaded.comp_name" class="font-bold" :class="compClass()"></span>
+                        <span class="text-gray-400 mx-1">·</span>
+                        <span class="underline decoration-gray-500 underline-offset-4 font-semibold">Round <span x-text="loaded.round_no"></span> · Heat <span x-text="loaded.heat"></span></span>
+                        <span class="text-gray-400 mx-1">·</span>
                         Task <span x-text="loaded.task"></span>
                     </div>
-                    <div class="text-gray-400" x-text="loaded.pilots.join(' · ')"></div>
+                    <div class="text-gray-100 font-semibold" x-text="taskName()"></div>
+                    <div class="text-gray-300 text-xs max-w-md mx-auto" x-text="taskDesc()"></div>
+                    <div class="text-gray-300 pt-1" x-text="loaded.pilots.join(' · ')"></div>
                 </div>
             </template>
             <template x-if="!loaded">
-                <p class="text-gray-500 text-sm">Load a heat from the queue</p>
+                <p class="text-gray-300 text-sm">Load a heat from the queue</p>
             </template>
         </div>
 
@@ -163,9 +179,9 @@ function runner(initialState) {
 
         <!-- Flight log -->
         <div class="flex-1 bg-gray-800 rounded-lg p-4 overflow-y-auto min-h-0">
-            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Flight Log</h2>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3">Flight Log</h2>
             <template x-if="flights.length === 0">
-                <p class="text-gray-600 text-sm">No flights this heat.</p>
+                <p class="text-gray-400 text-sm">No flights this heat.</p>
             </template>
             <template x-for="f in flights" :key="f.pilot_id + '_' + f.duration_ms">
                 <div class="flex items-center justify-between py-2 border-b border-gray-700 text-sm">

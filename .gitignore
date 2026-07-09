@@ -12,4 +12,12 @@ build/
 .env
 *.log
 Knowledge_Base/
+
+# Working notes / planning docs — kept local only, not pushed (see README for repo scope)
 frontend_notes.md
+SESSION_STATE.md
+NEXT_SESSION_PROMPT.md
+GLIDERSCORE.md
+PROJECT_SPEC.md
+PROJECT_PHASES.md
+GUARDRAILS.md

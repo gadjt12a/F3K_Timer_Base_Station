@@ -35,8 +35,8 @@
                 <select name="task"
                         @change="$refs.wt.value = 10"
                         class="bg-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400 text-sm">
-                    {% for letter, name in task_names.items() %}
-                    <option value="{{ letter }}">{{ letter }} — {{ name }}</option>
+                    {% for letter, info in tasks.get(comp['discipline'], {}).items() %}
+                    <option value="{{ letter }}">{{ letter }} — {{ info.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -67,7 +67,7 @@
             <div class="flex items-center gap-4">
                 <span class="text-xs text-gray-400 uppercase tracking-wide w-20">Round {{ rnd['round_no'] }}</span>
                 <span class="font-semibold text-yellow-300">Task {{ rnd['task'] }}</span>
-                <span class="text-sm text-gray-300">{{ task_names[rnd['task']] }}</span>
+                <span class="text-sm text-gray-300">{{ tasks.get(comp['discipline'], {}).get(rnd['task'], {}).get('name', '') }}</span>
                 <span class="text-xs text-gray-500">{{ rnd['working_time_s'] // 60 }} min WT</span>
             </div>
             <div class="flex items-center gap-3">

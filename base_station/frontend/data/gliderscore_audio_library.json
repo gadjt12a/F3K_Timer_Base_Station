@@ -1,0 +1,2104 @@
+{
+    "source":  "GliderScore6/GliderScoreData.mdb",
+    "extracted":  "2026-07-10",
+    "note":  "GliderScore announcement/audio library. type=DigitalAnnouncement/Round/Group/ReFlight/F3KTask/F5KTask; file=wav in GliderScore6/Audio; phonetic=spoken text.",
+    "announcements":  [
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  1,
+                              "description":  "WorkingTimeIn-05:00",
+                              "phonetic":  "5 minutes to start",
+                              "file":  "WorkingTimeIn-5Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  2,
+                              "description":  "WorkingTimeIn-04:00",
+                              "phonetic":  "4 minutes to start",
+                              "file":  "WorkingTimeIn-4Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  3,
+                              "description":  "WorkingTimeIn-03:00",
+                              "phonetic":  "3 minutes to start",
+                              "file":  "WorkingTimeIn-3Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  4,
+                              "description":  "WorkingTimeIn-02:00",
+                              "phonetic":  "2 minutes to start",
+                              "file":  "WorkingTimeIn-2Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  5,
+                              "description":  "WorkingTimeIn-01:00",
+                              "phonetic":  "1 minute to start",
+                              "file":  "WorkingTimeIn-1Min.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  6,
+                              "description":  "TimeToStart-00:30",
+                              "phonetic":  "30 seconds to start",
+                              "file":  "TimeToStart-00.30.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  7,
+                              "description":  "TimeToStart-00:20",
+                              "phonetic":  "20 seconds to start",
+                              "file":  "TimeToStart-00.20.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  8,
+                              "description":  "Remaining-10:00",
+                              "phonetic":  "10 minutes remaining",
+                              "file":  "Remaining-10Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  9,
+                              "description":  "Remaining-09:00",
+                              "phonetic":  "9 minutes remaining",
+                              "file":  "Remaining-9Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  10,
+                              "description":  "Remaining-08:00",
+                              "phonetic":  "8 minutes remaining",
+                              "file":  "Remaining-8Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  11,
+                              "description":  "Remaining-07:00",
+                              "phonetic":  "7 minutes remaining",
+                              "file":  "Remaining-7Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  12,
+                              "description":  "Remaining-06:00",
+                              "phonetic":  "6 minutes remaining",
+                              "file":  "Remaining-6Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  13,
+                              "description":  "Remaining-05:00",
+                              "phonetic":  "5 minutes remaining",
+                              "file":  "Remaining-5Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  14,
+                              "description":  "Remaining-04:00",
+                              "phonetic":  "4 minutes remaining",
+                              "file":  "Remaining-4Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  15,
+                              "description":  "Remaining-03:00",
+                              "phonetic":  "3 minutes remaining",
+                              "file":  "Remaining-3Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  16,
+                              "description":  "Remaining-02:00",
+                              "phonetic":  "2 minutes remaining",
+                              "file":  "Remaining-2Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  17,
+                              "description":  "Remaining-01:00",
+                              "phonetic":  "1 minute remaining",
+                              "file":  "Remaining-1Min.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  18,
+                              "description":  "Remaining-00:30",
+                              "phonetic":  "30 seconds remaining",
+                              "file":  "Remaining-30Secs.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  19,
+                              "description":  "Remaining-00:20",
+                              "phonetic":  "20 seconds remaining",
+                              "file":  "Remaining-20Secs.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  20,
+                              "description":  "10 seconds",
+                              "phonetic":  "10 seconds",
+                              "file":  "10Secs.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  21,
+                              "description":  "09 sec",
+                              "phonetic":  "9",
+                              "file":  "9.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  22,
+                              "description":  "08 sec",
+                              "phonetic":  "8",
+                              "file":  "8.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  23,
+                              "description":  "07 sec",
+                              "phonetic":  "7",
+                              "file":  "7.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  24,
+                              "description":  "06 sec",
+                              "phonetic":  "6",
+                              "file":  "6.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  25,
+                              "description":  "05 sec",
+                              "phonetic":  "5",
+                              "file":  "5.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  26,
+                              "description":  "04 sec",
+                              "phonetic":  "4",
+                              "file":  "4.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  27,
+                              "description":  "03 sec",
+                              "phonetic":  "3",
+                              "file":  "3.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  28,
+                              "description":  "02 sec",
+                              "phonetic":  "2",
+                              "file":  "2.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  29,
+                              "description":  "01 sec",
+                              "phonetic":  "1",
+                              "file":  "1.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  30,
+                              "description":  "Next group to ready box",
+                              "phonetic":  "Next group to ready box",
+                              "file":  "NextGroupToReadyBox.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  31,
+                              "description":  "Remaining-01:15",
+                              "phonetic":  "1:15 minutes remaining",
+                              "file":  "Remaining-1.15Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  32,
+                              "description":  "Remaining-01:30",
+                              "phonetic":  "1:30 minutes remaining",
+                              "file":  "Remaining-1.30Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  33,
+                              "description":  "Remaining-01:45",
+                              "phonetic":  "1:45 minutes remaining",
+                              "file":  "Remaining-1.45Mins.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  34,
+                              "description":  "StartEndHorn",
+                              "phonetic":  "End of Time Horn",
+                              "file":  "StartEndHorn.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  35,
+                              "description":  "11 sec",
+                              "phonetic":  "11",
+                              "file":  "11.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  36,
+                              "description":  "12 sec",
+                              "phonetic":  "12",
+                              "file":  "12.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  37,
+                              "description":  "13 sec",
+                              "phonetic":  "13",
+                              "file":  "13.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  38,
+                              "description":  "14 sec",
+                              "phonetic":  "14",
+                              "file":  "14.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  39,
+                              "description":  "15 sec",
+                              "phonetic":  "15",
+                              "file":  "15.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  40,
+                              "description":  "16 sec",
+                              "phonetic":  "16",
+                              "file":  "16.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  41,
+                              "description":  "17 sec",
+                              "phonetic":  "17",
+                              "file":  "17.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  42,
+                              "description":  "18 sec",
+                              "phonetic":  "18",
+                              "file":  "18.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  43,
+                              "description":  "19 sec",
+                              "phonetic":  "19",
+                              "file":  "19.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  44,
+                              "description":  "20 seconds",
+                              "phonetic":  "20 seconds",
+                              "file":  "20Secs.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  45,
+                              "description":  "21 sec",
+                              "phonetic":  "21",
+                              "file":  "21.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  46,
+                              "description":  "22 sec",
+                              "phonetic":  "22",
+                              "file":  "22.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  47,
+                              "description":  "23 sec",
+                              "phonetic":  "23",
+                              "file":  "23.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  48,
+                              "description":  "24 sec",
+                              "phonetic":  "24",
+                              "file":  "24.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  49,
+                              "description":  "25 sec",
+                              "phonetic":  "25",
+                              "file":  "25.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  50,
+                              "description":  "26 sec",
+                              "phonetic":  "26",
+                              "file":  "26.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  51,
+                              "description":  "27 sec",
+                              "phonetic":  "27",
+                              "file":  "27.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  52,
+                              "description":  "28 sec",
+                              "phonetic":  "28",
+                              "file":  "28.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  53,
+                              "description":  "29 sec",
+                              "phonetic":  "29",
+                              "file":  "29.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  54,
+                              "description":  "30 seconds",
+                              "phonetic":  "30 seconds",
+                              "file":  "30Secs.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  56,
+                              "description":  "TimeToStart-01:00",
+                              "phonetic":  "1 minute to start",
+                              "file":  "TimeToStart-01.00.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  57,
+                              "description":  "TimeToStart-02:00",
+                              "phonetic":  "2 minutes to start",
+                              "file":  "TimeToStart-02.00.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  58,
+                              "description":  "TimeToStart-03:00",
+                              "phonetic":  "3 minutes to start",
+                              "file":  "TimeToStart-03.00.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  59,
+                              "description":  "TimeToStart-04:00",
+                              "phonetic":  "4 minutes to start",
+                              "file":  "TimeToStart-04.00.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  60,
+                              "description":  "TimeToStart-05:00",
+                              "phonetic":  "5 minutes to start",
+                              "file":  "TimeToStart-05.00.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  61,
+                              "description":  "No flying allowed",
+                              "phonetic":  "No flying allowed before the start. No flying allowed before the start.",
+                              "file":  "NoFlyingAllowed.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  62,
+                              "description":  "Test flying ending",
+                              "phonetic":  "Test flying ending",
+                              "file":  "TestFlyingEnding.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  63,
+                              "description":  "Test flying starts in",
+                              "phonetic":  "Test flying starts in",
+                              "file":  "TestFlyingStartsIn.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  64,
+                              "description":  "Pilots must land",
+                              "phonetic":  "Pilots must land",
+                              "file":  "PilotsMustLand.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  66,
+                              "description":  "Prepare to launch",
+                              "phonetic":  "Prepare to launch",
+                              "file":  "PrepareToLaunch.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "DigitalAnnouncement",
+                              "id":  67,
+                              "description":  "Working Time In 5 secs",
+                              "phonetic":  "Working Time In 5 seconds",
+                              "file":  "WorkingTimeIn-5secs.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  0,
+                              "description":  "A(1)-Last1,5:00max,10min",
+                              "phonetic":  "Task A - Last flight counts; 5 min max; Unlimited flights in 10 mins",
+                              "file":  "F3KTask_A(1).wav",
+                              "f3kTask":  "A(1)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  1,
+                              "description":  "A(2)-Last1,5:00max,7min",
+                              "phonetic":  "Task A - Last flight counts; 5 min max; Unlimited flights in 7 mins",
+                              "file":  "F3KTask_A(2).wav",
+                              "f3kTask":  "A(2)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  2,
+                              "description":  "B(1)-Last2,4:00max,10min",
+                              "phonetic":  "Task B - Last 2 flights count; 4 min max; Unlimited flights in 10 mins",
+                              "file":  "F3KTask_B(1).wav",
+                              "f3kTask":  "B(1)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  3,
+                              "description":  "B(2)-Last2,3:00max,7min",
+                              "phonetic":  "Task B - Last 2 flights count; 3 min max; Unlimited flights in 7 mins",
+                              "file":  "F3KTask_B(2).wav",
+                              "f3kTask":  "B(2)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  4,
+                              "description":  "C(1)-AllUp 3X3:00max",
+                              "phonetic":  "Task C - All up; 3 min max; 3 flights per round",
+                              "file":  "F3KTask_C(1).wav",
+                              "f3kTask":  "C(1)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  5,
+                              "description":  "C(2)-AllUp 4X3:00max",
+                              "phonetic":  "Task C - All up; 3 min max; 4 flights per round",
+                              "file":  "F3KTask_C(2).wav",
+                              "f3kTask":  "C(2)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  6,
+                              "description":  "C(3)-AllUp 5X3:00max",
+                              "phonetic":  "Task C - All up; 3 min max; 5 flights per round",
+                              "file":  "F3KTask_C(3).wav",
+                              "f3kTask":  "C(3)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  7,
+                              "description":  "D-Ladder",
+                              "phonetic":  "Task D - Ladder; First target 30 seconds; 15 seconds added when target reached; Unlimited flights in 10 mins",
+                              "file":  "F3KTask_D.wav",
+                              "f3kTask":  "D",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  8,
+                              "description":  "E-Poker",
+                              "phonetic":  "Task E - Poker; 5 flights to time count; Pilot chooses target times; Unlimited flights in 10 mins",
+                              "file":  "F3KTask_E.wav",
+                              "f3kTask":  "E",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  9,
+                              "description":  "F-Best3,3:00max,\u003c=6launches",
+                              "phonetic":  "Task F - 3 longest count; 3 min max; Max 6 flights in 10 mins",
+                              "file":  "F3KTask_F.wav",
+                              "f3kTask":  "F",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  10,
+                              "description":  "G-Best5,2:00max",
+                              "phonetic":  "Task G - 5 longest count; 2 min max; Unlimited flights in 10 min",
+                              "file":  "F3KTask_G.wav",
+                              "f3kTask":  "G",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  11,
+                              "description":  "H-1:00,2:00,3:00,4:00",
+                              "phonetic":  "Task H - Best 4 count; 1, 2, 3 and 4 minutes (any order); Unlimited flights in 10 mins",
+                              "file":  "F3KTask_H.wav",
+                              "f3kTask":  "H",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  12,
+                              "description":  "I-Best3,3:20max",
+                              "phonetic":  "Task I - Best 3 count; 3:20 max; Unlimited flights in 10 mins",
+                              "file":  "F3KTask_I.wav",
+                              "f3kTask":  "I",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  13,
+                              "description":  "J-Last3,3:00max",
+                              "phonetic":  "Task J - Last 3 count; 3 min max; Unlimited flights in 10 mins",
+                              "file":  "F3KTask_J.wav",
+                              "f3kTask":  "J",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  14,
+                              "description":  "K-Big Ladder",
+                              "phonetic":  "Task K - Big Ladder; 5 flights in order; First target 1 minute; 30 seconds added after each launch",
+                              "file":  "F3KTask_K.wav",
+                              "f3kTask":  "K",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  15,
+                              "description":  "K-Big Ladder",
+                              "phonetic":  "Task K - Big Ladder; 5 flights in 10 minutes; First target 1 minute; Target increases 30 seconds each time.",
+                              "file":  "F3KTask_K.wav",
+                              "f3kTask":  "K",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  16,
+                              "description":  "U10-User task 10m",
+                              "phonetic":  "Task U10; User 10 minute task; All times count",
+                              "file":  "F3KTask_U10.wav",
+                              "f3kTask":  "U10",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  17,
+                              "description":  "U15-User task 15m",
+                              "phonetic":  "Task U15; User 15 minute task; All times count",
+                              "file":  "F3KTask_U15.wav",
+                              "f3kTask":  "U15",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  18,
+                              "description":  "D-Two Flights",
+                              "phonetic":  "Task D; Two flights in 10 mins; 5 minute maximum",
+                              "file":  "F3KTask_D(1).wav",
+                              "f3kTask":  "D(1)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  19,
+                              "description":  "E(1)-Poker-3scores-10mins",
+                              "phonetic":  "Task E; Poker; Unlimited flights in 10 minutes; Pilot chooses target times; 3 flights to time count",
+                              "file":  "F3KTask_E(1).wav",
+                              "f3kTask":  "E(1)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  20,
+                              "description":  "E(2)-Poker-3scores-15mins",
+                              "phonetic":  "Task E; Poker; Unlimited flights in 15 minutes; Pilot chooses target times; 3 flights to time count",
+                              "file":  "F3KTask_E(2).wav",
+                              "f3kTask":  "E(2)",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  21,
+                              "description":  "L-One Flight",
+                              "phonetic":  "Task L; One Flight; Maximum time 9 minutes 59 seconds",
+                              "file":  "F3KTask_L.wav",
+                              "f3kTask":  "L",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  22,
+                              "description":  "M-Huge Ladder",
+                              "phonetic":  "Task M; Huge Ladder; 3, 5 and 7 minute flights in 15 minutes; 3 flights maximum",
+                              "file":  "F3KTask_M.wav",
+                              "f3kTask":  "M",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  23,
+                              "description":  "X - NoTaskSet",
+                              "phonetic":  "Select a task for this round",
+                              "file":  "F3KTask_X.wav",
+                              "f3kTask":  "X",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTask",
+                              "id":  24,
+                              "description":  "N - Best Flight",
+                              "phonetic":  "Task N - Best Flight in 10 mins",
+                              "file":  "F3KTask_N.wav",
+                              "f3kTask":  "N",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTimer",
+                              "id":  1,
+                              "description":  "F3K-7-minutes",
+                              "phonetic":  "",
+                              "file":  "3m-7m-30s-F3K.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTimer",
+                              "id":  2,
+                              "description":  "F3K-10-minutes",
+                              "phonetic":  "",
+                              "file":  "3m-10m-30s-F3K.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTimer",
+                              "id":  3,
+                              "description":  "F3K-C-FirstFlight",
+                              "phonetic":  "",
+                              "file":  "3m-03m-30s-F3K.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTimer",
+                              "id":  4,
+                              "description":  "F3K-C-OtherFlights",
+                              "phonetic":  "",
+                              "file":  "1m-3m-30s-F3K.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F3KTimer",
+                              "id":  5,
+                              "description":  "F3K-15-Minutes",
+                              "phonetic":  "",
+                              "file":  "3m-15m-30s-F3K.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "F5KTask",
+                              "id":  0,
+                              "description":  "A-1:00,2:00,3:00,4:00",
+                              "phonetic":  "Task A - 4 flights in 10 minutes; 1, 2, 3 and 4 minutes in any order",
+                              "file":  "F5KTaskA.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  "A"
+                          },
+                          {
+                              "type":  "F5KTask",
+                              "id":  1,
+                              "description":  "B - Last flight\r\nLast flight counts\r\n5 minute max\r\nMax 3 flights in 7 mins",
+                              "phonetic":  "Task B - Last flight counts; 5 min max; Max 3 flights in 7 mins",
+                              "file":  "F5KTaskB.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  "B"
+                          },
+                          {
+                              "type":  "F5KTask",
+                              "id":  2,
+                              "description":  "C - All up\r\n4 minute max\r\n3 flights per round",
+                              "phonetic":  "Task C - All up; 4 min max; 3 flights per round",
+                              "file":  "F5KTaskC.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  "C"
+                          },
+                          {
+                              "type":  "F5KTask",
+                              "id":  3,
+                              "description":  "D - 3 Flights\r\n3, 3 and 4 minutes (any order)\r\nMax 3 flights in 10 minutes",
+                              "phonetic":  "Task D - 3, 3, 4 minute flights (any order); Max 3 flights in 10 mins",
+                              "file":  "F5KTaskD.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  "D"
+                          },
+                          {
+                              "type":  "F5KTask",
+                              "id":  4,
+                              "description":  "E-Poker",
+                              "phonetic":  "Task E - Poker; Max 3 flights in 10 minutes; Pilot chooses target times; 3 flights to time count",
+                              "file":  "F5KTaskE.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  "E"
+                          },
+                          {
+                              "type":  "F5KTask",
+                              "id":  5,
+                              "description":  "XSelect a task for this round",
+                              "phonetic":  "Select a task for this round",
+                              "file":  "F5KTaskX.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  "X"
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  1,
+                              "description":  "Group 1",
+                              "phonetic":  "Group 1",
+                              "file":  "Group1.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  2,
+                              "description":  "Group 2",
+                              "phonetic":  "Group 2",
+                              "file":  "Group2.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  3,
+                              "description":  "Group 3",
+                              "phonetic":  "Group 3",
+                              "file":  "Group3.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  4,
+                              "description":  "Group 4",
+                              "phonetic":  "Group 4",
+                              "file":  "Group4.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  5,
+                              "description":  "Group 5",
+                              "phonetic":  "Group 5",
+                              "file":  "Group5.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  6,
+                              "description":  "Group 6",
+                              "phonetic":  "Group 6",
+                              "file":  "Group6.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  7,
+                              "description":  "Group 7",
+                              "phonetic":  "Group 7",
+                              "file":  "Group7.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  8,
+                              "description":  "Group 8",
+                              "phonetic":  "Group 8",
+                              "file":  "Group8.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  9,
+                              "description":  "Group 9",
+                              "phonetic":  "Group 9",
+                              "file":  "Group9.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  10,
+                              "description":  "Group 10",
+                              "phonetic":  "Group 10",
+                              "file":  "Group10.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  11,
+                              "description":  "Group 11",
+                              "phonetic":  "Group 11",
+                              "file":  "Group11.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  12,
+                              "description":  "Group 12",
+                              "phonetic":  "Group 12",
+                              "file":  "Group12.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  13,
+                              "description":  "Group 13",
+                              "phonetic":  "Group 13",
+                              "file":  "Group13.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  14,
+                              "description":  "Group 14",
+                              "phonetic":  "Group 14",
+                              "file":  "Group14.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  15,
+                              "description":  "Group 15",
+                              "phonetic":  "Group 15",
+                              "file":  "Group15.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  16,
+                              "description":  "Group 16",
+                              "phonetic":  "Group 16",
+                              "file":  "Group16.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  17,
+                              "description":  "Group 17",
+                              "phonetic":  "Group 17",
+                              "file":  "Group17.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  18,
+                              "description":  "Group 18",
+                              "phonetic":  "Group 18",
+                              "file":  "Group18.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  19,
+                              "description":  "Group 19",
+                              "phonetic":  "Group 19",
+                              "file":  "Group19.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Group",
+                              "id":  20,
+                              "description":  "Group 20",
+                              "phonetic":  "Group 20",
+                              "file":  "Group20.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  1,
+                              "description":  "ZZKroger, Max",
+                              "phonetic":  "ZZKroger; Max",
+                              "file":  "ZZKroger_Max.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  2,
+                              "description":  "ZZNorman, Graham",
+                              "phonetic":  "ZZNorman; Graham",
+                              "file":  "ZZNorman_Graham.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  3,
+                              "description":  "ZZHaskell, Daniel",
+                              "phonetic":  "ZZHaskell; Daniel",
+                              "file":  "ZZHaskell_Daniel.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  4,
+                              "description":  "ZZPartlett, Matthew",
+                              "phonetic":  "ZZPartlett; Matthew",
+                              "file":  "ZZPartlett_Matthew.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  5,
+                              "description":  "ZZHobby, David",
+                              "phonetic":  "ZZHobby; David",
+                              "file":  "ZZHobby_David.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  6,
+                              "description":  "ZZCalnan, Roy",
+                              "phonetic":  "ZZCalnan; Roy",
+                              "file":  "ZZCalnan_Roy.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  7,
+                              "description":  "ZZMcDougal, Jim",
+                              "phonetic":  "ZZMcDougal; Jim",
+                              "file":  "ZZMcDougal_Jim.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  8,
+                              "description":  "ZZWhite, Peter",
+                              "phonetic":  "ZZWhite; Peter",
+                              "file":  "ZZWhite_Peter.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  9,
+                              "description":  "ZZMetzger, Klaus",
+                              "phonetic":  "ZZMetzger; Klaus",
+                              "file":  "ZZMetzger_Klaus.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  10,
+                              "description":  "ZZStent, Marcus",
+                              "phonetic":  "ZZStent; Marcus",
+                              "file":  "ZZStent_Marcus.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  11,
+                              "description":  "ZZKeep, Steve",
+                              "phonetic":  "ZZKeep; Steve",
+                              "file":  "ZZKeep_Steve.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  12,
+                              "description":  "ZZHoudalakis, Jim",
+                              "phonetic":  "ZZHoudalakis; Jim",
+                              "file":  "ZZHoudalakis_Jim.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  13,
+                              "description":  "ZZArvanitakis, Theo",
+                              "phonetic":  "ZZArvanitakis; Theo",
+                              "file":  "ZZArvanitakis_Theo.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  14,
+                              "description":  "ZZRoach, Ian",
+                              "phonetic":  "ZZRoach; Ian",
+                              "file":  "ZZRoach_Ian.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  15,
+                              "description":  "ZZBrand, Guy",
+                              "phonetic":  "ZZBrand; Guy",
+                              "file":  "ZZBrand_Guy.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  16,
+                              "description":  "ZZMurphy, Jack",
+                              "phonetic":  "ZZMurphy; Jack",
+                              "file":  "ZZMurphy_Jack.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  17,
+                              "description":  "ZZStrautins, Carl",
+                              "phonetic":  "ZZStrautins; Carl",
+                              "file":  "ZZStrautins_Carl.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  18,
+                              "description":  "ZZRudgley, Bjorn",
+                              "phonetic":  "ZZRudgley; Bjorn",
+                              "file":  "ZZRudgley_Bjorn.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  19,
+                              "description":  "ZZLowe, Alan",
+                              "phonetic":  "ZZLowe; Alan",
+                              "file":  "ZZLowe_Alan.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  20,
+                              "description":  "ZZLowe, Matt",
+                              "phonetic":  "ZZLowe; Matt",
+                              "file":  "ZZLowe_Matt.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  21,
+                              "description":  "ZZO\u0027Reilly, Mike",
+                              "phonetic":  "ZZO\u0027Reilly; Mike",
+                              "file":  "ZZO\u0027Reilly_Mike.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  22,
+                              "description":  "ZZChabrel, Nick",
+                              "phonetic":  "ZZChabrel; Nick",
+                              "file":  "ZZChabrel_Nick.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  23,
+                              "description":  "ZZMorris, Simon",
+                              "phonetic":  "ZZMorris; Simon",
+                              "file":  "ZZMorris_Simon.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  24,
+                              "description":  "ZZFord, Brian",
+                              "phonetic":  "ZZFord; Brian",
+                              "file":  "ZZFord_Brian.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  25,
+                              "description":  "ZZCarter, Gerry",
+                              "phonetic":  "ZZCarter; Gerry",
+                              "file":  "ZZCarter_Gerry.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  26,
+                              "description":  "ZZMayhew, Alan",
+                              "phonetic":  "ZZMayhew; Alan",
+                              "file":  "ZZMayhew_Alan.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  27,
+                              "description":  "ZZLennon, Scott",
+                              "phonetic":  "ZZLennon; Scott",
+                              "file":  "ZZLennon_Scott.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  28,
+                              "description":  "ZZPratley, David",
+                              "phonetic":  "ZZPratley; David",
+                              "file":  "ZZPratley_David.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  29,
+                              "description":  "ZZWhitfield, Garry",
+                              "phonetic":  "ZZWhitfield; Garry",
+                              "file":  "ZZWhitfield_Garry.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  30,
+                              "description":  "ZZBlow, Darrel",
+                              "phonetic":  "ZZBlow; Darrel",
+                              "file":  "ZZBlow_Darrel.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  31,
+                              "description":  "ZZBoag, Stephen",
+                              "phonetic":  "ZZBoag; Stephen",
+                              "file":  "ZZBoag_Stephen.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  32,
+                              "description":  "ZZNye, Bruce",
+                              "phonetic":  "ZZNye; Bruce",
+                              "file":  "ZZNye_Bruce.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  33,
+                              "description":  "ZZSkinner, John",
+                              "phonetic":  "ZZSkinner; John",
+                              "file":  "ZZSkinner_John.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  34,
+                              "description":  "ZZHarris, Rick",
+                              "phonetic":  "ZZHarris; Rick",
+                              "file":  "ZZHarris_Rick.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  35,
+                              "description":  "ZZSchultz, Trevor",
+                              "phonetic":  "ZZSchultz; Trevor",
+                              "file":  "ZZSchultz_Trevor.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  36,
+                              "description":  "ZZBlanchard, John",
+                              "phonetic":  "ZZBlanchard; John",
+                              "file":  "ZZBlanchard_John.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  37,
+                              "description":  "ZZMoorfield, Paul",
+                              "phonetic":  "ZZMoorfield; Paul",
+                              "file":  "ZZMoorfield_Paul.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  38,
+                              "description":  "ZZStouppos, Manny",
+                              "phonetic":  "ZZStouppos; Manny",
+                              "file":  "ZZStouppos_Manny.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  39,
+                              "description":  "ZZBerry, Don",
+                              "phonetic":  "ZZBerry; Don",
+                              "file":  "ZZBerry_Don.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  40,
+                              "description":  "ZZTaylor, Michael",
+                              "phonetic":  "ZZTaylor; Michael",
+                              "file":  "ZZTaylor_Michael.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  41,
+                              "description":  "ZZWoodward, Colin",
+                              "phonetic":  "ZZWoodward; Colin",
+                              "file":  "ZZWoodward_Colin.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  42,
+                              "description":  "ZZPotter, Greg",
+                              "phonetic":  "ZZPotter; Greg",
+                              "file":  "ZZPotter_Greg.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  43,
+                              "description":  "ZZNewcombe, Max",
+                              "phonetic":  "ZZNewcombe; Max",
+                              "file":  "ZZNewcombe_Max.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  44,
+                              "description":  "ZZLennon, Tim",
+                              "phonetic":  "ZZLennon; Tim",
+                              "file":  "ZZLennon_Tim.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  45,
+                              "description":  "ZZWilman, Brad",
+                              "phonetic":  "ZZWilman; Brad",
+                              "file":  "ZZWilman_Brad.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  46,
+                              "description":  "ZZOuttrim, Evan",
+                              "phonetic":  "ZZOuttrim; Evan",
+                              "file":  "ZZOuttrim_Evan.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  47,
+                              "description":  "ZZKullack, Tim",
+                              "phonetic":  "ZZKullack; Tim",
+                              "file":  "ZZKullack_Tim.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  48,
+                              "description":  "ZZBarrenger, Chris",
+                              "phonetic":  "ZZBarrenger; Chris",
+                              "file":  "ZZBarrenger_Chris.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  49,
+                              "description":  "ZZRae, Mike",
+                              "phonetic":  "ZZRae; Mike",
+                              "file":  "ZZRae_Mike.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  50,
+                              "description":  "ZZAbraham, Michael",
+                              "phonetic":  "ZZAbraham; Michael",
+                              "file":  "ZZAbraham_Michael.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  51,
+                              "description":  "ZZOddy, Hutton",
+                              "phonetic":  "ZZOddy; Hutton",
+                              "file":  "ZZOddy_Hutton.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  52,
+                              "description":  "ZZAdams, Chris",
+                              "phonetic":  "ZZAdams; Chris",
+                              "file":  "ZZAdams_Chris.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  53,
+                              "description":  "ZZSizer, Bernie",
+                              "phonetic":  "ZZSizer; Bernie",
+                              "file":  "ZZSizer_Bernie.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  54,
+                              "description":  "ZZRichardson, Mike",
+                              "phonetic":  "ZZRichardson; Mike",
+                              "file":  "ZZRichardson_Mike.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  55,
+                              "description":  "ZZAnthony, Brett",
+                              "phonetic":  "ZZAnthony; Brett",
+                              "file":  "ZZAnthony_Brett.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  56,
+                              "description":  "ZZNancarrow, Jamie",
+                              "phonetic":  "ZZNancarrow; Jamie",
+                              "file":  "ZZNancarrow_Jamie.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  57,
+                              "description":  "ZZFarrar, Don",
+                              "phonetic":  "ZZFarrar; Don",
+                              "file":  "ZZFarrar_Don.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  58,
+                              "description":  "ZZKempster, Geoff",
+                              "phonetic":  "ZZKempster; Geoff",
+                              "file":  "ZZKempster_Geoff.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  59,
+                              "description":  "ZZLewis, Warren",
+                              "phonetic":  "ZZLewis; Warren",
+                              "file":  "ZZLewis_Warren.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  60,
+                              "description":  "ZZRichards, Rebecca",
+                              "phonetic":  "ZZRichards; Rebecca",
+                              "file":  "ZZRichards_Rebecca.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  61,
+                              "description":  "ZZGibson, Paul",
+                              "phonetic":  "ZZGibson; Paul",
+                              "file":  "ZZGibson_Paul.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  62,
+                              "description":  "ZZWurts, Joe",
+                              "phonetic":  "ZZWurts; Joe",
+                              "file":  "ZZWurts_Joe.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  63,
+                              "description":  "ZZBowden, Gavin",
+                              "phonetic":  "ZZBowden; Gavin",
+                              "file":  "ZZBowden_Gavin.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  64,
+                              "description":  "ZZGleeson, Steve",
+                              "phonetic":  "ZZGleeson; Steve",
+                              "file":  "ZZGleeson_Steve.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  65,
+                              "description":  "ZZIrvin, Jeff",
+                              "phonetic":  "ZZIrvin; Jeff",
+                              "file":  "ZZIrvin_Jeff.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  66,
+                              "description":  "ZZStone, Mark",
+                              "phonetic":  "ZZStone; Mark",
+                              "file":  "ZZStone_Mark.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  67,
+                              "description":  "ZZGunn, Robert",
+                              "phonetic":  "ZZGunn; Robert",
+                              "file":  "ZZGunn_Robert.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  68,
+                              "description":  "ZZBengston, Evan",
+                              "phonetic":  "ZZBengston; Evan",
+                              "file":  "ZZBengston_Evan.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  69,
+                              "description":  "ZZKnack, Karl",
+                              "phonetic":  "ZZKnack; Karl",
+                              "file":  "ZZKnack_Karl.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  70,
+                              "description":  "ZZFox, Ken",
+                              "phonetic":  "ZZFox; Ken",
+                              "file":  "ZZFox_Ken.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  71,
+                              "description":  "ZZPedder, Joel",
+                              "phonetic":  "ZZPedder; Joel",
+                              "file":  "ZZPedder_Joel.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  72,
+                              "description":  "ZZVels, David",
+                              "phonetic":  "ZZVels; David",
+                              "file":  "ZZVels_David.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  73,
+                              "description":  "ZZClaase, Ben",
+                              "phonetic":  "ZZClaase; Ben",
+                              "file":  "ZZClaase_Ben.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Pilot",
+                              "id":  74,
+                              "description":  "ZZSmith, Eric",
+                              "phonetic":  "ZZSmith; Eric",
+                              "file":  "ZZSmith_Eric.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "ReFlight",
+                              "id":  1,
+                              "description":  "ReFlight 1",
+                              "phonetic":  "ReFlight 1",
+                              "file":  "ReFlight1.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "ReFlight",
+                              "id":  2,
+                              "description":  "ReFlight 2",
+                              "phonetic":  "ReFlight 2",
+                              "file":  "ReFlight2.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "ReFlight",
+                              "id":  3,
+                              "description":  "ReFlight 3",
+                              "phonetic":  "ReFlight 3",
+                              "file":  "ReFlight3.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  1,
+                              "description":  "Round 1",
+                              "phonetic":  "Round 1",
+                              "file":  "Round1.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  2,
+                              "description":  "Round 2",
+                              "phonetic":  "Round 2",
+                              "file":  "Round2.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  3,
+                              "description":  "Round 3",
+                              "phonetic":  "Round 3",
+                              "file":  "Round3.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  4,
+                              "description":  "Round 4",
+                              "phonetic":  "Round 4",
+                              "file":  "Round4.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  5,
+                              "description":  "Round 5",
+                              "phonetic":  "Round 5",
+                              "file":  "Round5.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  6,
+                              "description":  "Round 6",
+                              "phonetic":  "Round 6",
+                              "file":  "Round6.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  7,
+                              "description":  "Round 7",
+                              "phonetic":  "Round 7",
+                              "file":  "Round7.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  8,
+                              "description":  "Round 8",
+                              "phonetic":  "Round 8",
+                              "file":  "Round8.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  9,
+                              "description":  "Round 9",
+                              "phonetic":  "Round 9",
+                              "file":  "Round9.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  10,
+                              "description":  "Round 10",
+                              "phonetic":  "Round 10",
+                              "file":  "Round10.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  11,
+                              "description":  "Round 11",
+                              "phonetic":  "Round 11",
+                              "file":  "Round11.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  12,
+                              "description":  "Round 12",
+                              "phonetic":  "Round 12",
+                              "file":  "Round12.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  13,
+                              "description":  "Round 13",
+                              "phonetic":  "Round 13",
+                              "file":  "Round13.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  14,
+                              "description":  "Round 14",
+                              "phonetic":  "Round 14",
+                              "file":  "Round14.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  15,
+                              "description":  "Round 15",
+                              "phonetic":  "Round 15",
+                              "file":  "Round15.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  16,
+                              "description":  "Round 16",
+                              "phonetic":  "Round 16",
+                              "file":  "Round16.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  17,
+                              "description":  "Round 17",
+                              "phonetic":  "Round 17",
+                              "file":  "Round17.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  18,
+                              "description":  "Round 18",
+                              "phonetic":  "Round 18",
+                              "file":  "Round18.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  19,
+                              "description":  "Round 19",
+                              "phonetic":  "Round 19",
+                              "file":  "Round19.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  20,
+                              "description":  "Round 20",
+                              "phonetic":  "Round 20",
+                              "file":  "Round20.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  21,
+                              "description":  "Round 21",
+                              "phonetic":  "Round 21",
+                              "file":  "Round21.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  22,
+                              "description":  "Round 22",
+                              "phonetic":  "Round 22",
+                              "file":  "Round22.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  23,
+                              "description":  "Round 23",
+                              "phonetic":  "Round 23",
+                              "file":  "Round23.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  24,
+                              "description":  "Round 24",
+                              "phonetic":  "Round 24",
+                              "file":  "Round24.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  25,
+                              "description":  "Round 25",
+                              "phonetic":  "Round 25",
+                              "file":  "Round25.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  26,
+                              "description":  "Round 26",
+                              "phonetic":  "Round 26",
+                              "file":  "Round26.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  27,
+                              "description":  "Round 27",
+                              "phonetic":  "Round 27",
+                              "file":  "Round27.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  28,
+                              "description":  "Round 28",
+                              "phonetic":  "Round 28",
+                              "file":  "Round28.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  29,
+                              "description":  "Round 29",
+                              "phonetic":  "Round 29",
+                              "file":  "Round29.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Round",
+                              "id":  30,
+                              "description":  "Round 30",
+                              "phonetic":  "Round 30",
+                              "file":  "Round30.wav",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Timer",
+                              "id":  1,
+                              "description":  "1m-Silence",
+                              "phonetic":  "",
+                              "file":  "1m-Silence.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Timer",
+                              "id":  2,
+                              "description":  "1m-10minutes",
+                              "phonetic":  "",
+                              "file":  "1m-10m.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Timer",
+                              "id":  3,
+                              "description":  "5m-10minutes",
+                              "phonetic":  "",
+                              "file":  "5m-10m.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Timer",
+                              "id":  4,
+                              "description":  "1m-15minutes",
+                              "phonetic":  "",
+                              "file":  "1m-15m.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          },
+                          {
+                              "type":  "Timer",
+                              "id":  5,
+                              "description":  "5m-15minutes",
+                              "phonetic":  "",
+                              "file":  "5m-15m.mp3",
+                              "f3kTask":  "",
+                              "f5kTask":  ""
+                          }
+                      ]
+}

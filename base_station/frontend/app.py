@@ -162,22 +162,44 @@ async def pilot_delete(pilot_id: int):
 # Rounds
 # ---------------------------------------------------------------------------
 
-TASK_NAMES = {
-    "A": "Last flight",
-    "B": "Two flights of 3:00",
-    "C": "All up last down",
-    "D": "Two last flights",
-    "E": "Poker",
-    "F": "Three flights",
-    "G": "Four flights",
-    "H": "Five flights",
-    "I": "Last two flights",
-    "J": "All up last down",
-    "K": "Best two of five",
-    "L": "Best flight × 2:30",
-    "M": "One flight of 10:00",
-    "N": "Best two of six",
+# AUTHORITATIVE task catalogues — sourced verbatim from GliderScore's own task audio
+# descriptions (GliderScoreData.mdb → AudioSettings, F3KTask/F5KTask rows, 2026-07-10).
+# GliderScore is the competition/deployment tool, so operators see these same labels.
+# IMPORTANT: F3K and F5K reuse the same LETTERS with DIFFERENT meanings — keep separate.
+# Base letters use the primary variant; GliderScore variants (A(1), C(3)...) are captured
+# in base_station/frontend/data/gliderscore_audio_library.json for when we build import.
+# Each entry: letter -> {"name": short label, "desc": objective for the run screen}.
+F3K_TASKS = {
+    "A": {"name": "Last flight",      "desc": "Only your last flight counts — 5:00 max; unlimited flights in the window."},
+    "B": {"name": "Last 2 flights",   "desc": "Your last two flights count — 4:00 max each; unlimited flights in 10 min."},
+    "C": {"name": "All up",           "desc": "All gliders launch together on the horn — 3:00 max; 3–5 flights per round."},
+    "D": {"name": "Ladder",           "desc": "First target 0:30, +0:15 each time you reach it; unlimited flights in 10 min."},
+    "E": {"name": "Poker",            "desc": "Call your own target times; best 5 timed flights count; unlimited flights in 10 min."},
+    "F": {"name": "Best 3 of 6",      "desc": "Your 3 longest flights count — 3:00 max each; max 6 flights in 10 min."},
+    "G": {"name": "Best 5",           "desc": "Your 5 longest flights count — 2:00 max each; unlimited flights in 10 min."},
+    "H": {"name": "Best 4 (1-2-3-4)", "desc": "Best 4 flights against 1, 2, 3 and 4 min targets (any order); unlimited flights in 10 min."},
+    "I": {"name": "Best 3",           "desc": "Your 3 longest flights count — 3:20 max each; unlimited flights in 10 min."},
+    "J": {"name": "Last 3",           "desc": "Your last 3 flights count — 3:00 max each; unlimited flights in 10 min."},
+    "K": {"name": "Big Ladder",       "desc": "5 flights in order — 1:00, 1:30, 2:00, 2:30, 3:00 — each scored up to its target."},
+    "L": {"name": "One flight",       "desc": "A single flight, up to 9:59, in a 10-minute window."},
+    "M": {"name": "Huge Ladder",      "desc": "3 flights of 3:00, 5:00, 7:00 in order; 15-minute window; 3 flights max."},
+    "N": {"name": "Best flight",      "desc": "Your single best flight counts; 10-minute window."},
 }
+# F5K reuses letters with DIFFERENT tasks (GliderScore class F5K2024). Scoring also adds a
+# motor-cut height bonus vs the round's reference height — see GLIDERSCORE.md.
+F5K_TASKS = {
+    "A": {"name": "1-2-3-4",          "desc": "4 flights in 10 min — targets 1, 2, 3 and 4 minutes in any order."},
+    "B": {"name": "Last flight",      "desc": "Only your last flight counts — 5:00 max; max 3 flights in 7 min."},
+    "C": {"name": "All up",           "desc": "All gliders launch together — 4:00 max; 3 flights per round."},
+    "D": {"name": "3 flights (3-3-4)","desc": "Three flights of 3:00, 3:00 and 4:00 in any order; max 3 flights in 10 min."},
+    "E": {"name": "Poker",            "desc": "Call your own target times; best 3 timed flights count; max 3 flights in 10 min."},
+}
+TASKS = {"F3K": F3K_TASKS, "F5K": F5K_TASKS}
+
+
+def task_label(discipline: str, letter: str) -> str:
+    t = TASKS.get(discipline, {}).get(letter)
+    return t["name"] if t else letter
 
 
 @app.get("/rounds")
@@ -225,7 +247,7 @@ async def rounds_get(request: Request):
     return templates.TemplateResponse(request, "rounds.html", {
         "active": "rounds",
         "comp_data": comp_data,
-        "task_names": TASK_NAMES,
+        "tasks": TASKS,
     })
 
 
@@ -371,7 +393,7 @@ async def run_get(request: Request):
         "active": "run",
         "heats": heats,
         "initial_state": json.dumps(sm.get_status()),
-        "task_names": TASK_NAMES,
+        "tasks": TASKS,
     })
 
 
