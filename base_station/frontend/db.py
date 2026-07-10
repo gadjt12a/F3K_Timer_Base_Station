@@ -96,6 +96,8 @@ def _migrate_groups(db: sqlite3.Connection) -> None:
     existing = {row[1] for row in db.execute("PRAGMA table_info(groups)")}
     if "dummy_count" not in existing:
         db.execute("ALTER TABLE groups ADD COLUMN dummy_count INTEGER NOT NULL DEFAULT 0")
+    if "completed" not in existing:
+        db.execute("ALTER TABLE groups ADD COLUMN completed BOOLEAN NOT NULL DEFAULT 0")
     db.commit()
 
 

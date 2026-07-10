@@ -6,6 +6,9 @@
 const INITIAL_STATE = {{ initial_state | safe }};
 const TASKS = {{ tasks | tojson }};  // { discipline: { letter: {name, desc} } }
 
+// group_ids that are already marked complete (from server render)
+const DONE_INIT = new Set({{ heats | selectattr('completed') | map(attribute='group_id') | list | tojson }});
+
 function runner(initialState) {
     return {
         state: initialState.state || 'IDLE',
@@ -13,6 +16,8 @@ function runner(initialState) {
         secondsRemaining: 0,
         flights: [],
         ws: null,
+        loadedGroupId: (initialState.loaded && initialState.loaded.group_id) || null,
+        doneGroups: DONE_INIT,
 
         init() { this.connect(); },
 
@@ -97,9 +102,15 @@ function runner(initialState) {
                                   {method:'POST'});
             const data = await r.json();
             this.loaded = data.status.loaded;
+            this.loadedGroupId = groupId;
             this.secondsRemaining = 0;
             this.state = data.status.state;
             this.flights = [];
+        },
+
+        async markDone(groupId) {
+            await fetch(`/api/run/complete?group_id=${groupId}`, {method:'POST'});
+            this.doneGroups = new Set([...this.doneGroups, groupId]);
         },
 
         async startHeat() { await fetch('/api/run/start', {method:'POST'}); },
@@ -129,10 +140,19 @@ function runner(initialState) {
             <div class="flex-1 min-w-0">
                 <div class="text-xs font-bold text-orange-400 uppercase mb-2 pb-1 border-b border-orange-400/40">F3K</div>
                 {% for h in f3k_heats %}
-                <div class="mb-3 p-2 bg-gray-700 rounded">
-                    <div class="flex items-center justify-between mb-1">
-                        <span class="text-xs font-bold text-orange-400 truncate mr-1">{{ h.comp_name }}</span>
-                        <span class="text-xs text-gray-300 flex-shrink-0">{{ h.task }}</span>
+                {% set gid = h.group_id %}
+                <div class="mb-3 p-2 bg-gray-700 rounded relative"
+                     :class="{ 'opacity-50': doneGroups.has({{ gid }}) }">
+                    <!-- Status badge -->
+                    <template x-if="loadedGroupId === {{ gid }} && !doneGroups.has({{ gid }})">
+                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
+                    </template>
+                    <template x-if="doneGroups.has({{ gid }})">
+                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">DONE ✓</span>
+                    </template>
+                    <div class="flex items-center justify-between mb-1 pr-14">
+                        <span class="text-xs font-bold text-orange-400 truncate">{{ h.comp_name }}</span>
+                        <span class="text-xs text-gray-300 flex-shrink-0 ml-1 font-mono">{{ h.task }}</span>
                     </div>
                     <div class="text-xs font-semibold mb-1">
                         R{{ h.round_no }} · {{ h.heat }}
@@ -140,12 +160,21 @@ function runner(initialState) {
                     </div>
                     <div class="text-xs text-gray-200 mb-1 leading-tight">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
                     <div class="text-xs text-gray-300 mb-2 truncate">{{ h.pilots | join(', ') }}</div>
-                    <button @click="loadHeat({{ h.round_id }}, {{ h.group_id }})"
-                            :disabled="state !== 'IDLE'"
-                            class="w-full bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
-                                   disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
-                        Load
-                    </button>
+                    <div class="flex gap-1">
+                        <button @click="loadHeat({{ h.round_id }}, {{ gid }})"
+                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
+                                class="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
+                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
+                            Load
+                        </button>
+                        <button @click="markDone({{ gid }})"
+                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
+                                title="Mark heat complete"
+                                class="bg-green-700 hover:bg-green-600 disabled:opacity-40
+                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
+                            ✓
+                        </button>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -154,10 +183,18 @@ function runner(initialState) {
             <div class="flex-1 min-w-0">
                 <div class="text-xs font-bold text-fuchsia-400 uppercase mb-2 pb-1 border-b border-fuchsia-400/40">F5K</div>
                 {% for h in f5k_heats %}
-                <div class="mb-3 p-2 bg-gray-700 rounded">
-                    <div class="flex items-center justify-between mb-1">
-                        <span class="text-xs font-bold text-fuchsia-400 truncate mr-1">{{ h.comp_name }}</span>
-                        <span class="text-xs text-gray-300 flex-shrink-0">{{ h.task }}</span>
+                {% set gid = h.group_id %}
+                <div class="mb-3 p-2 bg-gray-700 rounded relative"
+                     :class="{ 'opacity-50': doneGroups.has({{ gid }}) }">
+                    <template x-if="loadedGroupId === {{ gid }} && !doneGroups.has({{ gid }})">
+                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
+                    </template>
+                    <template x-if="doneGroups.has({{ gid }})">
+                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">DONE ✓</span>
+                    </template>
+                    <div class="flex items-center justify-between mb-1 pr-14">
+                        <span class="text-xs font-bold text-fuchsia-400 truncate">{{ h.comp_name }}</span>
+                        <span class="text-xs text-gray-300 flex-shrink-0 ml-1 font-mono">{{ h.task }}</span>
                     </div>
                     <div class="text-xs font-semibold mb-1">
                         R{{ h.round_no }} · {{ h.heat }}
@@ -165,12 +202,21 @@ function runner(initialState) {
                     </div>
                     <div class="text-xs text-gray-200 mb-1 leading-tight">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
                     <div class="text-xs text-gray-300 mb-2 truncate">{{ h.pilots | join(', ') }}</div>
-                    <button @click="loadHeat({{ h.round_id }}, {{ h.group_id }})"
-                            :disabled="state !== 'IDLE'"
-                            class="w-full bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
-                                   disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
-                        Load
-                    </button>
+                    <div class="flex gap-1">
+                        <button @click="loadHeat({{ h.round_id }}, {{ gid }})"
+                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
+                                class="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
+                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
+                            Load
+                        </button>
+                        <button @click="markDone({{ gid }})"
+                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
+                                title="Mark heat complete"
+                                class="bg-green-700 hover:bg-green-600 disabled:opacity-40
+                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
+                            ✓
+                        </button>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -178,13 +224,22 @@ function runner(initialState) {
 
         {% else %}
         {% for h in heats %}
-        <div class="mb-3 p-3 bg-gray-700 rounded">
-            <div class="flex items-center justify-between mb-1">
+        {% set gid = h.group_id %}
+        <div class="mb-3 p-3 bg-gray-700 rounded relative"
+             :class="{ 'opacity-50': doneGroups.has({{ gid }}) }">
+            <!-- Status badge -->
+            <template x-if="loadedGroupId === {{ gid }} && !doneGroups.has({{ gid }})">
+                <span class="absolute top-3 right-3 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
+            </template>
+            <template x-if="doneGroups.has({{ gid }})">
+                <span class="absolute top-3 right-3 text-[10px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">DONE ✓</span>
+            </template>
+            <div class="flex items-center justify-between mb-1 pr-16">
                 <span class="text-xs font-bold
                     {% if h.discipline == 'F3K' %}text-orange-400{% else %}text-fuchsia-400{% endif %}">
                     {{ h.comp_name }}
                 </span>
-                <span class="text-xs text-gray-300">Task {{ h.task }}</span>
+                <span class="text-xs text-gray-300 font-mono">{{ h.task }}</span>
             </div>
             <div class="text-sm font-semibold mb-1">
                 Round {{ h.round_no }} · Heat {{ h.heat }}
@@ -192,12 +247,21 @@ function runner(initialState) {
             </div>
             <div class="text-xs text-gray-200 mb-1">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
             <div class="text-xs text-gray-300 mb-2">{{ h.pilots | join(', ') }}</div>
-            <button @click="loadHeat({{ h.round_id }}, {{ h.group_id }})"
-                    :disabled="state !== 'IDLE'"
-                    class="w-full bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
-                           disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
-                Load
-            </button>
+            <div class="flex gap-2">
+                <button @click="loadHeat({{ h.round_id }}, {{ gid }})"
+                        :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
+                        class="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
+                               disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
+                    Load
+                </button>
+                <button @click="markDone({{ gid }})"
+                        :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
+                        title="Mark heat complete"
+                        class="bg-green-700 hover:bg-green-600 disabled:opacity-40
+                               disabled:cursor-not-allowed px-2 py-1.5 rounded text-xs font-medium transition-colors">
+                    ✓ Done
+                </button>
+            </div>
         </div>
         {% endfor %}
         {% endif %}
@@ -206,24 +270,25 @@ function runner(initialState) {
     <!-- Right: live panel -->
     <div class="flex-1 flex flex-col gap-4 min-w-0">
 
-        <!-- State badge + countdown -->
-        <div class="bg-gray-800 rounded-lg p-6 text-center">
+        <!-- State badge + countdown — grows to fill available height -->
+        <div class="flex-1 min-h-0 bg-gray-800 rounded-lg p-6 text-center flex flex-col justify-center">
             <div :class="stateClass()"
                  class="inline-block px-4 py-1 rounded-full text-sm font-bold tracking-widest uppercase mb-4"
                  x-text="state"></div>
 
-            <div class="font-mono text-7xl font-bold tracking-tight mb-2"
+            <div class="font-mono font-bold tracking-tight mb-2"
+                 style="font-size: clamp(4rem, 10vw, 9rem); line-height: 1"
                  x-text="secondsRemaining > 0 ? fmt(secondsRemaining) : (loaded ? fmt(loaded.working_time_s) : '--:--')">
             </div>
 
             <template x-if="loaded">
-                <div class="text-gray-200 text-sm space-y-1">
+                <div class="text-gray-200 text-sm space-y-1 mt-4">
                     <div>
                         <span x-text="loaded.comp_name" class="font-bold" :class="compClass()"></span>
                         <span class="text-gray-400 mx-1">·</span>
                         <span class="underline decoration-gray-500 underline-offset-4 font-semibold">Round <span x-text="loaded.round_no"></span> · Heat <span x-text="loaded.heat"></span></span>
                         <span class="text-gray-400 mx-1">·</span>
-                        Task <span x-text="loaded.task"></span>
+                        Task <span x-text="loaded.task" class="font-mono font-bold"></span>
                     </div>
                     <div class="text-gray-100 font-semibold" x-text="taskName()"></div>
                     <div class="text-gray-300 text-xs max-w-md mx-auto" x-text="taskDesc()"></div>
@@ -231,12 +296,12 @@ function runner(initialState) {
                 </div>
             </template>
             <template x-if="!loaded">
-                <p class="text-gray-300 text-sm">Load a heat from the queue</p>
+                <p class="text-gray-300 text-sm mt-4">Load a heat from the queue</p>
             </template>
         </div>
 
         <!-- Controls -->
-        <div class="flex gap-3">
+        <div class="flex gap-3 flex-shrink-0">
             <button @click="startHeat()"
                     :disabled="state !== 'IDLE' || !loaded"
                     class="flex-1 bg-green-600 hover:bg-green-500 disabled:opacity-40
@@ -249,10 +314,17 @@ function runner(initialState) {
                            disabled:cursor-not-allowed py-3 rounded-lg font-bold text-lg transition-colors">
                 ABORT
             </button>
+            <!-- Mark Done shortcut: available when IDLE and a heat is loaded -->
+            <button @click="markDone(loadedGroupId)"
+                    x-show="state === 'IDLE' && loadedGroupId && !doneGroups.has(loadedGroupId)"
+                    class="bg-green-700 hover:bg-green-600 px-4 py-3 rounded-lg font-bold text-lg transition-colors"
+                    title="Mark this heat as complete">
+                ✓ Done
+            </button>
         </div>
 
         <!-- CD control: skip prep ahead when everyone's ready -->
-        <div x-show="state === 'PREP' && secondsRemaining > 60">
+        <div x-show="state === 'PREP' && secondsRemaining > 60" class="flex-shrink-0">
             <button @click="skipTo1Min()"
                     class="w-full bg-yellow-600 hover:bg-yellow-500 py-2 rounded-lg
                            font-semibold transition-colors">
@@ -261,7 +333,7 @@ function runner(initialState) {
         </div>
 
         <!-- Flight log -->
-        <div class="flex-1 bg-gray-800 rounded-lg p-4 overflow-y-auto min-h-0">
+        <div class="h-48 flex-shrink-0 bg-gray-800 rounded-lg p-4 overflow-y-auto">
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3">Flight Log</h2>
             <template x-if="flights.length === 0">
                 <p class="text-gray-400 text-sm">No flights this heat.</p>

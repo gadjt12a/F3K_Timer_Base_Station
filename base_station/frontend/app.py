@@ -641,6 +641,7 @@ async def run_get(request: Request):
                     "group_no": grp["group_no"],
                     "heat": chr(64 + grp["group_no"]),
                     "pilots": names,
+                    "completed": bool(grp["completed"]),
                 })
     sm = app.state.state_machine
     return templates.TemplateResponse(request, "run.html", {
@@ -675,6 +676,14 @@ async def api_run_skip(to: int = 60):
     """CD control: during PREP, skip the countdown to `to` seconds remaining."""
     ok = app.state.state_machine.skip_prep_to(to)
     return {"ok": ok}
+
+
+@app.post("/api/run/complete")
+async def api_run_complete(group_id: int):
+    db = _db()
+    db.execute("UPDATE groups SET completed = 1 WHERE id = ?", (group_id,))
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/run/state")

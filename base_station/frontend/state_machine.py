@@ -37,6 +37,7 @@ class CompetitionStateMachine:
                 "task": d["task"],
                 "working_time_s": d["working_time_s"],
                 "pilots": d["pilots"],
+                "group_id": d["group_id"],
             } if d else None,
         }
 
