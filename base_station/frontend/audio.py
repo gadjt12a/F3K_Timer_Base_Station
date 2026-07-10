@@ -108,6 +108,8 @@ class AudioEngine:
         self._active: TimerProfile | None = None
         self._queue: asyncio.Queue[dict] | None = None
         self._worker: asyncio.Task | None = None
+        self._sched_task: asyncio.Task | None = None
+        self._prep_offset: int = 0
         self._beep_cache: dict[tuple[int, int], str] = {}
         self._disabled = os.environ.get("F3K_AUDIO_DISABLE") == "1"
         self._loaded = False
@@ -198,6 +200,93 @@ class AudioEngine:
         """Play the start/end working-window horn."""
         self._enqueue({"wav": "StartEndHorn.wav", "beepHz": 0, "beepMs": 0})
 
+    # ------------------------------------------------------------------
+    # Lead-compensated schedule (drives a whole heat's audio)
+    # ------------------------------------------------------------------
+
+    # Pre-roll window: GliderScore starts an announcement a few seconds before its
+    # mark so it *finishes* on the mark. A cue up to this far before sequence start is
+    # clamped to play AT the start (e.g. "3 minutes to start" on a 3-minute prep)
+    # rather than being dropped.
+    _PREROLL_S = 5
+
+    def build_schedule(self, prep_offset: int) -> list[tuple[float, dict]]:
+        """Absolute cue schedule for the active profile, in seconds from sequence start.
+
+        ``prep_offset`` is when the working window opens relative to sequence start
+        (i.e. the competition's prep time). The profile's own cue times ``t`` are
+        relative to the working-window open (negative during prep), so a cue plays at
+        ``prep_offset + t`` seconds after the sequence starts. This anchors the
+        window-open horn (t=0) exactly on the timer START broadcast, regardless of any
+        difference between the competition prep length and the profile's own.
+        """
+        if not self._active:
+            return []
+        sched = []
+        for c in self._active.cues:
+            off = prep_offset + c["t"]
+            if off < -self._PREROLL_S:
+                continue                      # genuinely before the sequence — drop
+            sched.append((max(off, 0.0), c))  # clamp pre-roll cues to the start
+        sched.sort(key=lambda x: x[0])
+        return sched
+
+    def start_schedule(self, prep_offset: int) -> None:
+        """Begin lead-compensated playback of the active profile, anchored to now.
+
+        Fires each cue ``lead_s`` seconds early so the *sound* — after fixed output
+        latency (e.g. Bluetooth A2DP buffering) — emerges at the intended instant.
+        """
+        self.stop_schedule()
+        self._prep_offset = prep_offset
+        sched = self.build_schedule(prep_offset)
+        if not sched:
+            return
+        lead = audio_control.get_lead()
+        self._sched_task = asyncio.create_task(self._run_schedule(sched, lead))
+        log.info("[AUDIO] schedule started: %d cues, prep_offset=%ds, lead=%.1fs",
+                 len(sched), prep_offset, lead)
+
+    def reanchor(self, elapsed: float) -> None:
+        """Fast-forward the running schedule so 'now' == ``elapsed`` seconds into the
+        sequence (used when the CD skips the prep countdown ahead). Cues already passed
+        are not replayed; pending queued cues are dropped so nothing stale plays."""
+        if self._sched_task is None or self._active is None:
+            return
+        self.stop_schedule()
+        self._drain_queue()
+        sched = self.build_schedule(self._prep_offset)
+        lead = audio_control.get_lead()
+        self._sched_task = asyncio.create_task(self._run_schedule(sched, lead, elapsed))
+        log.info("[AUDIO] schedule reanchored to elapsed=%.0fs", elapsed)
+
+    def stop_schedule(self) -> None:
+        if self._sched_task and not self._sched_task.done():
+            self._sched_task.cancel()
+        self._sched_task = None
+
+    def _drain_queue(self) -> None:
+        if self._queue is None:
+            return
+        try:
+            while True:
+                self._queue.get_nowait()
+                self._queue.task_done()
+        except asyncio.QueueEmpty:
+            pass
+
+    async def _run_schedule(self, sched: list[tuple[float, dict]], lead: float,
+                            elapsed: float = 0.0) -> None:
+        loop = asyncio.get_event_loop()
+        t0 = loop.time() - elapsed         # virtual sequence-start time
+        for offset, cue in sched:
+            if offset < elapsed - 0.5:
+                continue                   # already passed (skip-ahead) — don't replay
+            delay = (t0 + offset - lead) - loop.time()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._enqueue(cue)
+
     def _enqueue(self, cue: dict) -> None:
         if self._disabled:
             log.info("[AUDIO] (disabled) cue %s", cue.get("wav") or f"beep {cue.get('beepHz')}Hz")
@@ -243,12 +332,22 @@ class AudioEngine:
 
     async def _aplay(self, path: str) -> None:
         args = ["aplay", "-q", "-D", audio_control.output_device(), path]
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, err = await proc.communicate()
+        # Serialize with volume changes (same bluealsa device) and cap the play so a
+        # hung aplay — e.g. bluealsa renegotiating on a mid-play volume change — can't
+        # block the worker forever and kill all subsequent audio.
+        async with audio_control.bluealsa_lock:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                _, err = await asyncio.wait_for(proc.communicate(), timeout=8.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                log.warning("[AUDIO] aplay timed out (killed) for %s", path)
+                return
         if proc.returncode != 0:
             log.warning("[AUDIO] aplay rc=%s for %s: %s",
                         proc.returncode, path, err.decode(errors="replace").strip())

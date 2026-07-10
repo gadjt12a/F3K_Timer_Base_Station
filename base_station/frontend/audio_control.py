@@ -22,8 +22,15 @@ from pathlib import Path
 
 log = logging.getLogger("f3k")
 
+# Serializes all access to the bluealsa device (playback via aplay + volume via
+# amixer). Changing volume while a cue is playing otherwise makes bluealsa
+# renegotiate and the in-flight aplay can hang, wedging the whole audio worker.
+bluealsa_lock = asyncio.Lock()
+
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "audio_config.json"
-_DEFAULTS = {"bt_mac": None, "volume": 45}
+# lead_s: seconds to fire cues EARLY, to compensate for fixed output latency
+# (Bluetooth A2DP buffering). The operator measures the observed lag and sets it here.
+_DEFAULTS = {"bt_mac": None, "volume": 45, "lead_s": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +53,22 @@ def save_config(cfg: dict) -> None:
         _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
     except Exception:
         log.exception("[AUDIO] failed to write audio_config.json")
+
+
+def get_lead() -> float:
+    """Seconds to fire audio cues early to compensate for output latency."""
+    try:
+        return max(0.0, float(load_config().get("lead_s", 0) or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def set_lead(seconds: float) -> dict:
+    seconds = max(0.0, min(30.0, float(seconds)))
+    cfg = load_config()
+    cfg["lead_s"] = seconds
+    save_config(cfg)
+    return {"ok": True, "lead_s": seconds}
 
 
 def output_device() -> str:
@@ -156,22 +179,42 @@ async def _mixer_control() -> str | None:
     return m.group(1) if m else None
 
 
+async def pcm_alive() -> bool:
+    """True if the bluealsa A2DP PCM is really available (soft-volume control present).
+
+    bluetoothctl can report a speaker 'connected' while the A2DP transport/PCM has
+    idle-died, in which case aplay fails with 'No such device'. The presence of the
+    bluealsa mixer control is a reliable signal that the PCM is actually there.
+    Returns True for non-Bluetooth output (nothing to check).
+    """
+    if not load_config().get("bt_mac"):
+        return True
+    async with bluealsa_lock:
+        return (await _mixer_control()) is not None
+
+
 async def get_volume() -> int | None:
-    ctrl = await _mixer_control()
-    if not ctrl:
-        return None
-    _, out, _ = await _run(["amixer", "-D", "bluealsa", "sget", ctrl])
+    async with bluealsa_lock:
+        ctrl = await _mixer_control()
+        if not ctrl:
+            return None
+        _, out, _ = await _run(["amixer", "-D", "bluealsa", "sget", ctrl])
     m = re.search(r"\[(\d+)%\]", out)
     return int(m.group(1)) if m else None
 
 
 async def apply_volume(pct: int) -> bool:
-    """Set the speaker volume (0–100). Returns False if no BT mixer is present."""
+    """Set the speaker volume (0–100). Returns False if no BT mixer is present.
+
+    Serialized against playback (bluealsa_lock) so a volume change never collides
+    with an in-flight aplay on the same device.
+    """
     pct = max(0, min(100, int(pct)))
-    ctrl = await _mixer_control()
-    if not ctrl:
-        return False
-    rc, _, _ = await _run(["amixer", "-D", "bluealsa", "sset", ctrl, f"{pct}%"])
+    async with bluealsa_lock:
+        ctrl = await _mixer_control()
+        if not ctrl:
+            return False
+        rc, _, _ = await _run(["amixer", "-D", "bluealsa", "sset", ctrl, f"{pct}%"])
     return rc == 0
 
 

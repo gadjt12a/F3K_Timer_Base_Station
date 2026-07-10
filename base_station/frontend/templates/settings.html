@@ -33,6 +33,19 @@
         No Bluetooth speaker connected — volume applies once a speaker is connected.</p>
     </div>
 
+    <!-- Audio lead (latency compensation) -->
+    <div class="mb-5">
+      <div class="flex items-center gap-4">
+        <label class="text-gray-300 w-20">Lead</label>
+        <input type="range" min="0" max="20" step="0.5" class="flex-1"
+               x-model.number="audio.lead_s" @change="setLead()">
+        <span class="w-12 text-right font-mono" x-text="(audio.lead_s ?? 0) + 's'"></span>
+      </div>
+      <p class="text-xs text-gray-500 mt-1">
+        Fires cues this many seconds early to compensate for speaker/Bluetooth output
+        latency. Increase until the countdown &amp; horns land on the beat.</p>
+    </div>
+
     <!-- Paired speakers -->
     <h3 class="text-sm font-semibold text-gray-400 mb-2">Paired speakers</h3>
     <table class="w-full text-sm mb-4">
@@ -146,7 +159,7 @@
 <script>
 function settings() {
   return {
-    audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null },
+    audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0 },
     discovered: [], scanBusy: false, msg: '',
     timers: [], events: [],
 
@@ -168,6 +181,10 @@ function settings() {
     async setVolume() {
       const r = await (await fetch('/api/audio/volume?level=' + this.audio.volume, { method: 'POST' })).json();
       this.msg = r.ok ? ('Volume set to ' + r.volume + '%') : (r.error || 'volume error');
+    },
+    async setLead() {
+      const r = await (await fetch('/api/audio/lead?seconds=' + this.audio.lead_s, { method: 'POST' })).json();
+      this.msg = 'Audio lead set to ' + r.lead_s + 's';
     },
     async test() { await fetch('/api/audio/test', { method: 'POST' }); this.msg = 'Playing test…'; },
     async scan() {

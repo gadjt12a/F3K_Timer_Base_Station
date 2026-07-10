@@ -19,6 +19,7 @@ class CompetitionStateMachine:
         self._state: str = "IDLE"
         self._loaded: dict | None = None
         self._task: asyncio.Task | None = None
+        self._skip_to: int | None = None   # CD requested prep jump to N seconds remaining
 
     @property
     def state(self) -> str:
@@ -100,7 +101,18 @@ class CompetitionStateMachine:
             return
         self._task = asyncio.create_task(self._run_sequence_safe())
 
+    def skip_prep_to(self, seconds: int) -> bool:
+        """CD control: during PREP, jump the countdown to ``seconds`` remaining
+        (e.g. 60 = "1 minute to start" when everyone is ready). No-op outside PREP
+        or if the countdown is already at/below that point."""
+        if self._state != "PREP":
+            return False
+        self._skip_to = max(0, int(seconds))
+        log.info("Prep skip requested → %ds remaining", self._skip_to)
+        return True
+
     async def abort(self) -> None:
+        engine.stop_schedule()
         task = self._task
         self._task = None
         self._state = "IDLE"
@@ -180,42 +192,51 @@ class CompetitionStateMachine:
     async def _run_sequence(self) -> None:
         d = self._loaded
 
+        # Audio is driven by a single lead-compensated schedule anchored to *now*
+        # (the start of PREP), so cues fire early enough to overcome fixed output
+        # latency and land on the beat. The tick loop below stays the master clock
+        # for the display and the timers (TCP), independent of audio.
+        engine.start_schedule(d["prep_time_s"])
+
         # ── PREP ─────────────────────────────────────────────────────
         self._state = "PREP"
+        self._skip_to = None
         pilots_str = ",".join(f"{pid}:{name}" for pid, name in d["pilot_id_names"])
         if pilots_str:
             await self._server.broadcast(f"PILOTS {pilots_str}")
 
-        for remaining in range(d["prep_time_s"], 0, -1):
+        remaining = d["prep_time_s"]
+        while remaining > 0:
+            # CD may jump the countdown ahead ("everyone ready — skip to 1:00").
+            if self._skip_to is not None:
+                if remaining > self._skip_to:
+                    remaining = self._skip_to
+                    engine.reanchor(d["prep_time_s"] - remaining)  # fast-forward audio
+                self._skip_to = None
             await self._broadcast_tick(remaining)
-            engine.cue("prep", remaining)
             if remaining <= 10:
                 await self._server.broadcast(f"COUNT {remaining}")
             await asyncio.sleep(1)
+            remaining -= 1
 
         await self._server.broadcast(f"TASK wt={d['working_time_s']}")
 
         # ── WORKING ──────────────────────────────────────────────────
         self._state = "WORKING"
         await self._server.broadcast("START")
-        engine.horn()
 
         for remaining in range(d["working_time_s"], 0, -1):
             await self._broadcast_tick(remaining)
-            engine.cue("working", remaining)
             await asyncio.sleep(1)
 
         await self._server.broadcast("STOP")
-        engine.horn()
 
         # ── LANDING ──────────────────────────────────────────────────
         self._state = "LANDING"
 
         for remaining in range(d["land_time_s"], 0, -1):
             await self._broadcast_tick(remaining)
-            engine.cue("landing", remaining)
             await asyncio.sleep(1)
-        engine.cue("landing", 0)   # final end-of-landing long beep
 
         # ── Done ─────────────────────────────────────────────────────
         self._state = "IDLE"

@@ -196,8 +196,19 @@ class F3KServer:
                 continue
             try:
                 status = await audio_control.bt_status()
-                if status.get("connected_mac") != mac:
-                    log.info(f"[AUDIO] speaker {mac} disconnected — reconnecting")
+                connected = status.get("connected_mac") == mac
+                # "connected" per bluetoothctl isn't enough — the A2DP PCM can idle-die
+                # while the link shows connected (aplay: "No such device"). Only treat
+                # the speaker as healthy when the PCM is really there.
+                alive = connected and await audio_control.pcm_alive()
+                if not alive:
+                    log.info(f"[AUDIO] speaker {mac} "
+                             f"{'PCM dead' if connected else 'disconnected'} — reconnecting")
+                    if connected:
+                        # A fresh connect won't rebuild the PCM while still "connected";
+                        # drop it first.
+                        await audio_control.bt_disconnect(mac)
+                        await asyncio.sleep(1)
                     r = await audio_control.bt_connect(mac)
                     log.info("[AUDIO] speaker reconnected" if r.get("ok")
                              else f"[AUDIO] reconnect failed: {r.get('error')}")

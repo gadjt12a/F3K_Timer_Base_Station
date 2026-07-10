@@ -86,7 +86,7 @@ async def competition_new(
     discipline: str = Form(...),
     date: str = Form(...),
     gliderscore_comp_no: str = Form(""),
-    prep_time_s: int = Form(120),
+    prep_time_s: int = Form(180),
     land_time_s: int = Form(30),
     heat_gap_s: int = Form(30),
     round_gap_s: int = Form(30),
@@ -419,6 +419,13 @@ async def api_run_abort():
     return {"ok": True}
 
 
+@app.post("/api/run/skip")
+async def api_run_skip(to: int = 60):
+    """CD control: during PREP, skip the countdown to `to` seconds remaining."""
+    ok = app.state.state_machine.skip_prep_to(to)
+    return {"ok": ok}
+
+
 @app.get("/api/run/state")
 async def api_run_state():
     return app.state.state_machine.get_status()
@@ -443,12 +450,19 @@ async def api_audio_status():
     status = await audio_control.bt_status()
     status["volume"] = await audio_control.get_volume()
     status["saved_volume"] = audio_control.load_config().get("volume")
+    status["lead_s"] = audio_control.get_lead()
     return status
 
 
 @app.post("/api/audio/volume")
 async def api_audio_volume(level: int):
     return await audio_control.set_volume(level)
+
+
+@app.post("/api/audio/lead")
+async def api_audio_lead(seconds: float):
+    """Set the audio lead (seconds cues fire early to offset output latency)."""
+    return audio_control.set_lead(seconds)
 
 
 @app.post("/api/audio/test")
