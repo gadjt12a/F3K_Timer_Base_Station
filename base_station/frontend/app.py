@@ -134,6 +134,26 @@ async def competition_new(
 @app.post("/setup/competition/{comp_id}/delete")
 async def competition_delete(comp_id: int):
     db = _db()
+    db.execute("""
+        DELETE FROM group_pilots WHERE group_id IN (
+            SELECT g.id FROM groups g
+            JOIN rounds r ON g.round_id = r.id
+            WHERE r.competition_id = ?
+        )
+    """, (comp_id,))
+    db.execute("""
+        DELETE FROM flights WHERE group_id IN (
+            SELECT g.id FROM groups g
+            JOIN rounds r ON g.round_id = r.id
+            WHERE r.competition_id = ?
+        )
+    """, (comp_id,))
+    db.execute("""
+        DELETE FROM groups WHERE round_id IN (
+            SELECT id FROM rounds WHERE competition_id = ?
+        )
+    """, (comp_id,))
+    db.execute("DELETE FROM rounds WHERE competition_id = ?", (comp_id,))
     db.execute("DELETE FROM competition_pilots WHERE competition_id = ?", (comp_id,))
     db.execute("DELETE FROM competitions WHERE id = ?", (comp_id,))
     db.commit()
