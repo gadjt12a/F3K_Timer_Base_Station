@@ -40,6 +40,17 @@ app.state.ws_manager = manager
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
 
+def _fmt_ms(ms) -> str:
+    if ms is None:
+        return "—"
+    total_s = ms // 1000
+    centis = (ms % 1000) // 10
+    return f"{total_s // 60}:{total_s % 60:02d}.{centis:02d}"
+
+
+templates.env.filters["fmt_ms"] = _fmt_ms
+
+
 def _db():
     return app.state.server.db
 
@@ -334,6 +345,81 @@ async def group_delete(group_id: int):
     db.execute("DELETE FROM groups WHERE id = ?", (group_id,))
     db.commit()
     return RedirectResponse("/rounds", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Results
+# ---------------------------------------------------------------------------
+
+@app.get("/results")
+async def results_get(request: Request):
+    db = _db()
+    competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+
+    comp_data = []
+    for comp in competitions:
+        rounds = db.execute(
+            "SELECT * FROM rounds WHERE competition_id = ? ORDER BY round_no",
+            (comp["id"],),
+        ).fetchall()
+
+        round_data = []
+        for rnd in rounds:
+            groups = db.execute(
+                "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no",
+                (rnd["id"],),
+            ).fetchall()
+
+            heat_data = []
+            for grp in groups:
+                rows = db.execute(
+                    """SELECT p.id AS pilot_id, p.name AS pilot_name,
+                              f.id AS flight_id, f.duration_ms, f.recorded_at
+                       FROM group_pilots gp
+                       JOIN pilots p ON p.id = gp.pilot_id
+                       LEFT JOIN flights f ON f.pilot_id = p.id AND f.group_id = ?
+                       WHERE gp.group_id = ?
+                       ORDER BY p.name, f.recorded_at""",
+                    (grp["id"], grp["id"]),
+                ).fetchall()
+
+                pilot_flights: dict = {}
+                pilot_order: list = []
+                for row in rows:
+                    pid = row["pilot_id"]
+                    if pid not in pilot_flights:
+                        pilot_flights[pid] = {
+                            "id": pid,
+                            "name": row["pilot_name"],
+                            "flights": [],
+                        }
+                        pilot_order.append(pid)
+                    if row["flight_id"] is not None:
+                        pilot_flights[pid]["flights"].append(
+                            {"duration_ms": row["duration_ms"]}
+                        )
+
+                pilots = [pilot_flights[pid] for pid in pilot_order]
+                max_flights = max((len(p["flights"]) for p in pilots), default=0)
+                heat_data.append({
+                    "group": grp,
+                    "heat": chr(64 + grp["group_no"]),
+                    "pilots": pilots,
+                    "max_flights": max_flights,
+                })
+
+            round_data.append({
+                "round": rnd,
+                "task_name": task_label(rnd["discipline"], rnd["task"]),
+                "heats": heat_data,
+            })
+
+        comp_data.append({"comp": comp, "rounds": round_data})
+
+    return templates.TemplateResponse(request, "results.html", {
+        "active": "results",
+        "comp_data": comp_data,
+    })
 
 
 # ---------------------------------------------------------------------------

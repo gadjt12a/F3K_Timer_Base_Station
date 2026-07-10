@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="text-xl font-bold text-gray-100 mb-6">Results</h1>
+
+{% if not comp_data %}
+<p class="text-gray-400">No competitions yet. Set up competitions and add rounds first.</p>
+{% endif %}
+
+{% for cd in comp_data %}
+<div class="mb-10">
+    <h2 class="text-lg font-bold mb-4 flex items-center gap-3">
+        <span class="{% if cd.comp.discipline == 'F3K' %}text-orange-400{% else %}text-fuchsia-400{% endif %}">
+            {{ cd.comp.name }}
+        </span>
+        <span class="text-sm text-gray-400 font-normal">{{ cd.comp.discipline }} · {{ cd.comp.date }}</span>
+    </h2>
+
+    {% if not cd.rounds %}
+    <p class="text-gray-500 text-sm ml-1">No rounds defined.</p>
+    {% endif %}
+
+    {% for rd in cd.rounds %}
+    <div class="mb-4 bg-gray-800 rounded-lg overflow-hidden">
+
+        <!-- Round header -->
+        <div class="px-4 py-3 bg-gray-900 border-b border-gray-700 flex items-center gap-3">
+            <span class="font-semibold text-gray-100">Round {{ rd.round.round_no }}</span>
+            <span class="font-mono text-xs bg-gray-700 text-gray-200 px-2 py-0.5 rounded">Task {{ rd.round.task }}</span>
+            <span class="text-gray-300 text-sm">{{ rd.task_name }}</span>
+            <span class="ml-auto text-xs text-gray-500">{{ rd.round.working_time_s // 60 }} min</span>
+        </div>
+
+        <!-- Heats -->
+        {% for hd in rd.heats %}
+        <div class="px-4 py-3 {% if not loop.last %}border-b border-gray-700{% endif %}">
+            <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Heat {{ hd.heat }}</div>
+
+            {% if hd.max_flights == 0 %}
+            <p class="text-gray-600 text-sm">No flights recorded.</p>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="text-sm">
+                    <thead>
+                        <tr class="text-xs text-gray-400">
+                            <th class="text-left font-normal pb-1 pr-8">Pilot</th>
+                            {% for i in range(hd.max_flights) %}
+                            <th class="text-right font-normal font-mono pb-1 pl-5">Flt {{ i + 1 }}</th>
+                            {% endfor %}
+                            <th class="text-right font-normal pb-1 pl-6 text-gray-500">#</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in hd.pilots %}
+                        <tr class="border-t border-gray-700">
+                            <td class="py-1.5 pr-8 text-gray-200">{{ p.name }}</td>
+                            {% for i in range(hd.max_flights) %}
+                            {% if i < p.flights | length %}
+                            <td class="py-1.5 pl-5 text-right font-mono font-semibold text-green-400">
+                                {{ p.flights[i].duration_ms | fmt_ms }}
+                            </td>
+                            {% else %}
+                            <td class="py-1.5 pl-5 text-right font-mono text-gray-700">—</td>
+                            {% endif %}
+                            {% endfor %}
+                            <td class="py-1.5 pl-6 text-right text-gray-400">{{ p.flights | length }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+    </div>
+    {% endfor %}
+</div>
+{% endfor %}
+
+{% endblock %}

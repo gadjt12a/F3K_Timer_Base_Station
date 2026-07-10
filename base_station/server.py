@@ -231,9 +231,10 @@ class F3KServer:
                     pass
 
     def record_flight(self, pilot_id: int, dur_ms: int):
+        group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
         self.db.execute(
-            "INSERT INTO flights (pilot_id, duration_ms) VALUES (?, ?)",
-            (pilot_id, dur_ms),
+            "INSERT INTO flights (pilot_id, duration_ms, group_id) VALUES (?, ?, ?)",
+            (pilot_id, dur_ms, group_id),
         )
         self.db.commit()
 
