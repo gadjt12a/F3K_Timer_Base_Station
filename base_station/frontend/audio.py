@@ -110,6 +110,7 @@ class AudioEngine:
         self._worker: asyncio.Task | None = None
         self._sched_task: asyncio.Task | None = None
         self._prep_offset: int = 0
+        self._current_proc: asyncio.subprocess.Process | None = None
         self._beep_cache: dict[tuple[int, int], str] = {}
         self._disabled = os.environ.get("F3K_AUDIO_DISABLE") == "1"
         self._loaded = False
@@ -264,6 +265,16 @@ class AudioEngine:
         if self._sched_task and not self._sched_task.done():
             self._sched_task.cancel()
         self._sched_task = None
+        self._kill_current()
+
+    def _kill_current(self) -> None:
+        """Kill the currently playing aplay subprocess immediately (preempt)."""
+        proc = self._current_proc
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
 
     def _drain_queue(self) -> None:
         if self._queue is None:
@@ -277,15 +288,40 @@ class AudioEngine:
 
     async def _run_schedule(self, sched: list[tuple[float, dict]], lead: float,
                             elapsed: float = 0.0) -> None:
+        """Preemptive scheduler: each cue group fires at its exact scheduled time,
+        killing whatever is currently playing rather than waiting for it to finish.
+
+        Cues sharing the same offset (e.g. a tone + announcement at t=−60) are
+        grouped and played sequentially within the group — only groups preempt
+        each other.
+        """
         loop = asyncio.get_event_loop()
         t0 = loop.time() - elapsed         # virtual sequence-start time
-        for offset, cue in sched:
+        i = 0
+        while i < len(sched):
+            offset, _ = sched[i]
             if offset < elapsed - 0.5:
+                i += 1
                 continue                   # already passed (skip-ahead) — don't replay
             delay = (t0 + offset - lead) - loop.time()
             if delay > 0:
                 await asyncio.sleep(delay)
-            self._enqueue(cue)
+            # Collect all cues at this offset (float precision: within 50ms)
+            group: list[dict] = []
+            while i < len(sched) and abs(sched[i][0] - offset) < 0.05:
+                group.append(sched[i][1])
+                i += 1
+            # Preempt whatever is currently playing and fire this group
+            self._kill_current()
+            asyncio.create_task(self._play_group(group))
+
+    async def _play_group(self, cues: list[dict]) -> None:
+        """Play a list of cues sequentially (used for same-offset cue groups)."""
+        for cue in cues:
+            try:
+                await self._play(cue)
+            except Exception:
+                log.exception("[AUDIO] playback error for cue %s", cue)
 
     def _enqueue(self, cue: dict) -> None:
         if self._disabled:
@@ -332,25 +368,38 @@ class AudioEngine:
 
     async def _aplay(self, path: str) -> None:
         args = ["aplay", "-q", "-D", audio_control.output_device(), path]
-        # Serialize with volume changes (same bluealsa device) and cap the play so a
-        # hung aplay — e.g. bluealsa renegotiating on a mid-play volume change — can't
-        # block the worker forever and kill all subsequent audio.
+        # Serialize with volume changes (amixer on the same bluealsa device can cause
+        # A2DP renegotiation if run concurrently with aplay). Cues preempt each other
+        # via _kill_current() / proc.kill(), which makes proc.communicate() return
+        # immediately so this lock is released without waiting for the full clip.
         async with audio_control.bluealsa_lock:
             proc = await asyncio.create_subprocess_exec(
                 *args,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )
+            self._current_proc = proc
+            err = b""
             try:
                 _, err = await asyncio.wait_for(proc.communicate(), timeout=8.0)
             except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
                 log.warning("[AUDIO] aplay timed out (killed) for %s", path)
-                return
-        if proc.returncode != 0:
+                if proc.returncode is None:
+                    proc.kill()
+                    await proc.wait()
+            except BaseException:
+                if proc.returncode is None:
+                    proc.kill()
+                    await proc.wait()
+                raise
+            finally:
+                if self._current_proc is proc:
+                    self._current_proc = None
+        rc = proc.returncode
+        # rc == -9 (SIGKILL) is expected when this clip was preempted by a later cue
+        if rc not in (0, -9) and rc is not None and err:
             log.warning("[AUDIO] aplay rc=%s for %s: %s",
-                        proc.returncode, path, err.decode(errors="replace").strip())
+                        rc, path, err.decode(errors="replace").strip())
 
     def _beep_wav(self, hz: int, ms: int) -> str:
         key = (hz, ms)
