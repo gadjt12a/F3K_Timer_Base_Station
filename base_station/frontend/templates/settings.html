@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="settings()" x-init="init()">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">Settings</h1>
+    <span class="text-sm text-gray-300" x-text="msg"></span>
+  </div>
+
+  <!-- ── Audio output / Bluetooth speaker ── -->
+  <section class="bg-gray-800 rounded-lg p-5 mb-6">
+    <h2 class="text-lg font-semibold mb-4 text-gray-200">Audio Output</h2>
+
+    <div class="flex items-center gap-4 mb-4 text-sm">
+      <span class="text-gray-400">Bluetooth:</span>
+      <span :class="audio.powered ? 'text-green-400' : 'text-red-400'"
+            x-text="audio.powered ? 'adapter on' : 'adapter off'"></span>
+      <span class="text-gray-500">·</span>
+      <span class="text-gray-400">Active device:</span>
+      <span class="font-mono text-gray-200 text-xs" x-text="audio.active_device"></span>
+    </div>
+
+    <!-- Volume -->
+    <div class="mb-5">
+      <div class="flex items-center gap-4">
+        <label class="text-gray-300 w-20">Volume</label>
+        <input type="range" min="0" max="100" step="5" class="flex-1"
+               x-model.number="audio.volume" @change="setVolume()">
+        <span class="w-12 text-right font-mono" x-text="(audio.volume ?? 0) + '%'"></span>
+        <button @click="test()"
+                class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-sm font-medium">Test</button>
+      </div>
+      <p class="text-xs text-gray-500 mt-1" x-show="audio.volume === null">
+        No Bluetooth speaker connected — volume applies once a speaker is connected.</p>
+    </div>
+
+    <!-- Paired speakers -->
+    <h3 class="text-sm font-semibold text-gray-400 mb-2">Paired speakers</h3>
+    <table class="w-full text-sm mb-4">
+      <tbody>
+        <template x-for="d in audio.paired" :key="d.mac">
+          <tr class="border-b border-gray-700">
+            <td class="py-2" x-text="d.name"></td>
+            <td class="py-2 font-mono text-xs text-gray-500" x-text="d.mac"></td>
+            <td class="py-2">
+              <span :class="d.connected ? 'text-green-400' : 'text-gray-500'"
+                    x-text="d.connected ? 'connected' : 'idle'"></span>
+            </td>
+            <td class="py-2 text-right">
+              <button x-show="!d.connected" @click="connect(d.mac)"
+                      class="text-green-400 hover:text-green-300 text-xs">Connect</button>
+              <button x-show="d.connected" @click="disconnect(d.mac)"
+                      class="text-red-400 hover:text-red-300 text-xs">Disconnect</button>
+            </td>
+          </tr>
+        </template>
+        <tr x-show="audio.paired.length === 0">
+          <td colspan="4" class="py-3 text-gray-500">No paired speakers.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Scan / pair new -->
+    <div class="flex items-center gap-3 mb-2">
+      <button @click="scan()" :disabled="scanBusy"
+              class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm disabled:opacity-50"
+              x-text="scanBusy ? 'Scanning…' : 'Scan for new speaker'"></button>
+      <span class="text-xs text-gray-500">Put the speaker in pairing mode first.</span>
+    </div>
+    <table class="w-full text-sm" x-show="discovered.length">
+      <tbody>
+        <template x-for="d in discovered" :key="d.mac">
+          <tr class="border-b border-gray-700">
+            <td class="py-2" x-text="d.name"></td>
+            <td class="py-2 font-mono text-xs text-gray-500" x-text="d.mac"></td>
+            <td class="py-2 text-right">
+              <button @click="connect(d.mac)"
+                      class="text-green-400 hover:text-green-300 text-xs">Pair &amp; connect</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── Connected timers (watches) ── -->
+  <section class="bg-gray-800 rounded-lg p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-gray-200">Connected Timers</h2>
+      <span class="text-xs text-gray-500" x-text="timers.length + ' connected'"></span>
+    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-gray-400 text-left border-b border-gray-700">
+          <th class="pb-2 w-12">ID</th>
+          <th class="pb-2">MAC</th>
+          <th class="pb-2">IP</th>
+          <th class="pb-2">Last pilot</th>
+          <th class="pb-2 text-right">Last PING</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="t in timers" :key="t.id">
+          <tr class="border-b border-gray-700">
+            <td class="py-2 font-bold text-yellow-400" x-text="t.id"></td>
+            <td class="py-2 font-mono text-xs text-gray-400" x-text="t.mac"></td>
+            <td class="py-2 font-mono text-xs text-gray-400" x-text="t.ip"></td>
+            <td class="py-2" x-text="t.last_pilot_name || '—'"></td>
+            <td class="py-2 text-right font-mono" :class="pingClass(t.last_ping_age_s)"
+                x-text="t.last_ping_age_s + 's ago'"></td>
+          </tr>
+        </template>
+        <tr x-show="timers.length === 0">
+          <td colspan="5" class="py-3 text-gray-500">No timers connected.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="text-xs text-gray-500 mt-2">
+      "Last pilot" is the pilot on this timer's most recent recorded flight. Updates live.</p>
+  </section>
+
+  <!-- ── Connection log ── -->
+  <section class="bg-gray-800 rounded-lg p-5 mb-6">
+    <h2 class="text-lg font-semibold mb-4 text-gray-200">Connection Log</h2>
+    <table class="w-full text-sm">
+      <tbody>
+        <template x-for="(e, i) in events" :key="i">
+          <tr class="border-b border-gray-700">
+            <td class="py-1.5 font-mono text-xs text-gray-500 w-24" x-text="fmtTime(e.t)"></td>
+            <td class="py-1.5 w-28">
+              <span class="text-xs font-semibold px-2 py-0.5 rounded" :class="eventClass(e.kind)"
+                    x-text="e.kind"></span>
+            </td>
+            <td class="py-1.5 w-12 font-bold text-yellow-400" x-text="e.id ?? ''"></td>
+            <td class="py-1.5 font-mono text-xs text-gray-400" x-text="e.mac || ''"></td>
+            <td class="py-1.5 text-xs text-gray-500" x-text="e.detail"></td>
+          </tr>
+        </template>
+        <tr x-show="events.length === 0">
+          <td colspan="5" class="py-3 text-gray-500">No connection events yet.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+function settings() {
+  return {
+    audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null },
+    discovered: [], scanBusy: false, msg: '',
+    timers: [], events: [],
+
+    async init() {
+      await this.loadAudio();
+      await this.loadTimers();
+      setInterval(() => this.loadTimers(), 3000);
+    },
+    async loadAudio() {
+      this.audio = await (await fetch('/api/audio/status')).json();
+      if (this.audio.volume === null || this.audio.volume === undefined) {
+        this.audio.volume = this.audio.saved_volume ?? 45;
+      }
+    },
+    async loadTimers() {
+      const r = await (await fetch('/api/timers')).json();
+      this.timers = r.timers; this.events = r.events;
+    },
+    async setVolume() {
+      const r = await (await fetch('/api/audio/volume?level=' + this.audio.volume, { method: 'POST' })).json();
+      this.msg = r.ok ? ('Volume set to ' + r.volume + '%') : (r.error || 'volume error');
+    },
+    async test() { await fetch('/api/audio/test', { method: 'POST' }); this.msg = 'Playing test…'; },
+    async scan() {
+      this.scanBusy = true; this.msg = 'Scanning…';
+      const r = await (await fetch('/api/bt/scan?seconds=8', { method: 'POST' })).json();
+      this.discovered = r.devices; this.scanBusy = false;
+      this.msg = r.devices.length + ' new device(s) found';
+    },
+    async connect(mac) {
+      this.msg = 'Connecting…';
+      const r = await (await fetch('/api/bt/connect?mac=' + encodeURIComponent(mac), { method: 'POST' })).json();
+      this.msg = r.ok ? 'Connected' : ('Connect failed: ' + (r.error || ''));
+      this.discovered = []; await this.loadAudio();
+    },
+    async disconnect(mac) {
+      const r = await (await fetch('/api/bt/disconnect?mac=' + encodeURIComponent(mac), { method: 'POST' })).json();
+      this.msg = r.ok ? 'Disconnected' : 'Disconnect failed'; await this.loadAudio();
+    },
+    fmtTime(epoch) { return new Date(epoch * 1000).toLocaleTimeString(); },
+    pingClass(age) { return age > 60 ? 'text-red-400' : age > 35 ? 'text-yellow-400' : 'text-green-400'; },
+    eventClass(kind) {
+      return {
+        connect: 'bg-green-900 text-green-300',
+        disconnect: 'bg-gray-700 text-gray-300',
+        evicted: 'bg-yellow-900 text-yellow-300',
+        ping_timeout: 'bg-red-900 text-red-300',
+      }[kind] || 'bg-gray-700 text-gray-300';
+    },
+  };
+}
+</script>
+{% endblock %}

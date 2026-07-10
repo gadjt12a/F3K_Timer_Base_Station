@@ -8,13 +8,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from frontend.audio import play_cue
+from frontend.audio import engine
 
 log = logging.getLogger("f3k")
-
-# Seconds-remaining values that trigger an audio cue (milestone + per-second below 10)
-_PREP_CUES = frozenset({30, 20, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1})
-_LANDING_CUES = frozenset({30, 20, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1})
 
 
 class CompetitionStateMachine:
@@ -89,6 +85,7 @@ class CompetitionStateMachine:
             "pilots": pilot_names,
             "pilot_id_names": [(r["id"], r["name"]) for r in real_pilots],
         }
+        engine.select_profile(rnd["discipline"], rnd["working_time_s"])
         log.info(
             "Heat loaded: round=%d heat=%s pilots=%s",
             rnd["round_no"], heat_letter, pilot_names,
@@ -188,14 +185,10 @@ class CompetitionStateMachine:
         pilots_str = ",".join(f"{pid}:{name}" for pid, name in d["pilot_id_names"])
         if pilots_str:
             await self._server.broadcast(f"PILOTS {pilots_str}")
-        await play_cue(f"announce_round_{d['round_no']}_heat_{d['heat']}")
 
         for remaining in range(d["prep_time_s"], 0, -1):
             await self._broadcast_tick(remaining)
-            if remaining == d["focus_time_s"]:
-                await play_cue("focus_bell")
-            if remaining in _PREP_CUES:
-                await play_cue(f"prep_{remaining}s")
+            engine.cue("prep", remaining)
             if remaining <= 10:
                 await self._server.broadcast(f"COUNT {remaining}")
             await asyncio.sleep(1)
@@ -205,25 +198,24 @@ class CompetitionStateMachine:
         # ── WORKING ──────────────────────────────────────────────────
         self._state = "WORKING"
         await self._server.broadcast("START")
-        await play_cue("window_open")
+        engine.horn()
 
         for remaining in range(d["working_time_s"], 0, -1):
             await self._broadcast_tick(remaining)
-            if remaining <= d["count_last_s"]:
-                await play_cue(f"working_{remaining}s")
+            engine.cue("working", remaining)
             await asyncio.sleep(1)
 
         await self._server.broadcast("STOP")
-        await play_cue("window_close")
+        engine.horn()
 
         # ── LANDING ──────────────────────────────────────────────────
         self._state = "LANDING"
 
         for remaining in range(d["land_time_s"], 0, -1):
             await self._broadcast_tick(remaining)
-            if remaining in _LANDING_CUES:
-                await play_cue(f"landing_{remaining}s")
+            engine.cue("landing", remaining)
             await asyncio.sleep(1)
+        engine.cue("landing", 0)   # final end-of-landing long beep
 
         # ── Done ─────────────────────────────────────────────────────
         self._state = "IDLE"

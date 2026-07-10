@@ -2,6 +2,7 @@
 """F3K Base Station — TCP server on port 8765."""
 
 import asyncio
+import collections
 import logging
 import os
 import sys
@@ -30,7 +31,9 @@ def parse_params(parts):
     return result
 
 
-PING_TIMEOUT_S = 90   # evict if no PING received within this window
+PING_TIMEOUT_S = 90       # evict if no PING received within this window
+KEEPALIVE_INTERVAL_S = 15  # proactively ping timers so the link never idles
+BT_RECONNECT_INTERVAL_S = 30  # re-check/reconnect the BT speaker this often
 
 class TimerClient:
     def __init__(self, reader, writer, server):
@@ -41,6 +44,8 @@ class TimerClient:
         self.timer_id = None
         self.addr = writer.get_extra_info("peername")
         self.last_ping_at = time.monotonic()
+        self.connected_at = time.time()
+        self.last_pilot_id = None   # pilot of the most recent FLIGHT from this timer
 
     async def send(self, msg: str):
         self.writer.write((msg + "\n").encode())
@@ -63,6 +68,7 @@ class TimerClient:
             pass
         finally:
             self.server.remove(self)
+            self.server.log_event("disconnect", self.mac, self.timer_id, str(self.addr))
             log.info(f"Disconnected: {self.addr} (id={self.timer_id})")
 
     async def _dispatch(self, line: str):
@@ -77,6 +83,7 @@ class TimerClient:
             self.server.evict_mac(self.mac)   # close any stale connection with same MAC
             self.timer_id = self.server.next_id()
             self.server.add(self)
+            self.server.log_event("connect", self.mac, self.timer_id, str(self.addr))
             await self.send(f"ASSIGN id={self.timer_id}")
             asyncio.create_task(self.server.state_machine.send_catchup(self.send))
 
@@ -84,9 +91,15 @@ class TimerClient:
             params = parse_params(parts[1:])
             pilot_id = int(params.get("pilot", 0))
             dur_ms = int(params.get("dur", 0))
-            self.server.record_flight(pilot_id, dur_ms)
-            asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
-            log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
+            if pilot_id <= 0:
+                # No bound pilot (e.g. a timer that reconnected and lost its selection).
+                # Park it rather than writing an orphan row into the flight log.
+                log.warning(f"FLIGHT with no pilot (dur={dur_ms}ms) — ignored")
+            else:
+                self.last_pilot_id = pilot_id
+                self.server.record_flight(pilot_id, dur_ms)
+                asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
+                log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
 
         elif cmd == "PING":
             self.last_ping_at = time.monotonic()
@@ -100,6 +113,7 @@ class F3KServer:
     def __init__(self):
         self._clients: dict[int, TimerClient] = {}
         self._id_counter = 1
+        self.events = collections.deque(maxlen=100)  # connection diagnostics ring buffer
         self.db = init_db(DB_PATH)
         web_app.state.server = self
         self.state_machine = CompetitionStateMachine(self)
@@ -123,8 +137,40 @@ class F3KServer:
         stale = [c for c in self._clients.values() if c.mac == mac]
         for c in stale:
             log.info(f"Evicting stale connection from MAC {mac} (id={c.timer_id})")
+            self.log_event("evicted", mac, c.timer_id, "reconnect from same MAC")
             self.remove(c)
             c.close()
+
+    def log_event(self, kind: str, mac=None, timer_id=None, detail: str = ""):
+        """Record a connection-lifecycle event for the diagnostics view."""
+        self.events.append({
+            "t": time.time(), "kind": kind, "mac": mac, "id": timer_id, "detail": detail,
+        })
+
+    def timers_info(self) -> list[dict]:
+        """Snapshot of currently-connected timers for the diagnostics view."""
+        now = time.monotonic()
+        out = []
+        for c in self._clients.values():
+            pilot_name = None
+            if c.last_pilot_id:
+                row = self.db.execute(
+                    "SELECT name FROM pilots WHERE id = ?", (c.last_pilot_id,)
+                ).fetchone()
+                pilot_name = row["name"] if row else f"Pilot {c.last_pilot_id}"
+            out.append({
+                "id": c.timer_id,
+                "mac": c.mac,
+                "ip": c.addr[0] if c.addr else None,
+                "last_ping_age_s": round(now - c.last_ping_at, 1),
+                "connected_at": c.connected_at,
+                "last_pilot_id": c.last_pilot_id,
+                "last_pilot_name": pilot_name,
+            })
+        return sorted(out, key=lambda t: (t["id"] is None, t["id"]))
+
+    def recent_events(self, limit: int = 40) -> list[dict]:
+        return list(self.events)[-limit:][::-1]   # newest first
 
     async def _watchdog(self):
         """Periodically evict connections that have stopped sending PINGs."""
@@ -135,8 +181,43 @@ class F3KServer:
                      if now - c.last_ping_at > PING_TIMEOUT_S]
             for c in stale:
                 log.warning(f"PING timeout — evicting id={c.timer_id} {c.addr}")
+                self.log_event("ping_timeout", c.mac, c.timer_id,
+                               f"no PING for >{PING_TIMEOUT_S}s")
                 self.remove(c)
                 c.close()
+
+    async def _bt_reconnect(self):
+        """Reconnect the configured Bluetooth speaker if it drops (idle/out of range)."""
+        from frontend import audio_control
+        while True:
+            await asyncio.sleep(BT_RECONNECT_INTERVAL_S)
+            mac = audio_control.load_config().get("bt_mac")
+            if not mac:
+                continue
+            try:
+                status = await audio_control.bt_status()
+                if status.get("connected_mac") != mac:
+                    log.info(f"[AUDIO] speaker {mac} disconnected — reconnecting")
+                    r = await audio_control.bt_connect(mac)
+                    log.info("[AUDIO] speaker reconnected" if r.get("ok")
+                             else f"[AUDIO] reconnect failed: {r.get('error')}")
+            except Exception:
+                log.exception("[AUDIO] bt reconnect loop error")
+
+    async def _keepalive(self):
+        """Proactively send a keepalive to every timer so the link never idles.
+
+        The primary fix for the mid-round drop is firmware-side (WiFi.setSleep(false)),
+        but sending regular traffic here is cheap insurance against the watch's
+        RX-timeout reconnect during quiet prep periods. Unsolicited PONG is treated
+        as a keepalive by the timer (resets its _lastRxMs)."""
+        while True:
+            await asyncio.sleep(KEEPALIVE_INTERVAL_S)
+            for c in list(self._clients.values()):
+                try:
+                    await c.send("PONG")
+                except Exception:
+                    pass
 
     def record_flight(self, pilot_id: int, dur_ms: int):
         self.db.execute(
@@ -190,6 +271,8 @@ class F3KServer:
         log.info(f"F3K Base Station listening on 0.0.0.0:{PORT}")
         async with srv:
             asyncio.create_task(self._watchdog())
+            asyncio.create_task(self._keepalive())
+            asyncio.create_task(self._bt_reconnect())
             asyncio.create_task(self._web())
             if sys.stdin.isatty():
                 asyncio.create_task(self._cli())

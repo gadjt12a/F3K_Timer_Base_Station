@@ -5,6 +5,9 @@ from fastapi import FastAPI, Form, Request, WebSocket
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from frontend import audio_control
+from frontend.audio import engine
+
 
 class ConnectionManager:
     def __init__(self) -> None:
@@ -419,3 +422,57 @@ async def api_run_abort():
 @app.get("/api/run/state")
 async def api_run_state():
     return app.state.state_machine.get_status()
+
+
+# ---------------------------------------------------------------------------
+# Settings — audio output / Bluetooth speaker + timer diagnostics
+# ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+async def _apply_saved_volume():
+    await engine.apply_saved_volume()
+
+
+@app.get("/settings")
+async def settings_get(request: Request):
+    return templates.TemplateResponse(request, "settings.html", {"active": "settings"})
+
+
+@app.get("/api/audio/status")
+async def api_audio_status():
+    status = await audio_control.bt_status()
+    status["volume"] = await audio_control.get_volume()
+    status["saved_volume"] = audio_control.load_config().get("volume")
+    return status
+
+
+@app.post("/api/audio/volume")
+async def api_audio_volume(level: int):
+    return await audio_control.set_volume(level)
+
+
+@app.post("/api/audio/test")
+async def api_audio_test():
+    engine.play_test()
+    return {"ok": True}
+
+
+@app.post("/api/bt/scan")
+async def api_bt_scan(seconds: int = 8):
+    return {"devices": await audio_control.bt_scan(seconds)}
+
+
+@app.post("/api/bt/connect")
+async def api_bt_connect(mac: str):
+    return await audio_control.bt_connect(mac)
+
+
+@app.post("/api/bt/disconnect")
+async def api_bt_disconnect(mac: str):
+    return await audio_control.bt_disconnect(mac)
+
+
+@app.get("/api/timers")
+async def api_timers():
+    srv = app.state.server
+    return {"timers": srv.timers_info(), "events": srv.recent_events()}

@@ -15,6 +15,7 @@
         <a href="/run" class="hover:text-yellow-400 {% if active == 'run' %}text-yellow-400{% else %}text-gray-300{% endif %}">Run</a>
         <a href="/results" class="hover:text-yellow-400 {% if active == 'results' %}text-yellow-400{% else %}text-gray-300{% endif %}">Results</a>
         <a href="/export" class="hover:text-yellow-400 {% if active == 'export' %}text-yellow-400{% else %}text-gray-300{% endif %}">Export</a>
+        <a href="/settings" class="hover:text-yellow-400 {% if active == 'settings' %}text-yellow-400{% else %}text-gray-300{% endif %}">Settings</a>
     </nav>
     <main class="{% block main_class %}p-6 max-w-4xl{% endblock %}">
         {% block content %}{% endblock %}
