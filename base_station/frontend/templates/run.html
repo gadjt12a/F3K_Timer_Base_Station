@@ -277,7 +277,7 @@ function runner(initialState) {
 
         <!-- State badge + countdown — flex-1 fills available height -->
         <div id="timer-panel"
-             class="flex-1 min-h-0 bg-gray-800 rounded-lg p-6 text-center flex flex-col justify-center">
+             class="flex-1 min-h-0 overflow-hidden bg-gray-800 rounded-lg p-6 text-center flex flex-col justify-center">
             <div :class="stateClass()"
                  class="inline-block px-4 py-1 rounded-full text-sm font-bold tracking-widest uppercase mb-4"
                  x-text="state"></div>
@@ -375,10 +375,11 @@ function runner(initialState) {
         var w = panel.clientWidth  - 48;   // p-6 padding (24px each side)
         var h = panel.clientHeight - 48;
         if (w <= 0 || h <= 0) return;
-        // "10:00" = 5 monospace chars; char width ≈ 0.60 × font-size
-        var byWidth  = w / (5 * 0.60);
-        var byHeight = h * 0.50;           // number uses ~half the panel height
-        var px = Math.max(48, Math.min(Math.floor(Math.min(byWidth, byHeight)), 400));
+        // "10:00" = 5 monospace chars; char width ≈ 0.58 × font-size
+        var byWidth  = w / (5 * 0.58);
+        // Number fills ~75% of panel height; rest for badge + heat info
+        var byHeight = h * 0.75;
+        var px = Math.max(48, Math.floor(Math.min(byWidth, byHeight)));
         num.style.fontSize = px + 'px';
     }
 
