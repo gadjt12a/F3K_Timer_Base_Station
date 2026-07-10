@@ -3,19 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>F3K Base Station</title>
+    <title>Glide Base</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
-    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex gap-8 text-sm font-medium">
-        <span class="text-yellow-400 font-bold tracking-wide">F3K BASE</span>
-        <a href="/setup" class="hover:text-yellow-400 {% if active == 'setup' %}text-yellow-400{% else %}text-gray-300{% endif %}">Setup</a>
+    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex gap-8 text-sm font-medium items-center">
+        <span class="text-yellow-400 font-bold tracking-wide">GLIDE BASE</span>
+        <a href="/setup" class="hover:text-yellow-400 {% if active == 'setup' %}text-yellow-400{% else %}text-gray-300{% endif %}">Comp Setup</a>
         <a href="/rounds" class="hover:text-yellow-400 {% if active == 'rounds' %}text-yellow-400{% else %}text-gray-300{% endif %}">Rounds</a>
         <a href="/run" class="hover:text-yellow-400 {% if active == 'run' %}text-yellow-400{% else %}text-gray-300{% endif %}">Run</a>
         <a href="/results" class="hover:text-yellow-400 {% if active == 'results' %}text-yellow-400{% else %}text-gray-300{% endif %}">Results</a>
-        <a href="/import" class="hover:text-yellow-400 {% if active == 'import' %}text-yellow-400{% else %}text-gray-300{% endif %}">Import</a>
-        <a href="/export" class="hover:text-yellow-400 {% if active == 'export' %}text-yellow-400{% else %}text-gray-300{% endif %}">Export</a>
+        <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
+            <button class="flex items-center gap-1 hover:text-yellow-400 {% if active in ['import', 'export'] %}text-yellow-400{% else %}text-gray-300{% endif %}">
+                GliderScore
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                </svg>
+            </button>
+            <div x-show="open" class="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg py-1 z-50 min-w-max">
+                <a href="/import" class="block px-4 py-2 hover:bg-gray-700 hover:text-yellow-400 {% if active == 'import' %}text-yellow-400{% else %}text-gray-300{% endif %}">Import</a>
+                <a href="/export" class="block px-4 py-2 hover:bg-gray-700 hover:text-yellow-400 {% if active == 'export' %}text-yellow-400{% else %}text-gray-300{% endif %}">Export</a>
+            </div>
+        </div>
         <a href="/settings" class="hover:text-yellow-400 {% if active == 'settings' %}text-yellow-400{% else %}text-gray-300{% endif %}">Settings</a>
     </nav>
     <main class="{% block main_class %}p-6 max-w-4xl{% endblock %}">

@@ -39,7 +39,7 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-app = FastAPI(title="F3K Base Station")
+app = FastAPI(title="Glide Base")
 app.state.ws_manager = manager
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
