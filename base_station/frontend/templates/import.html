@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1 class="text-xl font-bold text-gray-100 mb-5">Import from GliderScore</h1>
+
+<!-- Step 1: Upload -->
+<div class="mb-5 bg-gray-800 rounded-lg p-5">
+    <h2 class="font-semibold text-gray-100 mb-1">Step 1 — Upload GliderScore database</h2>
+    <p class="text-sm text-gray-400 mb-4">
+        Copy <code class="bg-gray-700 px-1.5 py-0.5 rounded text-gray-200">GliderScoreData.mdb</code>
+        from your GliderScore folder (usually <code class="bg-gray-700 px-1.5 py-0.5 rounded text-gray-200">C:\GliderScore6\</code>)
+        and upload it here. The file stays on the Pi until you upload a new one.
+    </p>
+    <form method="post" action="/import/upload" enctype="multipart/form-data"
+          class="flex flex-wrap items-center gap-3">
+        <input type="file" name="file" accept=".mdb" required
+               class="text-sm text-gray-300
+                      file:mr-3 file:py-1.5 file:px-4 file:rounded file:border-0
+                      file:bg-gray-700 file:text-gray-200 file:cursor-pointer
+                      hover:file:bg-gray-600 file:transition-colors">
+        <button type="submit"
+                class="bg-blue-700 hover:bg-blue-600 px-4 py-1.5 rounded
+                       font-semibold text-sm transition-colors">
+            Upload
+        </button>
+    </form>
+    {% if upload_exists %}
+    <p class="text-xs text-gray-500 mt-3">A database file is already loaded — uploading replaces it.</p>
+    {% endif %}
+</div>
+
+<!-- Error banner -->
+{% if error %}
+<div class="mb-5 bg-red-900/50 border border-red-700 rounded-lg p-4 text-sm text-red-300">
+    {{ error }}
+</div>
+{% endif %}
+
+<!-- Step 2: Competition picker -->
+{% if competitions %}
+<div class="bg-gray-800 rounded-lg overflow-hidden">
+    <div class="px-4 py-3 bg-gray-900 border-b border-gray-700">
+        <h2 class="font-semibold text-gray-100">Step 2 — Select competition to import</h2>
+        <p class="text-xs text-gray-400 mt-0.5">
+            Only F3K and F5K competitions shown. Pilots, rounds and group draw are all imported.
+            Each competition can only be imported once.
+        </p>
+    </div>
+
+    {% for comp in competitions %}
+    <div class="px-4 py-3 flex items-center justify-between gap-4
+                {% if not loop.last %}border-b border-gray-700{% endif %}">
+        <div class="min-w-0">
+            <div class="flex items-center gap-3 mb-1 flex-wrap">
+                <span class="font-semibold text-gray-100">{{ comp.name }}</span>
+                <span class="text-xs px-2 py-0.5 rounded font-semibold
+                    {% if comp.discipline == 'F3K' %}bg-orange-900/60 text-orange-300
+                    {% else %}bg-fuchsia-900/60 text-fuchsia-300{% endif %}">
+                    {{ comp.discipline }}
+                </span>
+                <span class="font-mono text-xs text-gray-500">CompNo {{ comp.comp_no }}</span>
+            </div>
+            <div class="text-xs text-gray-400">
+                {{ comp.date }}
+                {% if comp.venue %} · {{ comp.venue }}{% endif %}
+                · {{ comp.pilot_count }} pilot{{ 's' if comp.pilot_count != 1 else '' }}
+                · {{ comp.round_count }} round{{ 's' if comp.round_count != 1 else '' }} with tasks set
+            </div>
+        </div>
+        <form method="post" action="/import/create" class="flex-shrink-0">
+            <input type="hidden" name="comp_no" value="{{ comp.comp_no }}">
+            <button type="submit"
+                    class="bg-green-700 hover:bg-green-600 px-4 py-1.5 rounded
+                           font-semibold text-sm transition-colors whitespace-nowrap">
+                Import
+            </button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+
+{% elif upload_exists and not error %}
+<p class="text-gray-500 text-sm">No F3K or F5K competitions found in the uploaded database.</p>
+{% endif %}
+
+{% endblock %}

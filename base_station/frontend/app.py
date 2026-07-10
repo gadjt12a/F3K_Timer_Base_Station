@@ -1,9 +1,11 @@
 import csv
 import io
 import json
+import os
+import urllib.parse
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request, WebSocket
+from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -58,6 +60,8 @@ def _gs_time(ms: int) -> str:
 
 
 templates.env.filters["fmt_ms"] = _fmt_ms
+
+GS_UPLOAD_PATH = os.path.expanduser("~/f3k_base/gs_upload.mdb")
 
 
 def _db():
@@ -432,6 +436,49 @@ async def results_get(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Import — GliderScore .mdb via mdbtools
+# ---------------------------------------------------------------------------
+
+@app.get("/import")
+async def import_get(request: Request, error: str = None):
+    from frontend import gs_import as gsi
+    competitions: list = []
+    upload_exists = os.path.exists(GS_UPLOAD_PATH)
+    read_error: str | None = None
+    if upload_exists and not error:
+        try:
+            competitions = gsi.list_competitions(GS_UPLOAD_PATH)
+        except Exception as exc:
+            read_error = str(exc)
+    return templates.TemplateResponse(request, "import.html", {
+        "active": "import",
+        "competitions": competitions,
+        "upload_exists": upload_exists,
+        "error": error or read_error,
+    })
+
+
+@app.post("/import/upload")
+async def import_upload(file: UploadFile = File(...)):
+    content = await file.read()
+    with open(GS_UPLOAD_PATH, "wb") as f:
+        f.write(content)
+    return RedirectResponse("/import", status_code=303)
+
+
+@app.post("/import/create")
+async def import_create(comp_no: int = Form(...)):
+    from frontend import gs_import as gsi
+    try:
+        gsi.import_competition(GS_UPLOAD_PATH, comp_no, _db())
+    except Exception as exc:
+        return RedirectResponse(
+            f"/import?error={urllib.parse.quote(str(exc))}", status_code=303
+        )
+    return RedirectResponse("/setup", status_code=303)
+
+
+# ---------------------------------------------------------------------------
 # Export — GliderScore CSV (15-field External Scoring System format)
 # ---------------------------------------------------------------------------
 
@@ -488,7 +535,7 @@ async def export_csv(comp_id: int):
         ).fetchall()
         for grp in groups:
             pilots = db.execute(
-                """SELECT p.id, p.name FROM pilots p
+                """SELECT p.id, p.name, p.gliderscore_pilot_no FROM pilots p
                    JOIN group_pilots gp ON gp.pilot_id = p.id
                    WHERE gp.group_id = ? ORDER BY p.name""",
                 (grp["id"],),
@@ -502,10 +549,11 @@ async def export_csv(comp_id: int):
                 ).fetchall()
                 times = [f["duration_ms"] for f in flights[:7]]
                 data = [_gs_time(t) for t in times] + ["0"] * (7 - len(times))
+                pilot_no = pilot["gliderscore_pilot_no"] or pilot["id"]
                 writer.writerow([
                     comp_no, task_no,
                     rnd["round_no"], grp["group_no"], 0,
-                    pilot["id"],
+                    pilot_no,
                     *data,
                     0, pilot["name"],
                 ])

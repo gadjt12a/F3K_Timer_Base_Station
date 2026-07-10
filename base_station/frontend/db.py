@@ -15,8 +15,9 @@ def init_db(path: str) -> sqlite3.Connection:
 
     db.executescript("""
         CREATE TABLE IF NOT EXISTS pilots (
-            id   INTEGER PRIMARY KEY,
-            name TEXT NOT NULL
+            id                   INTEGER PRIMARY KEY,
+            name                 TEXT NOT NULL,
+            gliderscore_pilot_no INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS flights (
@@ -79,8 +80,16 @@ def init_db(path: str) -> sqlite3.Connection:
     # Extend tables with new columns — no-op if they already exist
     _add_flight_columns(db)
     _migrate_groups(db)
+    _migrate_pilots(db)
 
     return db
+
+
+def _migrate_pilots(db: sqlite3.Connection) -> None:
+    existing = {row[1] for row in db.execute("PRAGMA table_info(pilots)")}
+    if "gliderscore_pilot_no" not in existing:
+        db.execute("ALTER TABLE pilots ADD COLUMN gliderscore_pilot_no INTEGER")
+    db.commit()
 
 
 def _migrate_groups(db: sqlite3.Connection) -> None:
