@@ -1,8 +1,10 @@
+import csv
+import io
 import json
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request, WebSocket
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from frontend import audio_control
@@ -46,6 +48,13 @@ def _fmt_ms(ms) -> str:
     total_s = ms // 1000
     centis = (ms % 1000) // 10
     return f"{total_s // 60}:{total_s % 60:02d}.{centis:02d}"
+
+
+def _gs_time(ms: int) -> str:
+    """GliderScore mmss.sss format: 83400ms → '123.400', 600000ms → '1000.000'."""
+    total_s = ms // 1000
+    millis = ms % 1000
+    return f"{total_s // 60}{total_s % 60:02d}.{millis:03d}"
 
 
 templates.env.filters["fmt_ms"] = _fmt_ms
@@ -420,6 +429,94 @@ async def results_get(request: Request):
         "active": "results",
         "comp_data": comp_data,
     })
+
+
+# ---------------------------------------------------------------------------
+# Export — GliderScore CSV (15-field External Scoring System format)
+# ---------------------------------------------------------------------------
+
+_TASK_NO = {"F3K": 5, "F5K": 6}
+
+
+@app.get("/export")
+async def export_get(request: Request):
+    db = _db()
+    competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    comp_data = []
+    for comp in competitions:
+        flight_count = db.execute(
+            """SELECT COUNT(*) FROM flights f
+               JOIN groups g ON g.id = f.group_id
+               JOIN rounds r ON r.id = g.round_id
+               WHERE r.competition_id = ?""",
+            (comp["id"],),
+        ).fetchone()[0]
+        round_count = db.execute(
+            "SELECT COUNT(*) FROM rounds WHERE competition_id = ?", (comp["id"],)
+        ).fetchone()[0]
+        comp_data.append({
+            "comp": comp,
+            "round_count": round_count,
+            "flight_count": flight_count,
+        })
+    return templates.TemplateResponse(request, "export.html", {
+        "active": "export",
+        "comp_data": comp_data,
+    })
+
+
+@app.get("/export/{comp_id}/csv")
+async def export_csv(comp_id: int):
+    db = _db()
+    comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+    if not comp:
+        return RedirectResponse("/export", status_code=303)
+
+    comp_no = comp["gliderscore_comp_no"] or comp_id
+    task_no = _TASK_NO.get(comp["discipline"], 5)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+
+    rounds = db.execute(
+        "SELECT * FROM rounds WHERE competition_id = ? ORDER BY round_no", (comp_id,)
+    ).fetchall()
+
+    for rnd in rounds:
+        groups = db.execute(
+            "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (rnd["id"],)
+        ).fetchall()
+        for grp in groups:
+            pilots = db.execute(
+                """SELECT p.id, p.name FROM pilots p
+                   JOIN group_pilots gp ON gp.pilot_id = p.id
+                   WHERE gp.group_id = ? ORDER BY p.name""",
+                (grp["id"],),
+            ).fetchall()
+            for pilot in pilots:
+                flights = db.execute(
+                    """SELECT duration_ms FROM flights
+                       WHERE pilot_id = ? AND group_id = ?
+                       ORDER BY recorded_at""",
+                    (pilot["id"], grp["id"]),
+                ).fetchall()
+                times = [f["duration_ms"] for f in flights[:7]]
+                data = [_gs_time(t) for t in times] + ["0"] * (7 - len(times))
+                writer.writerow([
+                    comp_no, task_no,
+                    rnd["round_no"], grp["group_no"], 0,
+                    pilot["id"],
+                    *data,
+                    0, pilot["name"],
+                ])
+
+    name_safe = comp["name"].replace(" ", "_")
+    filename = f"{name_safe}_{comp['date']}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------------------------------------------------------------
