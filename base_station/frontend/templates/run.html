@@ -18,8 +18,32 @@ function runner(initialState) {
         ws: null,
         loadedGroupId: (initialState.loaded && initialState.loaded.group_id) || null,
         doneGroups: DONE_INIT,
+        timerFontSize: '9rem',
 
-        init() { this.connect(); },
+        init() {
+            this.connect();
+            this.$nextTick(() => {
+                const panel = this.$refs.timerPanel;
+                if (panel) {
+                    new ResizeObserver(() => this._scaleTimer()).observe(panel);
+                    this._scaleTimer();
+                }
+            });
+        },
+
+        _scaleTimer() {
+            const panel = this.$refs.timerPanel;
+            if (!panel) return;
+            // p-6 = 24px each side → 48px total on each axis
+            const w = panel.clientWidth  - 48;
+            const h = panel.clientHeight - 48;
+            // "MM:SS" = 5 monospace chars; each char width ≈ 0.60 × font-size
+            const byWidth  = w / (5 * 0.60);
+            // Number gets ~50% of panel height; rest is for state badge + heat info
+            const byHeight = h * 0.50;
+            const px = Math.max(48, Math.min(Math.floor(Math.min(byWidth, byHeight)), 400));
+            this.timerFontSize = px + 'px';
+        },
 
         connect() {
             const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -108,9 +132,14 @@ function runner(initialState) {
             this.flights = [];
         },
 
-        async markDone(groupId) {
-            await fetch(`/api/run/complete?group_id=${groupId}`, {method:'POST'});
-            this.doneGroups = new Set([...this.doneGroups, groupId]);
+        async toggleDone(groupId) {
+            if (this.doneGroups.has(groupId)) {
+                await fetch(`/api/run/uncomplete?group_id=${groupId}`, {method:'POST'});
+                this.doneGroups = new Set([...this.doneGroups].filter(id => id !== groupId));
+            } else {
+                await fetch(`/api/run/complete?group_id=${groupId}`, {method:'POST'});
+                this.doneGroups = new Set([...this.doneGroups, groupId]);
+            }
         },
 
         async startHeat() { await fetch('/api/run/start', {method:'POST'}); },
@@ -167,12 +196,12 @@ function runner(initialState) {
                                        disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
                             Load
                         </button>
-                        <button @click="markDone({{ gid }})"
-                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
-                                title="Mark heat complete"
-                                class="bg-green-700 hover:bg-green-600 disabled:opacity-40
-                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
-                            ✓
+                        <button @click="toggleDone({{ gid }})"
+                                :disabled="!doneGroups.has({{ gid }}) && state !== 'IDLE'"
+                                :class="doneGroups.has({{ gid }}) ? 'bg-gray-500 hover:bg-gray-400' : 'bg-green-700 hover:bg-green-600'"
+                                :title="doneGroups.has({{ gid }}) ? 'Undo' : 'Mark complete'"
+                                class="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors"
+                                x-text="doneGroups.has({{ gid }}) ? '↩' : '✓'">
                         </button>
                     </div>
                 </div>
@@ -209,12 +238,12 @@ function runner(initialState) {
                                        disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
                             Load
                         </button>
-                        <button @click="markDone({{ gid }})"
-                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
-                                title="Mark heat complete"
-                                class="bg-green-700 hover:bg-green-600 disabled:opacity-40
-                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
-                            ✓
+                        <button @click="toggleDone({{ gid }})"
+                                :disabled="!doneGroups.has({{ gid }}) && state !== 'IDLE'"
+                                :class="doneGroups.has({{ gid }}) ? 'bg-gray-500 hover:bg-gray-400' : 'bg-green-700 hover:bg-green-600'"
+                                :title="doneGroups.has({{ gid }}) ? 'Undo' : 'Mark complete'"
+                                class="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors"
+                                x-text="doneGroups.has({{ gid }}) ? '↩' : '✓'">
                         </button>
                     </div>
                 </div>
@@ -254,12 +283,12 @@ function runner(initialState) {
                                disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
                     Load
                 </button>
-                <button @click="markDone({{ gid }})"
-                        :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
-                        title="Mark heat complete"
-                        class="bg-green-700 hover:bg-green-600 disabled:opacity-40
-                               disabled:cursor-not-allowed px-2 py-1.5 rounded text-xs font-medium transition-colors">
-                    ✓ Done
+                <button @click="toggleDone({{ gid }})"
+                        :disabled="!doneGroups.has({{ gid }}) && state !== 'IDLE'"
+                        :class="doneGroups.has({{ gid }}) ? 'bg-gray-500 hover:bg-gray-400' : 'bg-green-700 hover:bg-green-600'"
+                        :title="doneGroups.has({{ gid }}) ? 'Undo done' : 'Mark heat complete'"
+                        class="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5 rounded text-xs font-medium transition-colors"
+                        x-text="doneGroups.has({{ gid }}) ? '↩ Undo' : '✓ Done'">
                 </button>
             </div>
         </div>
@@ -271,13 +300,14 @@ function runner(initialState) {
     <div class="flex-1 flex flex-col gap-4 min-w-0">
 
         <!-- State badge + countdown — grows to fill available height -->
-        <div class="flex-1 min-h-0 bg-gray-800 rounded-lg p-6 text-center flex flex-col justify-center">
+        <div x-ref="timerPanel"
+             class="flex-1 min-h-0 bg-gray-800 rounded-lg p-6 text-center flex flex-col justify-center">
             <div :class="stateClass()"
                  class="inline-block px-4 py-1 rounded-full text-sm font-bold tracking-widest uppercase mb-4"
                  x-text="state"></div>
 
             <div class="font-mono font-bold tracking-tight mb-2"
-                 style="font-size: clamp(4rem, 10vw, 9rem); line-height: 1"
+                 :style="{ fontSize: timerFontSize, lineHeight: 1 }"
                  x-text="secondsRemaining > 0 ? fmt(secondsRemaining) : (loaded ? fmt(loaded.working_time_s) : '--:--')">
             </div>
 
@@ -315,11 +345,12 @@ function runner(initialState) {
                 ABORT
             </button>
             <!-- Mark Done shortcut: available when IDLE and a heat is loaded -->
-            <button @click="markDone(loadedGroupId)"
-                    x-show="state === 'IDLE' && loadedGroupId && !doneGroups.has(loadedGroupId)"
-                    class="bg-green-700 hover:bg-green-600 px-4 py-3 rounded-lg font-bold text-lg transition-colors"
-                    title="Mark this heat as complete">
-                ✓ Done
+            <button @click="toggleDone(loadedGroupId)"
+                    x-show="state === 'IDLE' && loadedGroupId"
+                    :class="doneGroups.has(loadedGroupId) ? 'bg-gray-600 hover:bg-gray-500' : 'bg-green-700 hover:bg-green-600'"
+                    class="px-4 py-3 rounded-lg font-bold text-lg transition-colors"
+                    :title="doneGroups.has(loadedGroupId) ? 'Unmark complete' : 'Mark this heat as complete'"
+                    x-text="doneGroups.has(loadedGroupId) ? '↩ Undo' : '✓ Done'">
             </button>
         </div>
 

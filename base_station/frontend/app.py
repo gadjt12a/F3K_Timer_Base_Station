@@ -686,6 +686,14 @@ async def api_run_complete(group_id: int):
     return {"ok": True}
 
 
+@app.post("/api/run/uncomplete")
+async def api_run_uncomplete(group_id: int):
+    db = _db()
+    db.execute("UPDATE groups SET completed = 0 WHERE id = ?", (group_id,))
+    db.commit()
+    return {"ok": True}
+
+
 @app.get("/api/run/state")
 async def api_run_state():
     return app.state.state_machine.get_status()
