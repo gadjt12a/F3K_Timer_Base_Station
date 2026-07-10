@@ -7,6 +7,7 @@ import io
 import logging
 import sqlite3
 import subprocess
+from datetime import datetime
 
 log = logging.getLogger("f3k")
 
@@ -24,6 +25,17 @@ _F3K_WT_S: dict[str, int] = {
 }
 # F5K: B = 7 min, all others 10 min
 _F5K_WT_S: dict[str, int] = {"B": 420}
+
+
+def _parse_date(gs_date: str) -> str:
+    """Convert GliderScore MM/DD/YY (or MM/DD/YYYY) date to YYYY-MM-DD."""
+    raw = gs_date.split(" ")[0]
+    for fmt in ("%m/%d/%y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return raw  # fallback: return as-is
 
 
 def _mdb_export(mdb_path: str, table: str) -> list[dict]:
@@ -76,7 +88,7 @@ def list_competitions(mdb_path: str) -> list[dict]:
             "comp_no": comp_no,
             "name": row["CompName"],
             "discipline": discipline,
-            "date": row["CompDate"].split(" ")[0],
+            "date": _parse_date(row["CompDate"]),
             "venue": row.get("CompVenue", ""),
             "pilot_count": pilot_counts.get(comp_no, 0),
             "round_count": round_counts.get(comp_no, 0),
@@ -116,7 +128,7 @@ def import_competition(mdb_path: str, gs_comp_no: int, db: sqlite3.Connection) -
         raise ValueError(f"CompNo {gs_comp_no} not found in .mdb")
 
     discipline = _GS_CLASS.get(comp_row["GSCompClass"], "F3K")
-    comp_date = comp_row["CompDate"].split(" ")[0]
+    comp_date = _parse_date(comp_row["CompDate"])
 
     # Pilots entered in this comp
     gs_pilot_nos = [

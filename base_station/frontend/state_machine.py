@@ -135,7 +135,7 @@ class CompetitionStateMachine:
         if pilots_str:
             await send_fn(f"PILOTS {pilots_str}")
         if self._state == "WORKING":
-            await send_fn(f"TASK wt={d['working_time_s']}")
+            await send_fn(f"TASK wt={d['working_time_s']} disc={d['discipline']}")
             await send_fn("START")
 
     async def on_flight(self, pilot_id: int, dur_ms: int) -> None:
@@ -189,8 +189,19 @@ class CompetitionStateMachine:
             self._state = "IDLE"
             await self._broadcast_ws({"type": "state_change", "state": "IDLE"})
 
+    @staticmethod
+    async def _tick_sleep(deadline: float) -> float:
+        """Sleep until deadline (monotonic), return next deadline (+1s).
+        Uses asyncio's internal clock so sleep drift is self-correcting."""
+        loop = asyncio.get_event_loop()
+        sleep_s = deadline - loop.time()
+        if sleep_s > 0:
+            await asyncio.sleep(sleep_s)
+        return deadline + 1.0
+
     async def _run_sequence(self) -> None:
         d = self._loaded
+        loop = asyncio.get_event_loop()
 
         # Audio is driven by a single lead-compensated schedule anchored to *now*
         # (the start of PREP), so cues fire early enough to overcome fixed output
@@ -206,6 +217,7 @@ class CompetitionStateMachine:
             await self._server.broadcast(f"PILOTS {pilots_str}")
 
         remaining = d["prep_time_s"]
+        deadline = loop.time() + 1.0
         while remaining > 0:
             # CD may jump the countdown ahead ("everyone ready — skip to 1:00").
             if self._skip_to is not None:
@@ -213,30 +225,33 @@ class CompetitionStateMachine:
                     remaining = self._skip_to
                     engine.reanchor(d["prep_time_s"] - remaining)  # fast-forward audio
                 self._skip_to = None
+                deadline = loop.time() + 1.0  # re-anchor after skip
             await self._broadcast_tick(remaining)
             if remaining <= 10:
                 await self._server.broadcast(f"COUNT {remaining}")
-            await asyncio.sleep(1)
+            deadline = await self._tick_sleep(deadline)
             remaining -= 1
 
-        await self._server.broadcast(f"TASK wt={d['working_time_s']}")
+        await self._server.broadcast(f"TASK wt={d['working_time_s']} disc={d['discipline']}")
 
         # ── WORKING ──────────────────────────────────────────────────
         self._state = "WORKING"
         await self._server.broadcast("START")
 
+        deadline = loop.time() + 1.0
         for remaining in range(d["working_time_s"], 0, -1):
             await self._broadcast_tick(remaining)
-            await asyncio.sleep(1)
+            deadline = await self._tick_sleep(deadline)
 
         await self._server.broadcast("STOP")
 
         # ── LANDING ──────────────────────────────────────────────────
         self._state = "LANDING"
 
+        deadline = loop.time() + 1.0
         for remaining in range(d["land_time_s"], 0, -1):
             await self._broadcast_tick(remaining)
-            await asyncio.sleep(1)
+            deadline = await self._tick_sleep(deadline)
 
         # ── Done ─────────────────────────────────────────────────────
         self._state = "IDLE"

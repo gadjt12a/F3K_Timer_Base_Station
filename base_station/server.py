@@ -101,6 +101,15 @@ class TimerClient:
                 asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
                 log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
 
+        elif cmd == "ALTITUDE":
+            params = parse_params(parts[1:])
+            pilot_id = int(params.get("pilot", 0))
+            flight_no = int(params.get("flight", 0))
+            alt_m = int(params.get("alt", 0))
+            if pilot_id > 0:
+                self.server.record_altitude(pilot_id, flight_no, alt_m)
+                log.info(f"Altitude: pilot={pilot_id} flight={flight_no} alt={alt_m}m")
+
         elif cmd == "PING":
             self.last_ping_at = time.monotonic()
             await self.send("PONG")
@@ -232,9 +241,34 @@ class F3KServer:
 
     def record_flight(self, pilot_id: int, dur_ms: int):
         group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
+        # Dedup: reject a repeat of the same flight arriving within 10 seconds
+        # (guards against watch sending FLIGHT twice due to any edge case)
+        dup = self.db.execute(
+            """SELECT id FROM flights
+               WHERE pilot_id = ? AND group_id IS ? AND duration_ms = ?
+               AND recorded_at >= datetime('now', '-10 seconds')""",
+            (pilot_id, group_id, dur_ms),
+        ).fetchone()
+        if dup:
+            log.warning(f"Duplicate FLIGHT suppressed: pilot={pilot_id} dur={dur_ms}ms group={group_id}")
+            return
         self.db.execute(
             "INSERT INTO flights (pilot_id, duration_ms, group_id) VALUES (?, ?, ?)",
             (pilot_id, dur_ms, group_id),
+        )
+        self.db.commit()
+
+    def record_altitude(self, pilot_id: int, flight_no: int, alt_m: int):
+        group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
+        # Update the most recently inserted flight for this pilot in this group
+        self.db.execute(
+            """UPDATE flights SET altitude_m = ?
+               WHERE id = (
+                   SELECT id FROM flights
+                   WHERE pilot_id = ? AND group_id IS ?
+                   ORDER BY id DESC LIMIT 1
+               )""",
+            (alt_m, pilot_id, group_id),
         )
         self.db.commit()
 
