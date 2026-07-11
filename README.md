@@ -11,8 +11,9 @@ Companion handheld-timer firmware lives in a separate repo (`F3K_Timer_1`).
 A single asyncio process runs two servers in one event loop:
 
 - **TCP timer server** (`server.py`, port 8765) — handheld timers connect with a
-  JOIN/ASSIGN handshake, PING/PONG keepalive, and the round protocol
-  (TASK / START / STOP / PILOTS / COUNT / FLIGHT / ALTITUDE).
+  JOIN/ASSIGN handshake, PING/PONG keepalive (base sends PONG every 15s; a successful
+  send resets the ping clock so freshly reconnected timers aren't evicted before their
+  first 30s PING), and the round protocol (TASK / START / STOP / PILOTS / COUNT / FLIGHT / ALTITUDE).
 - **Web app** (`frontend/app.py`, FastAPI + uvicorn, port 8080) — operator UI plus a
   WebSocket stream of live timing and flight events.
 
