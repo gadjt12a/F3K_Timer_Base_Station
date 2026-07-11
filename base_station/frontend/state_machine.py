@@ -20,6 +20,7 @@ class CompetitionStateMachine:
         self._loaded: dict | None = None
         self._task: asyncio.Task | None = None
         self._skip_to: int | None = None   # CD requested prep jump to N seconds remaining
+        self._wt_remaining: int = 0        # live seconds remaining during WORKING (for reconnect)
 
     @property
     def state(self) -> str:
@@ -136,7 +137,8 @@ class CompetitionStateMachine:
         if pilots_str:
             await send_fn(f"PILOTS {pilots_str}")
         if self._state == "WORKING":
-            await send_fn(f"TASK wt={d['working_time_s']} disc={d['discipline']}")
+            rem = self._wt_remaining if self._wt_remaining > 0 else d["working_time_s"]
+            await send_fn(f"TASK wt={rem} disc={d['discipline']}")
             await send_fn("START")
 
     async def on_flight(self, pilot_id: int, dur_ms: int) -> None:
@@ -241,8 +243,10 @@ class CompetitionStateMachine:
 
         deadline = loop.time() + 1.0
         for remaining in range(d["working_time_s"], 0, -1):
+            self._wt_remaining = remaining
             await self._broadcast_tick(remaining)
             deadline = await self._tick_sleep(deadline)
+        self._wt_remaining = 0
 
         await self._server.broadcast("STOP")
 
