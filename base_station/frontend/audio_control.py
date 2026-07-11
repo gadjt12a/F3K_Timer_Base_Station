@@ -30,7 +30,7 @@ bluealsa_lock = asyncio.Lock()
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "audio_config.json"
 # lead_s: seconds to fire cues EARLY, to compensate for fixed output latency
 # (Bluetooth A2DP buffering). The operator measures the observed lag and sets it here.
-_DEFAULTS = {"bt_mac": None, "volume": 45, "lead_s": 0}
+_DEFAULTS = {"bt_mac": None, "volume": 45, "lead_s": 0.4}
 
 
 # ---------------------------------------------------------------------------

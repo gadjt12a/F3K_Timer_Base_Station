@@ -106,8 +106,9 @@ behind two on-board Wi-Fi APs (`hostapd` + `dnsmasq`):
 F3K and F5K today; F5J and (some) F3B planned. F3K and F5K run as separate competitions
 on the same day, alternating rounds, sharing a pilot pool.
 
-**F5K altitude entry** is implemented end-to-end: after each flight stop the timer watch
-enters `STATE_ALTITUDE_ENTRY`; the pilot dials in launch altitude (R=+1m, L=+10m,
-hold-R=confirm) and the watch sends `ALTITUDE pilot=N flight=M alt=X` to the base station,
-which stores it against the flight record. F5K CSV export is not yet supported (altitude
-→ Data1–7 mapping TBD pending a scored F5K sample).
+**F5K altitude entry** is implemented end-to-end: after the working time expires the pilot
+presses R on the Time Up screen to begin entering altitudes. The watch steps through each
+recorded flight ("FLIGHT N of M"), with R=+1m / L=+10m / hold-R to confirm, then sends
+`ALTITUDE pilot=N flight=M alt=X` to the base station which stores it against the flight
+record. F5K CSV export is not yet supported (altitude → Data1–7 mapping TBD pending a
+scored F5K sample).

@@ -228,6 +228,10 @@ class AudioEngine:
             off = prep_offset + c["t"]
             if off < -self._PREROLL_S:
                 continue                      # genuinely before the sequence — drop
+            # Replace per-second voice files (1.wav–10Secs.wav) in the last 10s of prep
+            # with short beeps — the voice clips are longer than 1s and get clipped.
+            if c.get("state") in (PT, TT, NF) and -10 <= c["t"] <= -1 and c.get("wav"):
+                c = {"wav": "", "beepHz": 880, "beepMs": 150}
             sched.append((max(off, 0.0), c))  # clamp pre-roll cues to the start
         sched.sort(key=lambda x: x[0])
         return sched
