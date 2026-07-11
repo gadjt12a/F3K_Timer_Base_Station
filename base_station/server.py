@@ -110,6 +110,24 @@ class TimerClient:
                 self.server.record_altitude(pilot_id, flight_no, alt_m)
                 log.info(f"Altitude: pilot={pilot_id} flight={flight_no} alt={alt_m}m")
 
+        elif cmd == "SELECT":
+            params = parse_params(parts[1:])
+            pilot_id = int(params.get("pilot", 0))
+            if pilot_id > 0:
+                self.last_pilot_id = pilot_id
+                row = self.server.db.execute(
+                    "SELECT name FROM pilots WHERE id = ?", (pilot_id,)
+                ).fetchone()
+                pilot_name = row["name"] if row else f"Pilot {pilot_id}"
+                from frontend.app import manager
+                asyncio.create_task(manager.broadcast({
+                    "type": "timer_pilot",
+                    "timer_id": self.timer_id,
+                    "pilot_id": pilot_id,
+                    "pilot_name": pilot_name,
+                }))
+                log.info(f"Timer {self.timer_id} selected pilot {pilot_id} ({pilot_name})")
+
         elif cmd == "PING":
             self.last_ping_at = time.monotonic()
             await self.send("PONG")

@@ -14,6 +14,9 @@ function runner(initialState) {
         state: initialState.state || 'IDLE',
         loaded: initialState.loaded || null,
         secondsRemaining: 0,
+        liveSeconds: 0,
+        _tickAt: 0,
+        _tickSec: 0,
         flights: [],
         timers: [],
         ws: null,
@@ -24,6 +27,16 @@ function runner(initialState) {
             this.connect();
             this.loadTimers();
             setInterval(() => this.loadTimers(), 3000);
+            setInterval(() => this._tickLocal(), 50);
+        },
+
+        _tickLocal() {
+            if (this._tickAt > 0 && (this.state === 'WORKING' || this.state === 'PREP' || this.state === 'LANDING')) {
+                const elapsed = (Date.now() - this._tickAt) / 1000;
+                this.liveSeconds = Math.max(0, this._tickSec - elapsed);
+            } else {
+                this.liveSeconds = this.secondsRemaining;
+            }
         },
 
         async loadTimers() {
@@ -51,6 +64,8 @@ function runner(initialState) {
                 if (msg.type === 'tick') {
                     this.state = msg.state;
                     this.secondsRemaining = msg.seconds_remaining;
+                    this._tickAt = Date.now();
+                    this._tickSec = msg.seconds_remaining;
                     this.loaded = {
                         comp_name: msg.competition,
                         discipline: msg.discipline,
@@ -62,21 +77,32 @@ function runner(initialState) {
                     };
                 } else if (msg.type === 'state_change') {
                     this.state = msg.state;
+                    this._tickAt = 0;
                     if (msg.state === 'IDLE') {
                         this.secondsRemaining = 0;
-                        // Keep the flight log visible after the heat finishes;
-                        // it's cleared when the next heat is loaded.
+                        this.liveSeconds = 0;
                     }
                 } else if (msg.type === 'flight') {
                     this.flights.push(msg);
+                } else if (msg.type === 'timer_pilot') {
+                    const idx = this.timers.findIndex(t => t.id === msg.timer_id);
+                    if (idx >= 0) {
+                        const updated = [...this.timers];
+                        updated[idx] = {...updated[idx], last_pilot_id: msg.pilot_id, last_pilot_name: msg.pilot_name};
+                        this.timers = updated;
+                    } else {
+                        this.loadTimers();
+                    }
                 }
             };
             ws.onclose = () => setTimeout(() => this.connect(), 2000);
         },
 
         fmt(s) {
-            const m = Math.floor(s / 60);
-            return `${m}:${String(s % 60).padStart(2, '0')}`;
+            const si = Math.floor(s);
+            const m = Math.floor(si / 60);
+            const hh = Math.floor((s - si) * 100);
+            return `${m}:${String(si % 60).padStart(2, '0')}.${String(hh).padStart(2, '0')}`;
         },
 
         fmtMs(ms) {
@@ -126,9 +152,11 @@ function runner(initialState) {
             this.loaded = data.status.loaded;
             this.loadedGroupId = groupId;
             this.secondsRemaining = 0;
+            this.liveSeconds = 0;
+            this._tickAt = 0;
             this.state = data.status.state;
             this.flights = [];
-            // Clear stale pilot bindings — pilots re-register via flight records in the new heat
+            // Clear stale pilot bindings — timers re-announce via SELECT in the new heat
             this.timers = this.timers.map(t => ({...t, last_pilot_id: null, last_pilot_name: null}));
         },
 
@@ -309,7 +337,7 @@ function runner(initialState) {
             <div id="timer-num"
                  class="font-mono font-bold tracking-tight mb-2"
                  style="line-height: 1"
-                 x-text="secondsRemaining > 0 ? fmt(secondsRemaining) : (loaded ? fmt(loaded.working_time_s) : '--:--')">
+                 x-text="liveSeconds > 0 ? fmt(liveSeconds) : (loaded ? fmt(loaded.working_time_s) : '--:--')">
             </div>
 
             <template x-if="loaded">
