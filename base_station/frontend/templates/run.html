@@ -4,7 +4,8 @@
 
 <script>
 const INITIAL_STATE = {{ initial_state | safe }};
-const TASKS = {{ tasks | tojson }};  // { discipline: { letter: {name, desc} } }
+const TASKS = {{ tasks | tojson }};
+const HEATS = {{ heats | tojson }};
 
 // group_ids that are already marked complete (from server render)
 const DONE_INIT = new Set({{ heats | selectattr('completed') | map(attribute='group_id') | list | tojson }});
@@ -18,10 +19,14 @@ function runner(initialState) {
         _tickAt: 0,
         _tickSec: 0,
         flights: [],
+        altitudes: {},
         timers: [],
         ws: null,
         loadedGroupId: (initialState.loaded && initialState.loaded.group_id) || null,
         doneGroups: DONE_INIT,
+        autoAdvanceNext: null,
+        autoAdvanceSecsLeft: 0,
+        _autoAdvanceTid: null,
 
         init() {
             this.connect();
@@ -84,6 +89,11 @@ function runner(initialState) {
                     }
                 } else if (msg.type === 'flight') {
                     this.flights.push(msg);
+                } else if (msg.type === 'altitude') {
+                    this.altitudes = {
+                        ...this.altitudes,
+                        [msg.pilot_id]: { ...(this.altitudes[msg.pilot_id] || {}), [msg.flight_no]: msg.altitude_m },
+                    };
                 } else if (msg.type === 'timer_pilot') {
                     const idx = this.timers.findIndex(t => t.id === msg.timer_id);
                     if (idx >= 0) {
@@ -146,6 +156,7 @@ function runner(initialState) {
         },
 
         async loadHeat(roundId, groupId) {
+            this.cancelAutoAdvance();
             const r = await fetch(`/api/run/load?round_id=${roundId}&group_id=${groupId}`,
                                   {method:'POST'});
             const data = await r.json();
@@ -156,19 +167,61 @@ function runner(initialState) {
             this._tickAt = 0;
             this.state = data.status.state;
             this.flights = [];
+            this.altitudes = {};
             // Clear stale pilot bindings — timers re-announce via SELECT in the new heat
             this.timers = this.timers.map(t => ({...t, last_pilot_id: null, last_pilot_name: null}));
         },
 
         async toggleDone(groupId) {
             if (this.doneGroups.has(groupId)) {
+                if (this.autoAdvanceNext && this.autoAdvanceNext.group_id === groupId) {
+                    this.cancelAutoAdvance();
+                }
                 await fetch(`/api/run/uncomplete?group_id=${groupId}`, {method:'POST'});
                 this.doneGroups = new Set([...this.doneGroups].filter(id => id !== groupId));
             } else {
                 await fetch(`/api/run/complete?group_id=${groupId}`, {method:'POST'});
-                this.doneGroups = new Set([...this.doneGroups, groupId]);
+                const newDone = new Set([...this.doneGroups, groupId]);
+                this.doneGroups = newDone;
+                // Auto-advance to next undone heat if idle
+                if (this.state === 'IDLE') {
+                    const next = HEATS.find(h => !newDone.has(h.group_id));
+                    if (next) {
+                        this.autoAdvanceNext = next;
+                        this.autoAdvanceSecsLeft = 3;
+                        const tick = () => {
+                            this.autoAdvanceSecsLeft--;
+                            if (this.autoAdvanceSecsLeft <= 0) {
+                                const n = this.autoAdvanceNext;
+                                this.autoAdvanceNext = null;
+                                this.loadHeat(n.round_id, n.group_id);
+                            } else {
+                                this._autoAdvanceTid = setTimeout(tick, 1000);
+                            }
+                        };
+                        this._autoAdvanceTid = setTimeout(tick, 1000);
+                    }
+                }
             }
         },
+
+        cancelAutoAdvance() {
+            clearTimeout(this._autoAdvanceTid);
+            this._autoAdvanceTid = null;
+            this.autoAdvanceNext = null;
+            this.autoAdvanceSecsLeft = 0;
+        },
+
+        readyChecks() {
+            const pilots = this.loaded ? this.loaded.pilots.filter(n => n !== '— TBD —') : [];
+            return [
+                { label: 'Heat loaded', ok: !!this.loaded },
+                { label: 'Timer connected', ok: this.timers.length > 0 },
+                { label: 'All pilots assigned', ok: pilots.length > 0 && pilots.every(n => this.isPilotBound(n)) },
+            ];
+        },
+
+        allPilotsReady() { return this.readyChecks().every(c => c.ok); },
 
         async startHeat() { await fetch('/api/run/start', {method:'POST'}); },
         async abortHeat() { await fetch('/api/run/abort', {method:'POST'}); },
@@ -322,6 +375,18 @@ function runner(initialState) {
         </div>
         {% endfor %}
         {% endif %}
+
+        <!-- Auto-advance toast -->
+        <template x-if="autoAdvanceNext">
+            <div class="mt-4 p-3 bg-blue-900/50 border border-blue-700/50 rounded-lg text-xs">
+                <div class="text-blue-200 mb-1">
+                    Auto-loading next heat in
+                    <span class="font-bold text-white" x-text="autoAdvanceSecsLeft"></span>s…
+                </div>
+                <button @click="cancelAutoAdvance()"
+                        class="text-blue-400 hover:text-white underline transition-colors">Cancel</button>
+            </div>
+        </template>
     </div>
 
     <!-- Right: live panel -->
@@ -392,8 +457,35 @@ function runner(initialState) {
             </button>
         </div>
 
+        <!-- Readiness check (only when issues exist) -->
+        <template x-if="state === 'IDLE' && loaded && !allPilotsReady()">
+            <div class="flex-shrink-0 bg-yellow-900/25 border border-yellow-700/40 rounded-lg px-3 py-2">
+                <div class="text-xs font-semibold text-yellow-400 mb-1">Not ready to start</div>
+                <template x-for="c in readyChecks()" :key="c.label">
+                    <div class="text-xs" :class="c.ok ? 'text-green-400' : 'text-yellow-300'"
+                         x-text="(c.ok ? '✓ ' : '○ ') + c.label"></div>
+                </template>
+            </div>
+        </template>
+
         <!-- Pilot timer status + Flight log -->
         <div class="flex-shrink-0 bg-gray-800 rounded-lg p-4">
+
+            <!-- Timer connection status strip -->
+            <div class="flex flex-wrap gap-1.5 mb-3">
+                <template x-if="timers.length === 0">
+                    <span class="text-xs text-red-400 font-medium">⚠ No timers connected</span>
+                </template>
+                <template x-for="t in timers" :key="t.id">
+                    <div class="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono"
+                         :class="t.last_ping_age_s < 45 ? 'bg-green-900/60 text-green-300' : 'bg-amber-900/60 text-amber-300'">
+                        <span x-text="'T' + t.id"></span>
+                        <span class="opacity-60 mx-0.5">·</span>
+                        <span x-text="t.last_pilot_name ? t.last_pilot_name.split(' ')[0] : 'unbound'"></span>
+                        <span x-show="t.last_ping_age_s >= 45" class="ml-1 text-amber-400">⚠</span>
+                    </div>
+                </template>
+            </div>
 
             <!-- Pilot registration status (only when a heat is loaded) -->
             <template x-if="loaded">
@@ -433,10 +525,16 @@ function runner(initialState) {
                                   x-text="g.times.length + (g.times.length === 1 ? ' flight' : ' flights')"></span>
                         </div>
                         <template x-for="(f, i) in g.times" :key="i">
-                            <div class="flex items-center justify-between py-0.5 text-sm pl-2">
+                            <div class="flex items-center justify-between py-0.5 pl-2">
                                 <span class="font-mono text-xs text-gray-500" x-text="'#' + (i + 1)"></span>
-                                <span x-text="fmtMs(f.duration_ms)"
-                                      class="font-mono text-green-400 font-semibold"></span>
+                                <div class="text-right">
+                                    <div x-text="fmtMs(f.duration_ms)"
+                                         class="font-mono text-green-400 font-semibold text-sm"></div>
+                                    <div x-show="altitudes[g.pilot_id] && altitudes[g.pilot_id][i + 1] !== undefined"
+                                         class="font-mono text-xs text-fuchsia-400"
+                                         x-text="altitudes[g.pilot_id] && altitudes[g.pilot_id][i + 1] !== undefined
+                                                 ? String(altitudes[g.pilot_id][i + 1]).padStart(3, '0') + 'm' : ''"></div>
+                                </div>
                             </div>
                         </template>
                     </div>

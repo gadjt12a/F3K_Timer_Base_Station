@@ -97,9 +97,9 @@ class TimerClient:
                 log.warning(f"FLIGHT with no pilot (dur={dur_ms}ms) — ignored")
             else:
                 self.last_pilot_id = pilot_id
-                self.server.record_flight(pilot_id, dur_ms)
-                asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
-                log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
+                if self.server.record_flight(pilot_id, dur_ms):
+                    asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
+                    log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
 
         elif cmd == "ALTITUDE":
             params = parse_params(parts[1:])
@@ -109,6 +109,13 @@ class TimerClient:
             if pilot_id > 0:
                 self.server.record_altitude(pilot_id, flight_no, alt_m)
                 log.info(f"Altitude: pilot={pilot_id} flight={flight_no} alt={alt_m}m")
+                from frontend.app import manager
+                asyncio.create_task(manager.broadcast({
+                    "type": "altitude",
+                    "pilot_id": pilot_id,
+                    "flight_no": flight_no,
+                    "altitude_m": alt_m,
+                }))
 
         elif cmd == "SELECT":
             params = parse_params(parts[1:])
@@ -257,7 +264,7 @@ class F3KServer:
                 except Exception:
                     pass
 
-    def record_flight(self, pilot_id: int, dur_ms: int):
+    def record_flight(self, pilot_id: int, dur_ms: int) -> bool:
         group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
         # Dedup: reject a repeat of the same flight arriving within 10 seconds
         # (guards against watch sending FLIGHT twice due to any edge case)
@@ -269,12 +276,13 @@ class F3KServer:
         ).fetchone()
         if dup:
             log.warning(f"Duplicate FLIGHT suppressed: pilot={pilot_id} dur={dur_ms}ms group={group_id}")
-            return
+            return False
         self.db.execute(
             "INSERT INTO flights (pilot_id, duration_ms, group_id) VALUES (?, ?, ?)",
             (pilot_id, dur_ms, group_id),
         )
         self.db.commit()
+        return True
 
     def record_altitude(self, pilot_id: int, flight_no: int, alt_m: int):
         group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None

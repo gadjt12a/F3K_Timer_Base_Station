@@ -407,7 +407,7 @@ async def results_get(request: Request):
             for grp in groups:
                 rows = db.execute(
                     """SELECT p.id AS pilot_id, p.name AS pilot_name,
-                              f.id AS flight_id, f.duration_ms, f.recorded_at
+                              f.id AS flight_id, f.duration_ms, f.altitude_m, f.recorded_at
                        FROM group_pilots gp
                        JOIN pilots p ON p.id = gp.pilot_id
                        LEFT JOIN flights f ON f.pilot_id = p.id AND f.group_id = ?
@@ -418,6 +418,7 @@ async def results_get(request: Request):
 
                 pilot_flights: dict = {}
                 pilot_order: list = []
+                any_altitudes = False
                 for row in rows:
                     pid = row["pilot_id"]
                     if pid not in pilot_flights:
@@ -428,8 +429,11 @@ async def results_get(request: Request):
                         }
                         pilot_order.append(pid)
                     if row["flight_id"] is not None:
+                        alt = row["altitude_m"]
+                        if alt is not None:
+                            any_altitudes = True
                         pilot_flights[pid]["flights"].append(
-                            {"duration_ms": row["duration_ms"]}
+                            {"duration_ms": row["duration_ms"], "altitude_m": alt}
                         )
 
                 pilots = [pilot_flights[pid] for pid in pilot_order]
@@ -439,6 +443,7 @@ async def results_get(request: Request):
                     "heat": chr(64 + grp["group_no"]),
                     "pilots": pilots,
                     "max_flights": max_flights,
+                    "any_altitudes": any_altitudes,
                 })
 
             round_data.append({

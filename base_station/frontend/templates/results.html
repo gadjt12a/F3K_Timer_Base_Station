@@ -53,17 +53,24 @@
                     <tbody>
                         {% for p in hd.pilots %}
                         <tr class="border-t border-gray-700">
-                            <td class="py-1.5 pr-8 text-gray-200">{{ p.name }}</td>
+                            <td class="py-1.5 pr-8 text-gray-200 {% if hd.any_altitudes %}align-top{% endif %}">{{ p.name }}</td>
                             {% for i in range(hd.max_flights) %}
                             {% if i < p.flights | length %}
-                            <td class="py-1.5 pl-5 text-right font-mono font-semibold text-green-400">
-                                {{ p.flights[i].duration_ms | fmt_ms }}
+                            <td class="py-1.5 pl-5 text-right align-top">
+                                <span class="font-mono font-semibold text-green-400">{{ p.flights[i].duration_ms | fmt_ms }}</span>
+                                {% if hd.any_altitudes %}
+                                <br><span class="font-mono text-xs {% if p.flights[i].altitude_m is not none %}text-fuchsia-400{% else %}text-gray-600{% endif %}">
+                                    {%- if p.flights[i].altitude_m is not none -%}
+                                        {{ "%03d"|format(p.flights[i].altitude_m | int) }}m
+                                    {%- else -%}—{%- endif -%}
+                                </span>
+                                {% endif %}
                             </td>
                             {% else %}
-                            <td class="py-1.5 pl-5 text-right font-mono text-gray-700">—</td>
+                            <td class="py-1.5 pl-5 text-right font-mono text-gray-700 align-top">—</td>
                             {% endif %}
                             {% endfor %}
-                            <td class="py-1.5 pl-6 text-right text-gray-400">{{ p.flights | length }}</td>
+                            <td class="py-1.5 pl-6 text-right text-gray-400 align-top">{{ p.flights | length }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
