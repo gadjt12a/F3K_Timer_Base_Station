@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block main_class %}p-6 max-w-6xl{% endblock %}
+{% block main_class %}p-6{% endblock %}
 {% block content %}
 
 <script>
@@ -341,7 +341,7 @@ function runner(initialState) {
         </div>
 
         <!-- Flight log -->
-        <div class="h-48 flex-shrink-0 bg-gray-800 rounded-lg p-4 overflow-y-auto">
+        <div class="h-32 flex-shrink-0 bg-gray-800 rounded-lg p-4 overflow-y-auto">
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3">Flight Log</h2>
             <template x-if="flights.length === 0">
                 <p class="text-gray-400 text-sm">No flights this heat.</p>
@@ -372,15 +372,20 @@ function runner(initialState) {
         var panel = document.getElementById('timer-panel');
         var num   = document.getElementById('timer-num');
         if (!panel || !num) return;
-        var w = panel.clientWidth  - 48;   // p-6 padding (24px each side)
-        var h = panel.clientHeight - 48;
-        if (w <= 0 || h <= 0) return;
-        // "10:00" = 5 monospace chars; char width ≈ 0.58 × font-size
-        var byWidth  = w / (5 * 0.58);
-        // Number fills ~75% of panel height; rest for badge + heat info
-        var byHeight = h * 0.75;
-        var px = Math.max(48, Math.floor(Math.min(byWidth, byHeight)));
-        num.style.fontSize = px + 'px';
+        var availW = panel.clientWidth  - 48;   // p-6 = 24px each side
+        var availH = panel.clientHeight - 48;
+        if (availW <= 0 || availH <= 0) return;
+        // Measure actual rendered text width at reference size (no char-ratio guessing)
+        num.style.visibility = 'hidden';
+        num.style.whiteSpace  = 'nowrap';
+        num.style.fontSize    = '200px';
+        var textW = num.scrollWidth || 1;
+        // Scale to fit width; cap at 85% of panel height so badge + heat info fit
+        var byWidth  = Math.floor(availW / textW * 200);
+        var byHeight = Math.floor(availH * 0.85);
+        var px = Math.max(48, Math.min(byWidth, byHeight));
+        num.style.fontSize   = px + 'px';
+        num.style.visibility = '';
     }
 
     window.addEventListener('resize', scaleTimer);
