@@ -12,7 +12,7 @@ A single asyncio process runs two servers in one event loop:
 
 - **TCP timer server** (`server.py`, port 8765) — handheld timers connect with a
   JOIN/ASSIGN handshake, PING/PONG keepalive, and the round protocol
-  (TASK / START / STOP / PILOTS / COUNT / FLIGHT).
+  (TASK / START / STOP / PILOTS / COUNT / FLIGHT / ALTITUDE).
 - **Web app** (`frontend/app.py`, FastAPI + uvicorn, port 8080) — operator UI plus a
   WebSocket stream of live timing and flight events.
 
@@ -50,7 +50,7 @@ base_station/
 |-------|---------|
 | `/setup` | Global pilot registry + competitions (F3K / F5K), per-comp pilot assignment |
 | `/rounds` | Round builder — tasks (A–N), working time, groups with pilot draw + TBD slots |
-| `/run` | Operator screen — load/start/abort heats, live countdown, flight log, CD skip |
+| `/run` | Operator screen — load/start/abort heats, live countdown, flight log, CD skip; dual F3K/F5K heat queue columns; mark heats done/undone; auto-scaling countdown timer |
 | `/results` | Per-heat flight tables — pilots × flights, times in M:SS.hh format |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV for each competition |
@@ -104,5 +104,10 @@ behind two on-board Wi-Fi APs (`hostapd` + `dnsmasq`):
 ## Disciplines
 
 F3K and F5K today; F5J and (some) F3B planned. F3K and F5K run as separate competitions
-on the same day, alternating rounds, sharing a pilot pool. F5K requires per-flight
-motor-cut altitudes entered by the timekeeper — firmware + protocol support pending.
+on the same day, alternating rounds, sharing a pilot pool.
+
+**F5K altitude entry** is implemented end-to-end: after each flight stop the timer watch
+enters `STATE_ALTITUDE_ENTRY`; the pilot dials in launch altitude (R=+1m, L=+10m,
+hold-R=confirm) and the watch sends `ALTITUDE pilot=N flight=M alt=X` to the base station,
+which stores it against the flight record. F5K CSV export is not yet supported (altitude
+→ Data1–7 mapping TBD pending a scored F5K sample).
