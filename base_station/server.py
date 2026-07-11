@@ -255,14 +255,27 @@ class F3KServer:
         The primary fix for the mid-round drop is firmware-side (WiFi.setSleep(false)),
         but sending regular traffic here is cheap insurance against the watch's
         RX-timeout reconnect during quiet prep periods. Unsolicited PONG is treated
-        as a keepalive by the timer (resets its _lastRxMs)."""
+        as a keepalive by the timer (resets its _lastRxMs).
+
+        A successful send also resets last_ping_at so the watchdog doesn't evict a
+        timer that is receiving our PONGs but hasn't yet hit its 30s PING interval."""
         while True:
             await asyncio.sleep(KEEPALIVE_INTERVAL_S)
             for c in list(self._clients.values()):
                 try:
                     await c.send("PONG")
+                    # Successful send proves the link is alive in at least one direction;
+                    # reset the ping clock so the watchdog doesn't evict a timer that is
+                    # receiving our keepalives but hasn't hit its 30s PING interval yet.
+                    c.last_ping_at = time.monotonic()
                 except Exception:
-                    pass
+                    # Send failed = OS-level socket error (broken pipe, connection reset).
+                    # Log it; the watchdog will evict via ping_timeout once last_ping_at
+                    # ages past PING_TIMEOUT_S. Don't evict here — a single send error
+                    # could be a transient flush failure, and premature eviction during a
+                    # flight would force pilot re-selection even though the ring buffer
+                    # would preserve the flight data.
+                    log.warning(f"Keepalive send failed id={c.timer_id} {c.addr}")
 
     def record_flight(self, pilot_id: int, dur_ms: int) -> bool:
         group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
