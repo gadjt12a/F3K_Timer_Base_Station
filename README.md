@@ -51,11 +51,11 @@ base_station/
 |-------|---------|
 | `/setup` | Global pilot registry + competitions (F3K / F5K), per-comp pilot assignment |
 | `/rounds` | Round builder — tasks (A–N), working time, groups with pilot draw + TBD slots |
-| `/run` | Operator screen — load/start/abort heats, live M:SS.HH countdown (20fps), flight log with altitude, CD skip, dual F3K/F5K heat queue columns, mark heats done/undone, auto-advance 3s toast, readiness check warning, timer connection status strip (T1/T2 pills), pilot status strip (○ unbound → ✓+T#) |
+| `/run` | Operator screen — load/start/abort heats, live M:SS.HH countdown (20fps), flight log with altitude, CD skip, dual F3K/F5K heat queue columns, mark heats done/undone, auto-advance 3s toast, readiness check warning, timer connection status strip (T1/T2 pills), pilot status strip (○ unbound → ✓+T#), CD override form to manually log a flight for any pilot |
 | `/results` | Per-heat flight tables — pilots × flights, times in M:SS.hh; F5K altitudes in fuchsia; per-heat Edit mode: delete flights, manually add flights (pilot, flight #, split M:SS.HH input, altitude) |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV for each competition |
-| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics |
+| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore |
 | `/health` | JSON status (timers connected) |
 
 ## GliderScore Integration
