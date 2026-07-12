@@ -815,3 +815,15 @@ async def api_bt_disconnect(mac: str):
 async def api_timers():
     srv = app.state.server
     return {"timers": srv.timers_info(), "events": srv.recent_events()}
+
+
+# ---------------------------------------------------------------------------
+# Captive portal — F3K_OPS network (wlan1, 192.168.20.0/24)
+# dnsmasq resolves all DNS to 192.168.20.1; iptables redirects :80 → :8080.
+# OS captive-portal probes land here as unrecognised paths → redirect to /run.
+# All named routes above take priority; only truly unknown GET paths reach this.
+# ---------------------------------------------------------------------------
+
+@app.get("/{path:path}")
+async def captive_portal_catchall(path: str, request: Request):
+    return RedirectResponse(url="http://192.168.20.1:8080/run", status_code=302)

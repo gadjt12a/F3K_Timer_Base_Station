@@ -52,7 +52,7 @@ base_station/
 | `/setup` | Global pilot registry + competitions (F3K / F5K), per-comp pilot assignment |
 | `/rounds` | Round builder — tasks (A–N), working time, groups with pilot draw + TBD slots |
 | `/run` | Operator screen — load/start/abort heats, live M:SS.HH countdown (20fps), flight log with altitude, CD skip, dual F3K/F5K heat queue columns, mark heats done/undone, auto-advance 3s toast, readiness check warning, timer connection status strip (T1/T2 pills), pilot status strip (○ unbound → ✓+T#) |
-| `/results` | Per-heat flight tables — pilots × flights, times in M:SS.hh; F5K altitudes shown in fuchsia below each flight time |
+| `/results` | Per-heat flight tables — pilots × flights, times in M:SS.hh; F5K altitudes in fuchsia; per-heat Edit mode: delete flights, manually add flights (pilot, flight #, split M:SS.HH input, altitude) |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV for each competition |
 | `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics |
@@ -99,8 +99,8 @@ python3 -m venv venv && ./venv/bin/pip install -r base_station/requirements.txt
 In production it runs as the `f3k-server.service` systemd unit (auto-start on boot),
 behind two on-board Wi-Fi APs (`hostapd` + `dnsmasq`):
 
-- **F3K_BASE** (timer network, 192.168.10.0/24) — handheld timers connect here
-- **F3K_OPS** (operator network, 192.168.20.0/24) — operator's laptop connects here
+- **F3K_BASE** (timer network, 192.168.10.0/24, wlan0) — handheld timers connect here
+- **F3K_OPS** (operator network, 192.168.20.0/24, wlan1 — MT7612U) — operator devices connect here; captive portal auto-opens `/run` on connect (dnsmasq resolves all DNS to 192.168.20.1, iptables redirects port 80 → 8080, FastAPI catch-all completes the redirect)
 
 ## Disciplines
 
