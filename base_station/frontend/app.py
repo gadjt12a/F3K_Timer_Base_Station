@@ -1,7 +1,9 @@
 import csv
+import datetime
 import io
 import json
 import os
+import tempfile
 import urllib.parse
 from pathlib import Path
 
@@ -756,6 +758,48 @@ async def api_run_state():
     return app.state.state_machine.get_status()
 
 
+@app.post("/api/run/flight/add")
+async def api_run_flight_add(
+    pilot_id: int = Form(...),
+    duration: str = Form(...),
+    altitude_m: str = Form(""),
+):
+    sm = app.state.state_machine
+    if not sm._loaded:
+        return {"ok": False, "error": "No heat loaded"}
+    try:
+        dur_ms = _parse_duration(duration)
+    except (ValueError, TypeError):
+        return {"ok": False, "error": "Invalid time — use M:SS or M:SS.HH"}
+    d = sm._loaded
+    valid_ids = [pid for pid, _ in d["pilot_id_names"]]
+    if pilot_id not in valid_ids:
+        return {"ok": False, "error": "Pilot not in this heat"}
+    db = _db()
+    group_id = d["group_id"]
+    next_no = db.execute(
+        "SELECT COALESCE(MAX(flight_no), 0) + 1 FROM flights WHERE pilot_id = ? AND group_id IS ?",
+        (pilot_id, group_id),
+    ).fetchone()[0]
+    alt = float(altitude_m) if altitude_m.strip() else None
+    db.execute(
+        "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no, altitude_m) VALUES (?, ?, ?, ?, ?)",
+        (pilot_id, dur_ms, group_id, next_no, alt),
+    )
+    db.commit()
+    row = db.execute("SELECT name FROM pilots WHERE id = ?", (pilot_id,)).fetchone()
+    pilot_name = row["name"] if row else f"Pilot {pilot_id}"
+    await manager.broadcast({
+        "type": "flight",
+        "pilot_id": pilot_id,
+        "pilot_name": pilot_name,
+        "duration_ms": dur_ms,
+        "round_no": d["round_no"],
+        "heat": d["heat"],
+    })
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Settings — audio output / Bluetooth speaker + timer diagnostics
 # ---------------------------------------------------------------------------
@@ -815,6 +859,54 @@ async def api_bt_disconnect(mac: str):
 async def api_timers():
     srv = app.state.server
     return {"timers": srv.timers_info(), "events": srv.recent_events()}
+
+
+@app.get("/api/db/backup")
+async def api_db_backup():
+    import sqlite3
+    db = _db()
+    fd, tmp_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        dest = sqlite3.connect(tmp_path)
+        db.backup(dest)
+        dest.close()
+        data = Path(tmp_path).read_bytes()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+    today = datetime.date.today().isoformat()
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="f3k_backup_{today}.db"'},
+    )
+
+
+@app.post("/api/db/restore")
+async def api_db_restore(file: UploadFile = File(...)):
+    import sqlite3
+    from frontend.db import _add_flight_columns, _migrate_groups, _migrate_pilots
+    content = await file.read()
+    if not content.startswith(b"SQLite format 3"):
+        return {"ok": False, "error": "Not a valid SQLite database file"}
+    fd, tmp_path = tempfile.mkstemp(suffix=".db")
+    try:
+        os.write(fd, content)
+        os.close(fd)
+        source = sqlite3.connect(tmp_path)
+        target = _db()
+        source.backup(target)
+        source.close()
+        _add_flight_columns(target)
+        _migrate_groups(target)
+        _migrate_pilots(target)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

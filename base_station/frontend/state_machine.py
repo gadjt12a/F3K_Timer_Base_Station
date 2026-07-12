@@ -39,6 +39,7 @@ class CompetitionStateMachine:
                 "working_time_s": d["working_time_s"],
                 "pilots": d["pilots"],
                 "group_id": d["group_id"],
+                "pilot_id_names": d["pilot_id_names"],
             } if d else None,
         }
 
@@ -179,6 +180,7 @@ class CompetitionStateMachine:
             "task": d["task"],
             "working_time_s": d["working_time_s"],
             "pilots": d["pilots"],
+            "pilot_id_names": d["pilot_id_names"],
         })
 
     async def _run_sequence_safe(self) -> None:

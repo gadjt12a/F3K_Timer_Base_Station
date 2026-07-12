@@ -27,6 +27,11 @@ function runner(initialState) {
         autoAdvanceNext: null,
         autoAdvanceSecsLeft: 0,
         _autoAdvanceTid: null,
+        cdOpen: false,
+        cdPilotId: null,
+        cdTime: { m: '', s: '', c: '' },
+        cdAlt: '',
+        cdError: '',
 
         init() {
             this.connect();
@@ -79,6 +84,7 @@ function runner(initialState) {
                         task: msg.task,
                         working_time_s: msg.working_time_s,
                         pilots: msg.pilots,
+                        pilot_id_names: msg.pilot_id_names || [],
                     };
                 } else if (msg.type === 'state_change') {
                     this.state = msg.state;
@@ -226,6 +232,30 @@ function runner(initialState) {
         async startHeat() { await fetch('/api/run/start', {method:'POST'}); },
         async abortHeat() { await fetch('/api/run/abort', {method:'POST'}); },
         async skipTo1Min() { await fetch('/api/run/skip?to=60', {method:'POST'}); },
+
+        openCdOverride() {
+            const pilots = (this.loaded && this.loaded.pilot_id_names) || [];
+            if (pilots.length && !this.cdPilotId) this.cdPilotId = pilots[0][0];
+            this.cdOpen = !this.cdOpen;
+            this.cdError = '';
+        },
+
+        async addCdFlight() {
+            const dur = `${this.cdTime.m || '0'}:${(this.cdTime.s || '00').padStart(2, '0')}.${(this.cdTime.c || '00').padStart(2, '0')}`;
+            const fd = new FormData();
+            fd.append('pilot_id', this.cdPilotId);
+            fd.append('duration', dur);
+            if (this.cdAlt) fd.append('altitude_m', this.cdAlt);
+            const r = await (await fetch('/api/run/flight/add', { method: 'POST', body: fd })).json();
+            if (r.ok) {
+                this.cdTime = { m: '', s: '', c: '' };
+                this.cdAlt = '';
+                this.cdError = '';
+                this.cdOpen = false;
+            } else {
+                this.cdError = r.error || 'Failed to log flight';
+            }
+        },
     };
 }
 </script>
@@ -540,6 +570,66 @@ function runner(initialState) {
                     </div>
                 </template>
             </div>
+
+            <!-- CD Override: manually log a flight when a timer glitches -->
+            <template x-if="loaded && loaded.pilot_id_names && loaded.pilot_id_names.length">
+                <div class="mt-3 pt-3 border-t border-gray-700">
+                    <button @click="openCdOverride()"
+                            class="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                        <span x-text="cdOpen ? '▲' : '▼'"></span>
+                        CD Override — log flight manually
+                    </button>
+                    <div x-show="cdOpen" class="mt-2">
+                        <div class="flex gap-2 items-end flex-wrap">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Pilot</label>
+                                <select x-model="cdPilotId"
+                                        class="bg-gray-700 border border-gray-600 text-gray-100 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-yellow-400">
+                                    <template x-for="p in loaded.pilot_id_names" :key="p[0]">
+                                        <option :value="p[0]" x-text="p[1]"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Time</label>
+                                <div class="flex items-center gap-0.5">
+                                    <input type="text" inputmode="numeric" x-ref="cdM"
+                                           x-model="cdTime.m"
+                                           @input="cdTime.m = $event.target.value.replace(/\D/g,'').slice(0,1); $event.target.value = cdTime.m; if (cdTime.m.length === 1) $refs.cdS.focus()"
+                                           maxlength="1" placeholder="M"
+                                           class="w-7 text-center bg-gray-700 border border-gray-600 text-gray-100 rounded px-1 py-1 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-yellow-400">
+                                    <span class="text-gray-500 font-mono text-sm">:</span>
+                                    <input type="text" inputmode="numeric" x-ref="cdS"
+                                           x-model="cdTime.s"
+                                           @input="cdTime.s = $event.target.value.replace(/\D/g,'').slice(0,2); $event.target.value = cdTime.s; if (cdTime.s.length === 2) $refs.cdC.focus()"
+                                           @keydown.backspace="if ($event.target.value === '') { $event.preventDefault(); $refs.cdM.focus() }"
+                                           maxlength="2" placeholder="SS"
+                                           class="w-9 text-center bg-gray-700 border border-gray-600 text-gray-100 rounded px-1 py-1 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-yellow-400">
+                                    <span class="text-gray-500 font-mono text-sm">.</span>
+                                    <input type="text" inputmode="numeric" x-ref="cdC"
+                                           x-model="cdTime.c"
+                                           @input="cdTime.c = $event.target.value.replace(/\D/g,'').slice(0,2); $event.target.value = cdTime.c"
+                                           @keydown.backspace="if ($event.target.value === '') { $event.preventDefault(); $refs.cdS.focus() }"
+                                           maxlength="2" placeholder="HH"
+                                           class="w-9 text-center bg-gray-700 border border-gray-600 text-gray-100 rounded px-1 py-1 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-yellow-400">
+                                </div>
+                            </div>
+                            <template x-if="loaded.discipline === 'F5K'">
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Alt (m)</label>
+                                    <input type="number" x-model="cdAlt" min="0" max="999" placeholder="—"
+                                           class="bg-gray-700 border border-gray-600 text-gray-100 rounded px-2 py-1 text-sm w-16 focus:outline-none focus:ring-1 focus:ring-yellow-400">
+                                </div>
+                            </template>
+                            <button @click="addCdFlight()"
+                                    class="bg-yellow-600 hover:bg-yellow-500 text-white text-sm px-3 py-1.5 rounded">
+                                Log
+                            </button>
+                        </div>
+                        <div x-show="cdError" class="mt-1 text-xs text-red-400" x-text="cdError"></div>
+                    </div>
+                </div>
+            </template>
         </div>
     </div>
 </div>

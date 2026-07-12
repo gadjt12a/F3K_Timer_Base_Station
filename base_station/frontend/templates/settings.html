@@ -154,6 +154,33 @@
       </tbody>
     </table>
   </section>
+
+  <!-- ── Data Backup ── -->
+  <section class="bg-gray-800 rounded-lg p-5">
+    <h2 class="text-lg font-semibold mb-4 text-gray-200">Data Backup</h2>
+    <div class="flex flex-col sm:flex-row gap-6">
+      <div class="flex-1">
+        <p class="text-sm text-gray-400 mb-3">Download a full backup of all competition data — pilots, rounds, and flights.</p>
+        <a href="/api/db/backup"
+           class="inline-block bg-blue-700 hover:bg-blue-600 text-white text-sm px-4 py-2 rounded font-medium">
+          Download backup
+        </a>
+      </div>
+      <div class="flex-1 border-t sm:border-t-0 sm:border-l border-gray-700 pt-4 sm:pt-0 sm:pl-6">
+        <p class="text-sm text-gray-400 mb-1">Restore a previous backup.</p>
+        <p class="text-xs text-yellow-400 mb-3">Warning: replaces all current data immediately.</p>
+        <div class="flex gap-2 items-center flex-wrap">
+          <input type="file" x-ref="restoreFile" accept=".db"
+                 class="text-sm text-gray-300 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-gray-700 file:text-gray-200 hover:file:bg-gray-600">
+          <button @click="restore()" :disabled="restoreBusy"
+                  class="bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded font-medium"
+                  x-text="restoreBusy ? 'Restoring…' : 'Restore'">
+          </button>
+        </div>
+        <div x-show="restoreError" class="mt-2 text-xs text-red-400" x-text="restoreError"></div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -162,6 +189,7 @@ function settings() {
     audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0 },
     discovered: [], scanBusy: false, msg: '',
     timers: [], events: [],
+    restoreBusy: false, restoreError: '',
 
     async init() {
       await this.loadAudio();
@@ -202,6 +230,20 @@ function settings() {
     async disconnect(mac) {
       const r = await (await fetch('/api/bt/disconnect?mac=' + encodeURIComponent(mac), { method: 'POST' })).json();
       this.msg = r.ok ? 'Disconnected' : 'Disconnect failed'; await this.loadAudio();
+    },
+    async restore() {
+      const fi = this.$refs.restoreFile;
+      if (!fi || !fi.files[0]) { this.msg = 'Select a .db file first'; return; }
+      if (!confirm('This will replace ALL competition data with the backup file. Are you sure?')) return;
+      this.restoreBusy = true; this.restoreError = ''; this.msg = '';
+      const fd = new FormData();
+      fd.append('file', fi.files[0]);
+      try {
+        const r = await (await fetch('/api/db/restore', { method: 'POST', body: fd })).json();
+        if (r.ok) { this.msg = 'Database restored successfully.'; fi.value = ''; }
+        else { this.restoreError = r.error || 'Restore failed'; }
+      } catch (e) { this.restoreError = 'Network error during restore'; }
+      this.restoreBusy = false;
     },
     fmtTime(epoch) { return new Date(epoch * 1000).toLocaleTimeString(); },
     pingClass(age) { return age > 60 ? 'text-red-400' : age > 35 ? 'text-yellow-400' : 'text-green-400'; },
