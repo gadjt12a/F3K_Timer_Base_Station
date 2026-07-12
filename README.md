@@ -99,8 +99,8 @@ python3 -m venv venv && ./venv/bin/pip install -r base_station/requirements.txt
 In production it runs as the `f3k-server.service` systemd unit (auto-start on boot),
 behind two on-board Wi-Fi APs (`hostapd` + `dnsmasq`):
 
-- **F3K_BASE** (timer network, 192.168.10.0/24, wlan0) — handheld timers connect here
-- **F3K_OPS** (operator network, 192.168.20.0/24, wlan1 — MT7612U) — operator devices connect here; captive portal auto-opens `/run` on connect (dnsmasq resolves all DNS to 192.168.20.1, iptables redirects port 80 → 8080, FastAPI catch-all completes the redirect)
+- **F3K_BASE** (timer network, 192.168.10.0/24, wlan1 — MT7612U USB with external antenna) — handheld timers connect here
+- **F3K_OPS** (operator network, 192.168.20.0/24, wlan0 — built-in) — operator devices connect here; captive portal auto-opens `/run` on connect (dnsmasq resolves all DNS to 192.168.20.1, nftables redirects port 80 → 8080, FastAPI catch-all completes the redirect)
 
 ## Disciplines
 
