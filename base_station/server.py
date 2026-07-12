@@ -290,9 +290,13 @@ class F3KServer:
         if dup:
             log.warning(f"Duplicate FLIGHT suppressed: pilot={pilot_id} dur={dur_ms}ms group={group_id}")
             return False
+        next_no = self.db.execute(
+            "SELECT COALESCE(MAX(flight_no), 0) + 1 FROM flights WHERE pilot_id = ? AND group_id IS ?",
+            (pilot_id, group_id),
+        ).fetchone()[0]
         self.db.execute(
-            "INSERT INTO flights (pilot_id, duration_ms, group_id) VALUES (?, ?, ?)",
-            (pilot_id, dur_ms, group_id),
+            "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no) VALUES (?, ?, ?, ?)",
+            (pilot_id, dur_ms, group_id, next_no),
         )
         self.db.commit()
         return True

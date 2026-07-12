@@ -59,6 +59,23 @@ def _gs_time(ms: int) -> str:
     return f"{total_s // 60}{total_s % 60:02d}.{millis:03d}"
 
 
+def _parse_duration(s: str) -> int:
+    """Parse 'M:SS' or 'M:SS.HH' to milliseconds. Raises ValueError on bad input."""
+    s = s.strip()
+    if ':' not in s:
+        raise ValueError("Expected M:SS format")
+    m, rest = s.split(':', 1)
+    if '.' in rest:
+        sec, frac = rest.split('.', 1)
+        centis = frac.ljust(2, '0')[:2]
+    else:
+        sec, centis = rest, '00'
+    total_ms = (int(m) * 60 + int(sec)) * 1000 + int(centis) * 10
+    if total_ms <= 0:
+        raise ValueError("Duration must be positive")
+    return total_ms
+
+
 templates.env.filters["fmt_ms"] = _fmt_ms
 
 GS_UPLOAD_PATH = os.path.expanduser("~/f3k_base/gs_upload.mdb")
@@ -385,7 +402,7 @@ async def group_delete(group_id: int):
 # ---------------------------------------------------------------------------
 
 @app.get("/results")
-async def results_get(request: Request):
+async def results_get(request: Request, error: str = None):
     db = _db()
     competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
 
@@ -412,7 +429,7 @@ async def results_get(request: Request):
                        JOIN pilots p ON p.id = gp.pilot_id
                        LEFT JOIN flights f ON f.pilot_id = p.id AND f.group_id = ?
                        WHERE gp.group_id = ?
-                       ORDER BY p.name, f.recorded_at""",
+                       ORDER BY p.name, f.flight_no NULLS LAST, f.recorded_at""",
                     (grp["id"], grp["id"]),
                 ).fetchall()
 
@@ -433,7 +450,7 @@ async def results_get(request: Request):
                         if alt is not None:
                             any_altitudes = True
                         pilot_flights[pid]["flights"].append(
-                            {"duration_ms": row["duration_ms"], "altitude_m": alt}
+                            {"id": row["flight_id"], "duration_ms": row["duration_ms"], "altitude_m": alt}
                         )
 
                 pilots = [pilot_flights[pid] for pid in pilot_order]
@@ -457,7 +474,42 @@ async def results_get(request: Request):
     return templates.TemplateResponse(request, "results.html", {
         "active": "results",
         "comp_data": comp_data,
+        "error": error,
     })
+
+
+@app.post("/results/flight/add")
+async def results_flight_add(
+    group_id: int = Form(...),
+    pilot_id: int = Form(...),
+    duration: str = Form(...),
+    altitude_m: str = Form(""),
+    flight_no: str = Form(""),
+):
+    try:
+        dur_ms = _parse_duration(duration)
+    except (ValueError, TypeError):
+        return RedirectResponse(
+            f"/results?error={urllib.parse.quote('Invalid time — use M:SS or M:SS.HH (e.g. 3:00 or 3:00.55)')}",
+            status_code=303,
+        )
+    alt = float(altitude_m) if altitude_m.strip() else None
+    fno = int(flight_no) if flight_no.strip() else None
+    db = _db()
+    db.execute(
+        "INSERT INTO flights (pilot_id, duration_ms, group_id, altitude_m, flight_no) VALUES (?, ?, ?, ?, ?)",
+        (pilot_id, dur_ms, group_id, alt, fno),
+    )
+    db.commit()
+    return RedirectResponse("/results", status_code=303)
+
+
+@app.post("/results/flight/delete")
+async def results_flight_delete(flight_id: int = Form(...)):
+    db = _db()
+    db.execute("DELETE FROM flights WHERE id = ?", (flight_id,))
+    db.commit()
+    return RedirectResponse("/results", status_code=303)
 
 
 # ---------------------------------------------------------------------------
