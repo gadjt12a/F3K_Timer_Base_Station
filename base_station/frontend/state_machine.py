@@ -212,7 +212,7 @@ class CompetitionStateMachine:
         # (the start of PREP), so cues fire early enough to overcome fixed output
         # latency and land on the beat. The tick loop below stays the master clock
         # for the display and the timers (TCP), independent of audio.
-        engine.start_schedule(d["prep_time_s"])
+        engine.start_schedule(d["prep_time_s"], d["land_time_s"])
 
         # ── PREP ─────────────────────────────────────────────────────
         self._state = "PREP"

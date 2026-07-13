@@ -119,6 +119,7 @@ class AudioEngine:
         self._worker: asyncio.Task | None = None
         self._sched_task: asyncio.Task | None = None
         self._prep_offset: int = 0
+        self._land_time_s: int | None = None
         self._current_proc: asyncio.subprocess.Process | None = None
         self._beep_cache: dict[tuple[int, int], str] = {}
         self._disabled = os.environ.get("F3K_AUDIO_DISABLE") == "1"
@@ -234,7 +235,7 @@ class AudioEngine:
     # rather than being dropped.
     _PREROLL_S = 5
 
-    def build_schedule(self, prep_offset: int) -> list[tuple[float, dict]]:
+    def build_schedule(self, prep_offset: int, land_time_s: int | None = None) -> list[tuple[float, dict]]:
         """Absolute cue schedule for the active profile, in seconds from sequence start.
 
         ``prep_offset`` is when the working window opens relative to sequence start
@@ -243,23 +244,39 @@ class AudioEngine:
         ``prep_offset + t`` seconds after the sequence starts. This anchors the
         window-open horn (t=0) exactly on the timer START broadcast, regardless of any
         difference between the competition prep length and the profile's own.
+
+        ``land_time_s`` is the competition's actual landing window length. When it
+        differs from the profile's own land_s, all LT cues are shifted by the
+        difference so they land at the correct times within the actual window.
         """
         if not self._active:
             return []
+        # How far to shift LT cues when competition landing time != profile landing time.
+        lt_shift = (land_time_s - self._active.land_s) if land_time_s is not None else 0
         sched = []
         for c in self._active.cues:
             off = prep_offset + c["t"]
+            # Re-anchor LT cues to the competition's actual landing window length.
+            if lt_shift and c.get("state") == LT and c["t"] > self._active.work_s:
+                off += lt_shift
             if off < -self._PREROLL_S:
                 continue                      # genuinely before the sequence — drop
             # Replace per-second voice files (1.wav–10Secs.wav) in the last 10s of prep
             # with short beeps — the voice clips are longer than 1s and get clipped.
             if c.get("state") in (PT, TT, NF) and -10 <= c["t"] <= -1 and c.get("wav"):
                 c = {"wav": "", "beepHz": 880, "beepMs": 150}
+            # Same for the last 10s of working time — voice clips back up against the
+            # close horn and fire late; short beeps land cleanly at each second mark.
+            elif c.get("state") == WT and c.get("wav") and self._active.work_s - 10 <= c["t"] < self._active.work_s:
+                c = {"wav": "", "beepHz": 880, "beepMs": 150}
+            # Same for the last 10s of landing — voice clips during the landing window.
+            elif c.get("state") == LT and c.get("wav") and self._active._lt_close - 10 <= c["t"] < self._active._lt_close:
+                c = {"wav": "", "beepHz": 880, "beepMs": 150}
             sched.append((max(off, 0.0), c))  # clamp pre-roll cues to the start
         sched.sort(key=lambda x: x[0])
         return sched
 
-    def start_schedule(self, prep_offset: int) -> None:
+    def start_schedule(self, prep_offset: int, land_time_s: int | None = None) -> None:
         """Begin lead-compensated playback of the active profile, anchored to now.
 
         Fires each cue ``lead_s`` seconds early so the *sound* — after fixed output
@@ -267,7 +284,8 @@ class AudioEngine:
         """
         self.stop_schedule()
         self._prep_offset = prep_offset
-        sched = self.build_schedule(prep_offset)
+        self._land_time_s = land_time_s
+        sched = self.build_schedule(prep_offset, land_time_s)
         if not sched:
             return
         lead = audio_control.get_lead()
@@ -283,7 +301,7 @@ class AudioEngine:
             return
         self.stop_schedule()
         self._drain_queue()
-        sched = self.build_schedule(self._prep_offset)
+        sched = self.build_schedule(self._prep_offset, self._land_time_s)
         lead = audio_control.get_lead()
         self._sched_task = asyncio.create_task(self._run_schedule(sched, lead, elapsed))
         log.info("[AUDIO] schedule reanchored to elapsed=%.0fs", elapsed)

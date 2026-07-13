@@ -34,7 +34,13 @@ If no arguments are given, look at which base_station files were modified in thi
    ```
    You can scp multiple files in one command by listing them before the destination — but the destination must be a directory (e.g. `pi@f3kpi:~/f3k_base/frontend/templates/`), not a file path, when deploying multiple files to the same directory.
 
-2. After all files are copied, restart and confirm:
+2. After all files are copied, touch each deployed .py file on the Pi to ensure its mtime is newer than any cached .pyc (scp preserves source timestamps, which can match an existing .pyc and cause Python to use stale bytecode):
+   ```powershell
+   ssh -i "$env:USERPROFILE\.ssh\f3k_pi" pi@f3kpi "touch ~/f3k_base/<remote-path> [...]"
+   ```
+   Touch only the files that were actually deployed. Use separate paths per file, or a glob if all are in the same directory.
+
+3. After touching, restart and confirm:
    ```powershell
    ssh -i "$env:USERPROFILE\.ssh\f3k_pi" pi@f3kpi "sudo systemctl restart f3k-server && sleep 2 && sudo systemctl is-active f3k-server"
    ```
