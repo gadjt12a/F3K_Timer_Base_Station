@@ -104,8 +104,11 @@ async def _run(args: list[str], timeout: float = 20.0) -> tuple[int, str, str]:
 _DEV_RE = re.compile(r"^Device ([0-9A-F:]{17}) (.+)$", re.MULTILINE)
 
 
-async def _device_list(subcmd: str = "Paired") -> list[dict]:
-    rc, out, _ = await _run(["bluetoothctl", "devices", subcmd])
+async def _device_list(subcmd: str | None = "Paired") -> list[dict]:
+    cmd = ["bluetoothctl", "devices"]
+    if subcmd:
+        cmd.append(subcmd)
+    rc, out, _ = await _run(cmd)
     if rc != 0:
         return []
     return [{"mac": m.group(1), "name": m.group(2)} for m in _DEV_RE.finditer(out)]
@@ -136,7 +139,7 @@ async def bt_status() -> dict:
 async def bt_scan(seconds: int = 8) -> list[dict]:
     await _run(["bluetoothctl", "--timeout", str(seconds), "scan", "on"], timeout=seconds + 5)
     known = {d["mac"] for d in await _device_list("Paired")}
-    unpaired = [d for d in await _device_list() if d["mac"] not in known]
+    unpaired = [d for d in await _device_list(None) if d["mac"] not in known]
     # Devices advertising a real name (not just their MAC) sort first.
     def named(d: dict) -> bool:
         return d["name"] != d["mac"].replace(":", "-")

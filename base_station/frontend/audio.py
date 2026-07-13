@@ -29,6 +29,7 @@ import os
 import re
 import struct
 import tempfile
+import time
 import wave
 from pathlib import Path
 
@@ -102,6 +103,14 @@ class TimerProfile:
                 self.landing.setdefault(key, []).append(c)
 
 
+# Seconds of idle after which the A2DP transport / SBC codec is considered cold.
+# When cold, pre-silence is inserted into the next wav play so the codec reaches
+# steady state before the audio content starts. Without this, announcements start
+# quietly and ramp up over ~0.5s (SBC encoder startup artifact).
+_TRANSPORT_IDLE_S = 2.0
+_COLD_PRE_SILENCE_MS = 1200
+
+
 class AudioEngine:
     def __init__(self) -> None:
         self._profiles: dict[str, TimerProfile] = {}
@@ -114,6 +123,7 @@ class AudioEngine:
         self._beep_cache: dict[tuple[int, int], str] = {}
         self._disabled = os.environ.get("F3K_AUDIO_DISABLE") == "1"
         self._loaded = False
+        self._last_play_at: float = 0.0
 
     async def apply_saved_volume(self) -> None:
         """Re-apply the operator's saved volume (call once at startup)."""
@@ -122,8 +132,21 @@ class AudioEngine:
             await audio_control.apply_volume(vol)
 
     def play_test(self) -> None:
-        """Play a short sample (announcement + beep) to check output/volume."""
-        self._enqueue({"wav": "TimeToStart-00.30.wav", "beepHz": 0, "beepMs": 0})
+        """Play a short sample (announcement + beep) to check output/volume.
+
+        Drains any queued items and kills the current play first so every Test
+        press is a clean restart — prevents rapid presses from stacking up items
+        that play immediately after each other with no pre-silence on a cold transport.
+        """
+        if self._queue:
+            while not self._queue.empty():
+                try:
+                    self._queue.get_nowait()
+                    self._queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+        self._kill_current()
+        self._enqueue({"wav": "TimeToStart-00.30.wav", "pre_silence_ms": _COLD_PRE_SILENCE_MS})
         self._enqueue({"wav": "", "beepHz": 1000, "beepMs": 500})
 
     # ------------------------------------------------------------------
@@ -359,16 +382,48 @@ class AudioEngine:
             finally:
                 self._queue.task_done()
 
+    def _padded_wav(self, wav_name: str, pre_silence_ms: int) -> str | None:
+        """Return path to a wav with pre_silence_ms of silence prepended.
+
+        Keeps warmup and announcement in one aplay call so A2DP negotiates during
+        the silence rather than between two separate processes.
+        """
+        cache_key = f"pad{pre_silence_ms}_{wav_name}"
+        cached = self._beep_cache.get(cache_key)
+        if cached and os.path.exists(cached):
+            return cached
+        src = _WAV_DIR / wav_name
+        if not src.exists():
+            return None
+        with wave.open(str(src), "r") as r:
+            nch, sw, rate = r.getnchannels(), r.getsampwidth(), r.getframerate()
+            content = r.readframes(r.getnframes())
+        silence = b"\x00" * (int(rate * pre_silence_ms / 1000) * nch * sw)
+        out = os.path.join(tempfile.gettempdir(), f"f3k_pad{pre_silence_ms}_{wav_name}")
+        with wave.open(out, "w") as w:
+            w.setnchannels(nch)
+            w.setsampwidth(sw)
+            w.setframerate(rate)
+            w.writeframes(silence + content)
+        self._beep_cache[cache_key] = out
+        return out
+
     async def _play(self, cue: dict) -> None:
         wav = cue.get("wav")
         if wav:
-            path = _WAV_DIR / wav
-            if not path.exists():
+            pre = cue.get("pre_silence_ms", 0)
+            if not pre and audio_control.load_config().get("bt_mac"):
+                if time.monotonic() - self._last_play_at > _TRANSPORT_IDLE_S:
+                    pre = _COLD_PRE_SILENCE_MS
+            path = self._padded_wav(wav, pre) if pre else str(_WAV_DIR / wav)
+            if not path or not os.path.exists(path):
                 log.warning("[AUDIO] missing wav: %s", wav)
                 return
-            await self._aplay(str(path))
-        elif cue.get("beepHz") and cue.get("beepMs"):
-            await self._aplay(self._beep_wav(int(cue["beepHz"]), int(cue["beepMs"])))
+            await self._aplay(path)
+            self._last_play_at = time.monotonic()
+        elif cue.get("beepMs"):
+            await self._aplay(self._beep_wav(int(cue.get("beepHz", 0)), int(cue["beepMs"])))
+            self._last_play_at = time.monotonic()
 
     async def _aplay(self, path: str) -> None:
         args = ["aplay", "-q", "-D", audio_control.output_device(), path]

@@ -852,7 +852,13 @@ async def api_bt_connect(mac: str):
 
 @app.post("/api/bt/disconnect")
 async def api_bt_disconnect(mac: str):
-    return await audio_control.bt_disconnect(mac)
+    result = await audio_control.bt_disconnect(mac)
+    if result["ok"]:
+        cfg = audio_control.load_config()
+        if cfg.get("bt_mac") == mac:
+            cfg["bt_mac"] = None
+            audio_control.save_config(cfg)
+    return result
 
 
 @app.get("/api/timers")
