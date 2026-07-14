@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block main_class %}p-6{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Rounds</h1>
 
@@ -8,11 +9,19 @@
 
 {% for item in comp_data %}
 {% set comp = item.comp %}
-<div class="bg-gray-800 rounded-lg p-5 mb-6" x-data="{ showAddRound: false }">
+{% set locked = comp['gliderscore_comp_no'] %}
+<div class="bg-gray-800 rounded-lg mb-4" x-data="{ open: true, showAddRound: false }">
 
-    <!-- Competition header -->
-    <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
+    <!-- Competition header — click to expand/collapse -->
+    <div class="flex items-center justify-between px-5 py-4 cursor-pointer select-none"
+         @click="open = !open">
+        <div class="flex items-center gap-3 flex-wrap">
+            <!-- Chevron -->
+            <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-150"
+                 :class="open ? 'rotate-90' : ''"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
             <span class="text-base font-semibold">{{ comp['name'] }}</span>
             <span class="px-2 py-0.5 rounded text-xs font-medium
                 {% if comp['discipline'] == 'F3K' %}bg-blue-700 text-blue-200
@@ -20,148 +29,186 @@
                 {{ comp['discipline'] }}
             </span>
             <span class="text-sm text-gray-400">{{ comp['date'] }}</span>
+            {% if locked %}
+            <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/60 text-amber-300"
+                  title="Imported from GliderScore — structure is locked">
+                GS Locked
+            </span>
+            {% endif %}
+            <span class="text-xs text-gray-500">
+                {{ item.rounds | length }} round{{ 's' if item.rounds | length != 1 else '' }}
+            </span>
         </div>
-        <button @click="showAddRound = !showAddRound"
-                class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+        {% if not locked %}
+        <button @click.stop="showAddRound = !showAddRound; open = true"
+                class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm font-medium transition-colors flex-shrink-0">
             + Add Round
         </button>
+        {% endif %}
     </div>
 
-    <!-- Add round form -->
-    <div x-show="showAddRound" class="bg-gray-700 rounded p-4 mb-4">
-        <form method="post" action="/rounds/{{ comp['id'] }}/add" class="flex flex-wrap gap-3 items-end">
-            <div>
-                <label class="block text-xs text-gray-400 mb-1">Task</label>
-                <select name="task"
-                        @change="$refs.wt.value = 10"
-                        class="bg-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400 text-sm">
-                    {% for letter, info in tasks.get(comp['discipline'], {}).items() %}
-                    <option value="{{ letter }}">{{ letter }} — {{ info.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div>
-                <label class="block text-xs text-gray-400 mb-1">Working time (min)</label>
-                <input name="working_time_m" type="number" min="1" value="10"
-                       x-ref="wt"
-                       class="w-24 bg-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400 text-sm">
-            </div>
-            <button type="submit"
-                    class="bg-green-600 hover:bg-green-500 px-5 py-2 rounded text-sm font-medium transition-colors">
-                Add Round
-            </button>
-        </form>
-    </div>
+    <!-- Expandable body -->
+    <div x-show="open" x-transition:enter="transition-all duration-150"
+         x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+         class="border-t border-gray-700 px-5 pb-5">
 
-    <!-- Round list -->
-    {% if not item.rounds %}
-    <p class="text-gray-500 text-sm">No rounds yet — click "+ Add Round" to get started.</p>
-    {% endif %}
-
-    {% for ritem in item.rounds %}
-    {% set rnd = ritem.round %}
-    <div class="border border-gray-700 rounded mb-3" x-data="{ showAddGroup: false }">
-
-        <!-- Round header -->
-        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-            <div class="flex items-center gap-4">
-                <span class="text-xs text-gray-400 uppercase tracking-wide w-20">Round {{ rnd['round_no'] }}</span>
-                <span class="font-semibold text-yellow-300">Task {{ rnd['task'] }}</span>
-                <span class="text-sm text-gray-300">{{ tasks.get(comp['discipline'], {}).get(rnd['task'], {}).get('name', '') }}</span>
-                <span class="text-xs text-gray-500">{{ rnd['working_time_s'] // 60 }} min WT</span>
-            </div>
-            <div class="flex items-center gap-3">
-                <button @click="showAddGroup = !showAddGroup"
-                        class="text-xs bg-green-700 hover:bg-green-600 px-3 py-1 rounded transition-colors">
-                    + Group
-                </button>
-                <form method="post" action="/rounds/round/{{ rnd['id'] }}/delete" x-data
-                      @submit.prevent="confirm('Delete Round {{ rnd['round_no'] }}?') && $el.submit()">
-                    <button type="submit" class="text-red-400 hover:text-red-300 text-xs">Delete</button>
-                </form>
-            </div>
+        <!-- GliderScore lock notice -->
+        {% if locked %}
+        <div class="text-xs text-amber-400/80 bg-amber-900/20 border border-amber-800 rounded px-3 py-2 mt-4">
+            Structure locked — imported from GliderScore (CompNo {{ locked }}).
+            Rounds, groups, and pilot draw are managed in GliderScore. Re-import to update.
         </div>
+        {% endif %}
 
-        <!-- Groups + add group form -->
-        <div class="px-4 py-3">
+        <!-- Add round form (unlocked only) -->
+        {% if not locked %}
+        <div x-show="showAddRound" class="bg-gray-700 rounded p-4 mt-4">
+            <form method="post" action="/rounds/{{ comp['id'] }}/add" class="flex flex-wrap gap-3 items-end">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Task</label>
+                    <select name="task"
+                            @change="$refs.wt_{{ comp['id'] }}.value = 10"
+                            class="bg-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400 text-sm">
+                        {% for letter, info in tasks.get(comp['discipline'], {}).items() %}
+                        <option value="{{ letter }}">{{ letter }} — {{ info.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Working time (min)</label>
+                    <input name="working_time_m" type="number" min="1" value="10"
+                           x-ref="wt_{{ comp['id'] }}"
+                           class="w-24 bg-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400 text-sm">
+                </div>
+                <button type="submit"
+                        class="bg-green-600 hover:bg-green-500 px-5 py-2 rounded text-sm font-medium transition-colors">
+                    Add Round
+                </button>
+            </form>
+        </div>
+        {% endif %}
 
-            {% if ritem.groups %}
-            <div class="flex flex-wrap gap-3 mb-3">
-                {% for gitem in ritem.groups %}
-                {% set grp = gitem.group %}
-                {% set grp_letter = "ABCDEFGH"[grp['group_no'] - 1] %}
-                <div class="bg-gray-700 rounded p-3 min-w-36">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-bold text-gray-300">Group {{ grp_letter }}</span>
-                        <form method="post" action="/rounds/group/{{ grp['id'] }}/delete" x-data
-                              @submit.prevent="confirm('Delete Group {{ grp_letter }}?') && $el.submit()">
-                            <button type="submit" class="text-red-400 hover:text-red-300 text-xs">✕</button>
+        <!-- Round grid -->
+        {% if not item.rounds %}
+        <p class="text-gray-500 text-sm mt-4">No rounds yet{% if not locked %} — click "+ Add Round" to get started{% endif %}.</p>
+        {% else %}
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+            {% for ritem in item.rounds %}
+            {% set rnd = ritem.round %}
+            <div class="border border-gray-700 rounded" x-data="{ showAddGroup: false }">
+
+                <!-- Round header -->
+                <div class="flex items-center justify-between px-3 py-2.5 bg-gray-750 border-b border-gray-700 rounded-t">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-gray-400 uppercase tracking-wide">R{{ rnd['round_no'] }}</span>
+                        <span class="font-semibold text-yellow-300 text-sm">Task {{ rnd['task'] }}</span>
+                        <span class="text-xs text-gray-300">{{ tasks.get(comp['discipline'], {}).get(rnd['task'], {}).get('name', '') }}</span>
+                        <span class="text-xs text-gray-500">{{ rnd['working_time_s'] // 60 }}m</span>
+                    </div>
+                    {% if not locked %}
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <button @click="showAddGroup = !showAddGroup"
+                                class="text-xs bg-green-700 hover:bg-green-600 px-2 py-1 rounded transition-colors">
+                            + Group
+                        </button>
+                        <form method="post" action="/rounds/round/{{ rnd['id'] }}/delete" x-data
+                              @submit.prevent="confirm('Delete Round {{ rnd['round_no'] }}?') && $el.submit()">
+                            <button type="submit" class="text-red-400 hover:text-red-300 text-xs">Del</button>
                         </form>
                     </div>
-                    {% if gitem.pilots %}
-                    <ul class="text-sm text-gray-200 space-y-0.5 mb-1">
-                        {% for pilot in gitem.pilots %}
-                        <li>{{ pilot['name'] }}</li>
+                    {% endif %}
+                </div>
+
+                <!-- Groups -->
+                <div class="p-3">
+
+                    {% if ritem.groups %}
+                    <div class="flex flex-col gap-2">
+                        {% for gitem in ritem.groups %}
+                        {% set grp = gitem.group %}
+                        {% set grp_letter = "ABCDEFGH"[grp['group_no'] - 1] %}
+                        <div class="bg-gray-700 rounded p-2.5">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <span class="text-xs font-bold text-gray-300">Group {{ grp_letter }}</span>
+                                {% if not locked %}
+                                <form method="post" action="/rounds/group/{{ grp['id'] }}/delete" x-data
+                                      @submit.prevent="confirm('Delete Group {{ grp_letter }}?') && $el.submit()">
+                                    <button type="submit" class="text-red-400 hover:text-red-300 text-xs leading-none">✕</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            <div class="flex flex-wrap gap-1">
+                                {% if gitem.pilots %}
+                                {% for pilot in gitem.pilots %}
+                                <span class="bg-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">{{ pilot['name'] }}</span>
+                                {% endfor %}
+                                {% endif %}
+                                {% for _ in range(grp['dummy_count']) %}
+                                <span class="bg-gray-600 rounded px-1.5 py-0.5 text-xs text-yellow-500 italic">TBD</span>
+                                {% endfor %}
+                                {% if not gitem.pilots and grp['dummy_count'] == 0 %}
+                                <span class="text-xs text-gray-500">No pilots.</span>
+                                {% endif %}
+                            </div>
+                            {% if not locked %}
+                            <div class="flex items-center gap-1 mt-2">
+                                <span class="text-xs text-gray-500">TBD</span>
+                                <form method="post" action="/rounds/group/{{ grp['id'] }}/dummy/add">
+                                    <button type="submit" class="text-xs bg-gray-600 hover:bg-gray-500 w-5 h-5 rounded leading-none">+</button>
+                                </form>
+                                {% if grp['dummy_count'] > 0 %}
+                                <form method="post" action="/rounds/group/{{ grp['id'] }}/dummy/remove">
+                                    <button type="submit" class="text-xs bg-gray-600 hover:bg-gray-500 w-5 h-5 rounded leading-none">−</button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
                         {% endfor %}
-                    </ul>
+                    </div>
+                    {% else %}
+                    <p class="text-gray-500 text-xs">No groups yet{% if not locked %} — click "+ Group"{% endif %}.</p>
                     {% endif %}
-                    {% for _ in range(grp['dummy_count']) %}
-                    <p class="text-xs text-yellow-500 italic">— TBD —</p>
-                    {% endfor %}
-                    {% if not gitem.pilots and grp['dummy_count'] == 0 %}
-                    <p class="text-xs text-gray-500">No pilots.</p>
-                    {% endif %}
-                    <div class="flex items-center gap-1 mt-2">
-                        <span class="text-xs text-gray-500 mr-1">TBD</span>
-                        <form method="post" action="/rounds/group/{{ grp['id'] }}/dummy/add">
-                            <button type="submit" class="text-xs bg-gray-600 hover:bg-gray-500 w-5 h-5 rounded leading-none">+</button>
+
+                    <!-- Add group form (unlocked only) -->
+                    {% if not locked %}
+                    <div x-show="showAddGroup" class="border-t border-gray-700 pt-3 mt-3">
+                        {% if item.comp_pilots %}
+                        <form method="post" action="/rounds/round/{{ rnd['id'] }}/group/add">
+                            <p class="text-xs text-gray-400 mb-2">Select pilots for new group:</p>
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                {% for pilot in item.comp_pilots %}
+                                <label class="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 rounded px-2 py-1 text-xs cursor-pointer">
+                                    <input type="checkbox" name="pilot_ids" value="{{ pilot['id'] }}" class="accent-yellow-400">
+                                    {{ pilot['name'] }}
+                                </label>
+                                {% endfor %}
+                            </div>
+                            <div class="flex items-center gap-2 mb-3">
+                                <label class="text-xs text-gray-400">TBD slots</label>
+                                <input name="dummy_count" type="number" min="0" value="0"
+                                       class="w-14 bg-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                            </div>
+                            <button type="submit"
+                                    class="bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded text-xs font-medium transition-colors">
+                                Add Group
+                            </button>
                         </form>
-                        {% if grp['dummy_count'] > 0 %}
-                        <form method="post" action="/rounds/group/{{ grp['id'] }}/dummy/remove">
-                            <button type="submit" class="text-xs bg-gray-600 hover:bg-gray-500 w-5 h-5 rounded leading-none">−</button>
-                        </form>
+                        {% else %}
+                        <p class="text-xs text-gray-500">No pilots assigned — <a href="/setup" class="text-yellow-400 hover:underline">go to Setup</a>.</p>
                         {% endif %}
                     </div>
+                    {% endif %}
                 </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-gray-500 text-xs mb-2">No groups yet — click "+ Group" to add one.</p>
-            {% endif %}
 
-            <!-- Add group form -->
-            <div x-show="showAddGroup" class="border-t border-gray-700 pt-3">
-                {% if item.comp_pilots %}
-                <form method="post" action="/rounds/round/{{ rnd['id'] }}/group/add">
-                    <p class="text-xs text-gray-400 mb-2">Select pilots for new group:</p>
-                    <div class="flex flex-wrap gap-2 mb-3">
-                        {% for pilot in item.comp_pilots %}
-                        <label class="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 rounded px-2 py-1 text-sm cursor-pointer">
-                            <input type="checkbox" name="pilot_ids" value="{{ pilot['id'] }}" class="accent-yellow-400">
-                            {{ pilot['name'] }}
-                        </label>
-                        {% endfor %}
-                    </div>
-                    <div class="flex items-center gap-3 mb-3">
-                        <label class="text-xs text-gray-400">TBD slots</label>
-                        <input name="dummy_count" type="number" min="0" value="0"
-                               class="w-16 bg-gray-600 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
-                        <span class="text-xs text-gray-500">flight manager assigns on the day</span>
-                    </div>
-                    <button type="submit"
-                            class="bg-green-600 hover:bg-green-500 px-4 py-1.5 rounded text-sm font-medium transition-colors">
-                        Add Group
-                    </button>
-                </form>
-                {% else %}
-                <p class="text-xs text-gray-500">No pilots assigned to this competition — <a href="/setup" class="text-yellow-400 hover:underline">go to Setup</a>.</p>
-                {% endif %}
             </div>
+            {% endfor %}
+
         </div>
+        {% endif %}
 
     </div>
-    {% endfor %}
-
 </div>
 {% endfor %}
 

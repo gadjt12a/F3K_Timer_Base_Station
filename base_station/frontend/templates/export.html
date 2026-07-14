@@ -1,16 +1,44 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h1 class="text-xl font-bold text-gray-100 mb-5">Export</h1>
+<h1 class="text-xl font-bold text-gray-100 mb-5">Export / GliderScore</h1>
 
-<div class="mb-6 bg-yellow-900/40 border border-yellow-700 rounded-lg p-4 text-sm space-y-1.5">
-    <p class="font-semibold text-yellow-200">GliderScore CSV — External Scoring System format (15-field)</p>
-    <p class="text-yellow-300">
-        <strong>PilotNo</strong> in the exported CSV uses internal IDs, not GliderScore's pilot numbers.
+<!-- GliderScore Direct Sync tool download -->
+<div class="mb-6 bg-blue-900/30 border border-blue-700 rounded-lg p-5">
+    <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+            <p class="font-semibold text-blue-200 mb-1">GliderScore Direct Sync</p>
+            <p class="text-sm text-blue-300/80 mb-2">
+                Windows app that writes scored results directly into GliderScore's database
+                — no CSV import needed. Run it on the CD's PC while connected to this base station.
+            </p>
+            <ol class="text-xs text-blue-400/80 space-y-0.5 list-decimal list-inside">
+                <li>Download <strong>F3KSync.exe</strong> and place it anywhere on the CD's PC</li>
+                <li>Double-click to open — browse to the GliderScore folder, enter this base station's URL</li>
+                <li>Click Connect, choose the competition, then Sync Scores</li>
+                <li>Click Recalculate in GliderScore to finalise normalised scores</li>
+            </ol>
+        </div>
+        <a href="/downloads/F3KSync.exe"
+           class="flex-shrink-0 bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded font-semibold
+                  text-sm transition-colors whitespace-nowrap">
+            Download F3KSync.exe
+        </a>
+    </div>
+</div>
+
+<!-- CSV export (GliderScore import fallback) -->
+<h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">CSV Export (manual import)</h2>
+
+<div class="mb-4 bg-gray-800/50 border border-gray-700 rounded-lg p-3 text-xs text-gray-400 space-y-1">
+    <p>
+        <strong class="text-gray-300">PilotNo</strong> in the CSV uses internal IDs, not GliderScore's pilot numbers.
         After importing, verify pilots matched correctly in GliderScore desktop.
-        Set <strong>GliderScore CompNo</strong> in Setup so the CSV CompNo matches your GliderScore competition.
+        Set <strong class="text-gray-300">GliderScore CompNo</strong> in
+        <a href="/setup" class="underline hover:text-gray-200">Setup</a>
+        so the CSV CompNo matches your GliderScore competition.
     </p>
-    <p class="text-yellow-400/80 text-xs">F5K export is not yet supported — altitude→Data field mapping is still unknown.</p>
+    <p class="text-gray-500">F5K: raw flight times only — enter motor-cut altitudes manually in GliderScore after import.</p>
 </div>
 
 {% if not comp_data %}
@@ -48,9 +76,6 @@
     </div>
 
     <div class="flex flex-col items-end gap-2 flex-shrink-0">
-        {% if cd.comp.discipline == 'F5K' %}
-        <span class="text-xs text-fuchsia-400">F5K not yet supported</span>
-        {% else %}
         <a href="/export/{{ cd.comp.id }}/csv"
            class="bg-green-700 hover:bg-green-600 px-4 py-2 rounded font-semibold text-sm
                   transition-colors whitespace-nowrap">
@@ -58,7 +83,6 @@
         </a>
         {% if cd.flight_count == 0 %}
         <span class="text-xs text-gray-500">No flights to export</span>
-        {% endif %}
         {% endif %}
     </div>
 </div>

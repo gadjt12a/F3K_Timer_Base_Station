@@ -43,18 +43,21 @@ base_station/
     └── data/                 # GliderScore-derived reference data
         ├── gliderscore_timer_profiles.json   # 18 timer/audio cue profiles
         └── gliderscore_audio_library.json    # 233-row announcement library
+tools/
+├── gs_sync.py                # Windows bridge: GUI + CLI; fetches JSON from base station → writes scored results direct to GliderScore .mdb (ACE OLEDB via 32-bit PS)
+└── build_exe.ps1             # PyInstaller build script → dist/F3KSync.exe (deploy to Pi for CD download)
 ```
 
 ## Web UI
 
 | Route | Purpose |
 |-------|---------|
-| `/setup` | Global pilot registry + competitions (F3K / F5K), per-comp pilot assignment |
-| `/rounds` | Round builder — tasks (A–N), working time, groups with pilot draw + TBD slots |
+| `/setup` | Two-column: competitions (left, full-width) + sticky pilot registry (right); GliderScore-imported competitions show GS Locked badge — pilot draw and structure are read-only |
+| `/rounds` | Round builder — collapsible competition cards (chevron header, round count badge); rounds displayed in a responsive 3-column grid; tasks (A–N), working time, groups with pilot draw + TBD slots; add/delete controls hidden for GS Locked competitions |
 | `/run` | Operator screen — load/start/abort heats, live M:SS.HH countdown (20fps), flight log with altitude, CD skip, dual F3K/F5K heat queue columns, mark heats done/undone, auto-advance 3s toast, readiness check warning, timer connection status strip (T1/T2 pills), pilot status strip (○ unbound → ✓+T#), CD override form to manually log a flight for any pilot |
 | `/results` | Per-heat flight tables — pilots × flights, times in M:SS.hh; F5K altitudes in fuchsia; per-heat Edit mode: delete flights, manually add flights (pilot, flight #, split M:SS.HH input, altitude) |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
-| `/export` | Download GliderScore-compatible 15-field CSV for each competition |
+| `/export` | Download GliderScore-compatible 15-field CSV per competition; download F3KSync.exe (Direct Sync tool) |
 | `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore |
 | `/health` | JSON status (timers connected) |
 
@@ -71,10 +74,21 @@ competition setup lives in the `.mdb`.
 
 **Export (base station → GliderScore):** Download a 15-field CSV
 (`CompNo, TaskNo, RoundNo, GroupNo, ReFlightNo, PilotNo, Data1–7, Penalty, PilotName`)
-in GliderScore's External Scoring System format. F3K flight times use `mmss.sss` encoding
+in GliderScore's External Scoring System format. Flight times use `mmss.sss` encoding
 (e.g. 83.4 s → `123.400`). PilotNo values come from the imported GliderScore registry so
-they match exactly on re-import. F5K export is not yet supported (altitude→Data mapping
-TBD).
+they match exactly on re-import. F5K uses the same format as F3K (raw flight times in
+Data1–4); altitude is not in the CSV — the CD enters motor-cut altitudes manually in
+GliderScore after import. MIXED competitions export each round with the correct TaskNo
+(F3K=5 / F5K=6) per round. Flights are exported in `flight_no` order so task rules like
+"last flight counts" (F5K Task B) apply correctly.
+
+**Direct DB write:** `tools/gs_sync.py` is a Windows-side bridge that writes scored results
+(full F3K/F5K task scoring + F5K altitude bonus) directly to `GliderScoreData.mdb` via ACE
+OLEDB + 32-bit PowerShell — no CSV import step. Ships as `F3KSync.exe` (PyInstaller,
+downloadable from the `/export` page). Double-click to open the GUI: browse to GliderScore
+folder, enter base station URL, Connect, pick competition, Sync Scores. Also usable as CLI:
+`F3KSync.exe --base http://10.0.1.12:8080 --comp-id N`. End-to-end verified (F3K + F5K);
+NormalisedScore populates on GliderScore Recalculate; written values survive.
 
 Task catalogues and digital-timer audio cue schedules are extracted verbatim from
 GliderScore's own database; the reference data lives in `frontend/data/`.
@@ -111,5 +125,6 @@ on the same day, alternating rounds, sharing a pilot pool.
 presses R on the Time Up screen to begin entering altitudes. The watch steps through each
 recorded flight ("FLIGHT N of M"), with R=+1m / L=+10m / hold-R to confirm, then sends
 `ALTITUDE pilot=N flight=M alt=X` to the base station which stores it against the flight
-record. F5K CSV export is not yet supported (altitude → Data1–7 mapping TBD pending a
-scored F5K sample).
+record. Altitudes are stored and shown in fuchsia on the results page. F5K CSV export
+includes flight times; altitude must be entered separately in GliderScore (altitude is not
+part of the CSV format — GliderScore applies its own bonus table internally).

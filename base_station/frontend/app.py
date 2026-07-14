@@ -87,6 +87,27 @@ def _db():
     return app.state.server.db
 
 
+def _gs_locked(db, comp_id: int) -> bool:
+    """Return True if the competition was imported from GliderScore (structure is locked)."""
+    row = db.execute(
+        "SELECT gliderscore_comp_no FROM competitions WHERE id = ?", (comp_id,)
+    ).fetchone()
+    return bool(row and row["gliderscore_comp_no"])
+
+
+def _comp_id_of_round(db, round_id: int) -> int | None:
+    row = db.execute("SELECT competition_id FROM rounds WHERE id = ?", (round_id,)).fetchone()
+    return row["competition_id"] if row else None
+
+
+def _comp_id_of_group(db, group_id: int) -> int | None:
+    row = db.execute(
+        "SELECT r.competition_id FROM groups g JOIN rounds r ON r.id = g.round_id WHERE g.id = ?",
+        (group_id,),
+    ).fetchone()
+    return row["competition_id"] if row else None
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "timers_connected": len(app.state.server._clients)}
@@ -182,6 +203,8 @@ async def competition_delete(comp_id: int):
 @app.post("/setup/competition/{comp_id}/pilot/add")
 async def competition_pilot_add(comp_id: int, pilot_id: int = Form(...)):
     db = _db()
+    if _gs_locked(db, comp_id):
+        return RedirectResponse("/setup", status_code=303)
     db.execute(
         "INSERT OR IGNORE INTO competition_pilots (competition_id, pilot_id) VALUES (?, ?)",
         (comp_id, pilot_id),
@@ -193,6 +216,8 @@ async def competition_pilot_add(comp_id: int, pilot_id: int = Form(...)):
 @app.post("/setup/competition/{comp_id}/pilot/{pilot_id}/remove")
 async def competition_pilot_remove(comp_id: int, pilot_id: int):
     db = _db()
+    if _gs_locked(db, comp_id):
+        return RedirectResponse("/setup", status_code=303)
     db.execute(
         "DELETE FROM competition_pilots WHERE competition_id = ? AND pilot_id = ?",
         (comp_id, pilot_id),
@@ -320,6 +345,8 @@ async def rounds_get(request: Request):
 @app.post("/rounds/{comp_id}/add")
 async def round_add(comp_id: int, task: str = Form(...), working_time_m: int = Form(10)):
     db = _db()
+    if _gs_locked(db, comp_id):
+        return RedirectResponse("/rounds", status_code=303)
     comp = db.execute("SELECT discipline FROM competitions WHERE id = ?", (comp_id,)).fetchone()
     if not comp:
         return RedirectResponse("/rounds", status_code=303)
@@ -339,6 +366,8 @@ async def round_add(comp_id: int, task: str = Form(...), working_time_m: int = F
 @app.post("/rounds/round/{round_id}/delete")
 async def round_delete(round_id: int):
     db = _db()
+    if _gs_locked(db, _comp_id_of_round(db, round_id)):
+        return RedirectResponse("/rounds", status_code=303)
     groups = db.execute("SELECT id FROM groups WHERE round_id = ?", (round_id,)).fetchall()
     for grp in groups:
         db.execute("DELETE FROM group_pilots WHERE group_id = ?", (grp["id"],))
@@ -350,10 +379,12 @@ async def round_delete(round_id: int):
 
 @app.post("/rounds/round/{round_id}/group/add")
 async def group_add(round_id: int, request: Request):
+    db = _db()
+    if _gs_locked(db, _comp_id_of_round(db, round_id)):
+        return RedirectResponse("/rounds", status_code=303)
     form = await request.form()
     pilot_ids = form.getlist("pilot_ids")
     dummy_count = int(form.get("dummy_count", 0) or 0)
-    db = _db()
     max_no = db.execute(
         "SELECT MAX(group_no) FROM groups WHERE round_id = ?", (round_id,)
     ).fetchone()[0]
@@ -375,6 +406,8 @@ async def group_add(round_id: int, request: Request):
 @app.post("/rounds/group/{group_id}/dummy/add")
 async def group_dummy_add(group_id: int):
     db = _db()
+    if _gs_locked(db, _comp_id_of_group(db, group_id)):
+        return RedirectResponse("/rounds", status_code=303)
     db.execute("UPDATE groups SET dummy_count = dummy_count + 1 WHERE id = ?", (group_id,))
     db.commit()
     return RedirectResponse("/rounds", status_code=303)
@@ -383,6 +416,8 @@ async def group_dummy_add(group_id: int):
 @app.post("/rounds/group/{group_id}/dummy/remove")
 async def group_dummy_remove(group_id: int):
     db = _db()
+    if _gs_locked(db, _comp_id_of_group(db, group_id)):
+        return RedirectResponse("/rounds", status_code=303)
     db.execute(
         "UPDATE groups SET dummy_count = MAX(0, dummy_count - 1) WHERE id = ?", (group_id,)
     )
@@ -393,6 +428,8 @@ async def group_dummy_remove(group_id: int):
 @app.post("/rounds/group/{group_id}/delete")
 async def group_delete(group_id: int):
     db = _db()
+    if _gs_locked(db, _comp_id_of_group(db, group_id)):
+        return RedirectResponse("/rounds", status_code=303)
     db.execute("DELETE FROM group_pilots WHERE group_id = ?", (group_id,))
     db.execute("DELETE FROM groups WHERE id = ?", (group_id,))
     db.commit()
@@ -599,7 +636,6 @@ async def export_csv(comp_id: int):
         return RedirectResponse("/export", status_code=303)
 
     comp_no = comp["gliderscore_comp_no"] or comp_id
-    task_no = _TASK_NO.get(comp["discipline"], 5)
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -609,6 +645,7 @@ async def export_csv(comp_id: int):
     ).fetchall()
 
     for rnd in rounds:
+        task_no = _TASK_NO.get(rnd["discipline"], 5)
         groups = db.execute(
             "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (rnd["id"],)
         ).fetchall()
@@ -623,7 +660,7 @@ async def export_csv(comp_id: int):
                 flights = db.execute(
                     """SELECT duration_ms FROM flights
                        WHERE pilot_id = ? AND group_id = ?
-                       ORDER BY recorded_at""",
+                       ORDER BY COALESCE(flight_no, 9999), recorded_at""",
                     (pilot["id"], grp["id"]),
                 ).fetchall()
                 times = [f["duration_ms"] for f in flights[:7]]
@@ -644,6 +681,61 @@ async def export_csv(comp_id: int):
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/export/{comp_id}/json")
+async def export_json(comp_id: int):
+    """JSON export for the Windows gs_sync bridge — includes all flight/altitude data."""
+    db = _db()
+    comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+    if not comp:
+        return {"error": "not found"}
+
+    rounds_out = []
+    for rnd in db.execute(
+        "SELECT * FROM rounds WHERE competition_id = ? ORDER BY round_no", (comp_id,)
+    ).fetchall():
+        groups_out = []
+        for grp in db.execute(
+            "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (rnd["id"],)
+        ).fetchall():
+            pilots_out = []
+            for pilot in db.execute(
+                """SELECT p.id, p.name, p.gliderscore_pilot_no FROM pilots p
+                   JOIN group_pilots gp ON gp.pilot_id = p.id
+                   WHERE gp.group_id = ? ORDER BY p.name""",
+                (grp["id"],),
+            ).fetchall():
+                flights_out = [
+                    {"duration_ms": f["duration_ms"], "altitude_m": f["altitude_m"]}
+                    for f in db.execute(
+                        """SELECT duration_ms, altitude_m FROM flights
+                           WHERE pilot_id = ? AND group_id = ?
+                           ORDER BY COALESCE(flight_no, 9999), recorded_at""",
+                        (pilot["id"], grp["id"]),
+                    ).fetchall()
+                ]
+                pilots_out.append({
+                    "name": pilot["name"],
+                    "gliderscore_pilot_no": pilot["gliderscore_pilot_no"],
+                    "flights": flights_out,
+                })
+            groups_out.append({"group_no": grp["group_no"], "pilots": pilots_out})
+        rounds_out.append({
+            "round_no": rnd["round_no"],
+            "task": rnd["task"],
+            "discipline": rnd["discipline"],
+            "working_time_s": rnd["working_time_s"],
+            "groups": groups_out,
+        })
+
+    return {
+        "name": comp["name"],
+        "discipline": comp["discipline"],
+        "date": comp["date"],
+        "gliderscore_comp_no": comp["gliderscore_comp_no"],
+        "rounds": rounds_out,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -861,6 +953,26 @@ async def api_bt_disconnect(mac: str):
     return result
 
 
+@app.get("/api/competitions")
+async def api_competitions():
+    """List all competitions — used by the Windows gs_sync GUI dropdown."""
+    rows = _db().execute(
+        "SELECT id, name, discipline, gliderscore_comp_no FROM competitions ORDER BY id"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/downloads/{filename}")
+async def downloads(filename: str):
+    """Serve files from ~/f3k_base/downloads/ (e.g. F3KSync.exe)."""
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    path = Path.home() / "f3k_base" / "downloads" / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(path, filename=filename)
+
+
 @app.get("/api/timers")
 async def api_timers():
     srv = app.state.server
@@ -924,4 +1036,9 @@ async def api_db_restore(file: UploadFile = File(...)):
 
 @app.get("/{path:path}")
 async def captive_portal_catchall(path: str, request: Request):
-    return RedirectResponse(url="http://192.168.20.1:8080/run", status_code=302)
+    # OPS WiFi captive portal: redirect OS probes to the run page via the AP's address.
+    # All other clients (ethernet, home network, external proxy) get a plain relative redirect.
+    client = request.client.host if request.client else ""
+    if client.startswith("192.168.20."):
+        return RedirectResponse(url="http://192.168.20.1:8080/run", status_code=302)
+    return RedirectResponse(url="/run", status_code=302)
