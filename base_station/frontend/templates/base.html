@@ -14,6 +14,7 @@
         <a href="/rounds" class="hover:text-yellow-400 {% if active == 'rounds' %}text-yellow-400{% else %}text-gray-300{% endif %}">Rounds</a>
         <a href="/run" class="hover:text-yellow-400 {% if active == 'run' %}text-yellow-400{% else %}text-gray-300{% endif %}">Run</a>
         <a href="/results" class="hover:text-yellow-400 {% if active == 'results' %}text-yellow-400{% else %}text-gray-300{% endif %}">Results</a>
+        <a href="/leaderboard" class="hover:text-yellow-400 {% if active == 'leaderboard' %}text-yellow-400{% else %}text-gray-300{% endif %}">Leaderboard</a>
         <div class="relative" x-data="{ open: false }" @click.outside="open = false">
             <button @click="open = !open" class="flex items-center gap-1 hover:text-yellow-400 {% if active in ['import', 'export'] %}text-yellow-400{% else %}text-gray-300{% endif %}">
                 GliderScore

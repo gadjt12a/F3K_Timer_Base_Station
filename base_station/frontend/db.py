@@ -81,14 +81,43 @@ def init_db(path: str) -> sqlite3.Connection:
     _add_flight_columns(db)
     _migrate_groups(db)
     _migrate_pilots(db)
+    _migrate_competitions(db)
+    _migrate_rounds(db)
 
     return db
+
+
+def _migrate_competitions(db: sqlite3.Connection) -> None:
+    """Scoring-engine config (SCORING_ENGINE_PROJECT.md Phase B2)."""
+    existing = {row[1] for row in db.execute("PRAGMA table_info(competitions)")}
+    additions = [
+        ("drop1_at_round",         "INTEGER NOT NULL DEFAULT 99"),
+        ("drop2_at_round",         "INTEGER NOT NULL DEFAULT 99"),
+        ("drop3_at_round",         "INTEGER NOT NULL DEFAULT 99"),
+        ("f5k_ref_height",         "REAL NOT NULL DEFAULT 60"),
+        ("f5k_min_time_for_bonus", "INTEGER NOT NULL DEFAULT 30"),
+        ("time_decimals",          "INTEGER NOT NULL DEFAULT 1"),
+    ]
+    for col_name, col_type in additions:
+        if col_name not in existing:
+            db.execute(f"ALTER TABLE competitions ADD COLUMN {col_name} {col_type}")
+    db.commit()
+
+
+def _migrate_rounds(db: sqlite3.Connection) -> None:
+    existing = {row[1] for row in db.execute("PRAGMA table_info(rounds)")}
+    if "ref_height_m" not in existing:
+        # F5K reference height per round; NULL = use competition f5k_ref_height
+        db.execute("ALTER TABLE rounds ADD COLUMN ref_height_m REAL")
+    db.commit()
 
 
 def _migrate_pilots(db: sqlite3.Connection) -> None:
     existing = {row[1] for row in db.execute("PRAGMA table_info(pilots)")}
     if "gliderscore_pilot_no" not in existing:
         db.execute("ALTER TABLE pilots ADD COLUMN gliderscore_pilot_no INTEGER")
+    if "fai_number" not in existing:
+        db.execute("ALTER TABLE pilots ADD COLUMN fai_number TEXT")
     db.commit()
 
 
@@ -108,6 +137,7 @@ def _add_flight_columns(db: sqlite3.Connection) -> None:
         ("flight_no",  "INTEGER"),
         ("altitude_m", "REAL"),
         ("penalty",    "INTEGER DEFAULT 0"),
+        ("altitude_source", "TEXT"),  # 'timer' | 'cd_entry' | NULL (audit trail)
     ]
     for col_name, col_type in additions:
         if col_name not in existing:

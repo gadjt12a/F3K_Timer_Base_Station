@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block main_class %}p-6{% endblock %}
+{% block content %}
+
+<div class="flex items-center gap-4 mb-6 flex-wrap">
+    <h1 class="text-xl font-bold text-gray-100">Leaderboard</h1>
+
+    {% if comps %}
+    <div class="flex gap-2 items-center ml-4">
+        {% for c in comps %}
+        <a href="/leaderboard?comp_id={{ c.id }}"
+           class="text-sm px-3 py-1 rounded border
+                  {% if comp and c.id == comp.id %}border-yellow-500 text-yellow-400 bg-gray-800
+                  {% else %}border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500{% endif %}">
+            {{ c.name }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if comp and comp.discipline == 'MIXED' %}
+    <div class="flex gap-1 items-center text-xs">
+        {% for d, label in [('', 'All'), ('F3K', 'F3K'), ('F5K', 'F5K')] %}
+        <a href="/leaderboard?comp_id={{ comp.id }}{% if d %}&discipline={{ d }}{% endif %}"
+           class="px-2 py-1 rounded {% if discipline == d %}bg-gray-700 text-yellow-400{% else %}text-gray-400 hover:text-gray-200{% endif %}">
+            {{ label }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if data and data.drops > 0 %}
+    <span class="text-xs text-gray-400 bg-gray-800 border border-gray-700 rounded px-2 py-1">
+        {{ data.drops }} drop score{{ 's' if data.drops > 1 }} active — dropped rounds shown struck out
+    </span>
+    {% endif %}
+</div>
+
+{% if not comp %}
+<p class="text-gray-400">No competitions yet. Set up a competition and add rounds first.</p>
+{% elif not data.standings %}
+<p class="text-gray-400">No scores yet — standings appear once flights are recorded.</p>
+{% else %}
+
+<div class="bg-gray-800 rounded-lg overflow-x-auto">
+    <table class="text-sm w-full">
+        <thead>
+            <tr class="text-xs text-gray-400 bg-gray-900 border-b border-gray-700">
+                <th class="text-left font-normal px-4 py-2 w-12">#</th>
+                <th class="text-left font-normal px-4 py-2">Pilot</th>
+                {% for r in data.rounds %}
+                <th class="text-right font-normal px-3 py-2 whitespace-nowrap {% if not r.contested %}text-gray-600{% endif %}">
+                    Rd {{ r.round_no }}
+                    <span class="{% if r.discipline == 'F3K' %}text-orange-400{% else %}text-fuchsia-400{% endif %}">{{ r.task }}</span>
+                </th>
+                {% endfor %}
+                <th class="text-right font-normal px-4 py-2">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data.standings %}
+            <tr class="border-t border-gray-700 {% if row.rank <= 3 %}bg-gray-800{% else %}bg-gray-850{% endif %}">
+                <td class="px-4 py-2 font-mono {% if row.rank == 1 %}text-yellow-400 font-bold{% elif row.rank <= 3 %}text-gray-200{% else %}text-gray-400{% endif %}">
+                    {{ row.rank }}
+                </td>
+                <td class="px-4 py-2 text-gray-100">{{ row.name }}</td>
+                {% for r in data.rounds %}
+                {% set rr = row.rounds.get(r.round_no) %}
+                <td class="px-3 py-2 text-right font-mono">
+                    {% if rr %}
+                    <span class="{% if rr.dropped %}text-gray-600 line-through{% elif rr.score >= 1000 %}text-green-400{% else %}text-gray-300{% endif %}">
+                        {{ '%.1f'|format(rr.score) }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-700">—</span>
+                    {% endif %}
+                </td>
+                {% endfor %}
+                <td class="px-4 py-2 text-right font-mono font-semibold {% if row.rank == 1 %}text-yellow-400{% else %}text-gray-100{% endif %}">
+                    {{ '%.1f'|format(row.total) }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<p class="mt-3 text-xs text-gray-500">
+    Group winner = 1000 pts; others proportional (0.1 pt resolution). Updates live as flights are recorded.
+    Public JSON: <span class="font-mono">/api/results/{{ comp.id }}/public</span>
+</p>
+
+{% endif %}
+
+<script>
+    // Live refresh: reload when flights/altitudes/rounds change (same WS feed as the Run page)
+    (function () {
+        let pending = null;
+        function connect() {
+            const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+            ws.onmessage = (ev) => {
+                try {
+                    const msg = JSON.parse(ev.data);
+                    if (['flight', 'altitude', 'complete', 'round'].includes(msg.type) && !pending) {
+                        pending = setTimeout(() => location.reload(), 1500);
+                    }
+                } catch (e) { /* ignore */ }
+            };
+            ws.onclose = () => setTimeout(connect, 5000);
+        }
+        connect();
+    })();
+</script>
+
+{% endblock %}

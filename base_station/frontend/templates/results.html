@@ -61,6 +61,11 @@
                             <th class="text-right font-normal font-mono pb-1 pl-5">Flt {{ i + 1 }}</th>
                             {% endfor %}
                             <th class="text-right font-normal pb-1 pl-6 text-gray-500">#</th>
+                            {% if hd.any_scores %}
+                            <th class="text-right font-normal pb-1 pl-6">Raw</th>
+                            <th class="text-right font-normal pb-1 pl-5">Score</th>
+                            <th class="text-right font-normal pb-1 pl-4 pr-1">Rank</th>
+                            {% endif %}
                         </tr>
                     </thead>
                     <tbody>
@@ -70,9 +75,15 @@
                             {% for i in range(hd.max_flights) %}
                             {% if i < p.flights | length %}
                             <td class="py-1.5 pl-5 text-right align-top">
-                                <span class="font-mono font-semibold text-green-400">{{ p.flights[i].duration_ms | fmt_ms }}</span>
+                                <span class="font-mono font-semibold {% if not hd.any_scores or p.flights[i].scored_s > 0 %}text-green-400{% else %}text-gray-500{% endif %}"
+                                      {% if hd.any_scores and p.flights[i].scored_s == 0 %}title="Does not count for this task"{% endif %}>{{ p.flights[i].duration_ms | fmt_ms }}</span>
+                                {% if p.flights[i].bonus is defined and p.flights[i].bonus is not none %}
+                                <br><span class="font-mono text-xs {% if p.flights[i].bonus >= 0 %}text-cyan-400{% else %}text-red-400{% endif %}"
+                                          title="F5K height bonus">{{ '%+.1f'|format(p.flights[i].bonus) }}</span>
+                                {% endif %}
                                 {% if hd.any_altitudes %}
-                                <br><span class="font-mono text-xs {% if p.flights[i].altitude_m is not none %}text-fuchsia-400{% else %}text-gray-600{% endif %}">
+                                <br><span class="font-mono text-xs {% if p.flights[i].altitude_m is not none %}text-fuchsia-400{% else %}text-gray-600{% endif %}"
+                                      {% if p.flights[i].altitude_source is defined and p.flights[i].altitude_source %}title="Altitude source: {{ 'timer' if p.flights[i].altitude_source == 'timer' else 'CD entry' }}"{% endif %}>
                                     {%- if p.flights[i].altitude_m is not none -%}
                                         {{ "%03d"|format(p.flights[i].altitude_m | int) }}m
                                     {%- else -%}—{%- endif -%}
@@ -89,6 +100,17 @@
                             {% endif %}
                             {% endfor %}
                             <td class="py-1.5 pl-6 text-right text-gray-400 align-top">{{ p.flights | length }}</td>
+                            {% if hd.any_scores %}
+                            <td class="py-1.5 pl-6 text-right font-mono text-gray-300 align-top">
+                                {%- if p.raw_s is defined %}{{ '%.1f'|format(p.raw_s) }}{% else %}—{% endif -%}
+                            </td>
+                            <td class="py-1.5 pl-5 text-right font-mono font-semibold align-top {% if p.norm is defined and p.norm >= 1000 %}text-yellow-400{% else %}text-gray-100{% endif %}">
+                                {%- if p.norm is defined %}{{ '%.1f'|format(p.norm) }}{% else %}—{% endif -%}
+                            </td>
+                            <td class="py-1.5 pl-4 pr-1 text-right font-mono text-gray-400 align-top">
+                                {%- if p.rank is defined %}{{ p.rank }}{% else %}—{% endif -%}
+                            </td>
+                            {% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>

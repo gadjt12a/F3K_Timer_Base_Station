@@ -11,7 +11,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from frontend import audio_control
+from frontend import audio_control, draw, scoring
 from frontend.audio import engine
 
 
@@ -118,7 +118,7 @@ async def health():
 # ---------------------------------------------------------------------------
 
 @app.get("/setup")
-async def setup_get(request: Request):
+async def setup_get(request: Request, msg: str = None):
     db = _db()
     pilots = db.execute("SELECT * FROM pilots ORDER BY name").fetchall()
     competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
@@ -141,6 +141,7 @@ async def setup_get(request: Request):
         "active": "setup",
         "all_pilots": pilots,
         "comp_data": comp_data,
+        "msg": msg,
     })
 
 
@@ -494,12 +495,34 @@ async def results_get(request: Request, error: str = None):
 
                 pilots = [pilot_flights[pid] for pid in pilot_order]
                 max_flights = max((len(p["flights"]) for p in pilots), default=0)
+
+                # Computed scores (scoring engine): raw / normalised / rank per
+                # pilot, per-flight scored time + F5K bonus. On-demand, not stored.
+                any_scores = False
+                if max_flights > 0:
+                    scored = scoring.score_group_db(db, grp["id"])
+                    for p in pilots:
+                        sp = scored["pilots"].get(p["id"])
+                        if not sp:
+                            continue
+                        p["raw_s"] = sp["total"]
+                        p["norm"] = sp["norm"]
+                        p["rank"] = sp["rank"]
+                        any_scores = True
+                        by_fid = {f["id"]: f for f in sp["flights"]}
+                        for fl in p["flights"]:
+                            sf = by_fid.get(fl["id"])
+                            fl["scored_s"] = sf["scored_s"] if sf else 0.0
+                            fl["bonus"] = sf["bonus"] if sf else None
+                            fl["altitude_source"] = sf["altitude_source"] if sf else None
+
                 heat_data.append({
                     "group": grp,
                     "heat": chr(64 + grp["group_no"]),
                     "pilots": pilots,
                     "max_flights": max_flights,
                     "any_altitudes": any_altitudes,
+                    "any_scores": any_scores,
                 })
 
             round_data.append({
@@ -536,8 +559,9 @@ async def results_flight_add(
     fno = int(flight_no) if flight_no.strip() else None
     db = _db()
     db.execute(
-        "INSERT INTO flights (pilot_id, duration_ms, group_id, altitude_m, flight_no) VALUES (?, ?, ?, ?, ?)",
-        (pilot_id, dur_ms, group_id, alt, fno),
+        "INSERT INTO flights (pilot_id, duration_ms, group_id, altitude_m, flight_no, altitude_source)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (pilot_id, dur_ms, group_id, alt, fno, "cd_entry" if alt is not None else None),
     )
     db.commit()
     return RedirectResponse("/results", status_code=303)
@@ -875,8 +899,9 @@ async def api_run_flight_add(
     ).fetchone()[0]
     alt = float(altitude_m) if altitude_m.strip() else None
     db.execute(
-        "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no, altitude_m) VALUES (?, ?, ?, ?, ?)",
-        (pilot_id, dur_ms, group_id, next_no, alt),
+        "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no, altitude_m, altitude_source)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (pilot_id, dur_ms, group_id, next_no, alt, "cd_entry" if alt is not None else None),
     )
     db.commit()
     row = db.execute("SELECT name FROM pilots WHERE id = ?", (pilot_id,)).fetchone()
@@ -1004,7 +1029,8 @@ async def api_db_backup():
 @app.post("/api/db/restore")
 async def api_db_restore(file: UploadFile = File(...)):
     import sqlite3
-    from frontend.db import _add_flight_columns, _migrate_groups, _migrate_pilots
+    from frontend.db import (_add_flight_columns, _migrate_competitions,
+                             _migrate_groups, _migrate_pilots, _migrate_rounds)
     content = await file.read()
     if not content.startswith(b"SQLite format 3"):
         return {"ok": False, "error": "Not a valid SQLite database file"}
@@ -1019,12 +1045,241 @@ async def api_db_restore(file: UploadFile = File(...)):
         _add_flight_columns(target)
         _migrate_groups(target)
         _migrate_pilots(target)
+        _migrate_competitions(target)
+        _migrate_rounds(target)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Scoring engine — leaderboard, public results, auto-draw, scoring config
+# (SCORING_ENGINE_PROJECT.md Phases A/C/D/F/G — GliderScore now optional)
+# ---------------------------------------------------------------------------
+
+@app.get("/leaderboard")
+async def leaderboard_get(request: Request, comp_id: int = None, discipline: str = None):
+    db = _db()
+    comps = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    comp = next((c for c in comps if c["id"] == comp_id), comps[-1] if comps else None)
+    data = scoring.competition_standings(db, comp["id"], discipline or None) if comp else None
+    return templates.TemplateResponse(request, "leaderboard.html", {
+        "active": "leaderboard",
+        "comps": comps,
+        "comp": comp,
+        "discipline": discipline or "",
+        "data": data,
+    })
+
+
+@app.get("/api/results/{comp_id}/public")
+async def api_results_public(comp_id: int, discipline: str = None):
+    """Unauthenticated JSON standings — proxied by glidetime.pawson.co.nz."""
+    db = _db()
+    comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+    if comp is None:
+        return {"error": "competition not found"}
+    data = scoring.competition_standings(db, comp_id, discipline or None)
+    return {
+        "competition": {"id": comp["id"], "name": comp["name"],
+                        "discipline": comp["discipline"], "date": comp["date"]},
+        "rounds": data["rounds"],
+        "drops_active": data["drops"],
+        "standings": [
+            {"rank": r["rank"], "pilot": r["name"], "total": r["total"],
+             "rounds": {rn: rr for rn, rr in r["rounds"].items()}}
+            for r in data["standings"]
+        ],
+    }
+
+
+@app.post("/rounds/round/{round_id}/autodraw")
+async def round_autodraw(round_id: int):
+    """FAI draw: round 1 random, later rounds reverse-standings snake seeding."""
+    db = _db()
+    comp_id = _comp_id_of_round(db, round_id)
+    if comp_id is None or _gs_locked(db, comp_id):
+        return RedirectResponse("/rounds", status_code=303)
+    rnd = db.execute("SELECT * FROM rounds WHERE id = ?", (round_id,)).fetchone()
+    groups = db.execute(
+        "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (round_id,)
+    ).fetchall()
+    if not groups:
+        db.execute("INSERT INTO groups (round_id, group_no) VALUES (?, 1)", (round_id,))
+        db.commit()
+        groups = db.execute(
+            "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (round_id,)
+        ).fetchall()
+    pilots = [r["id"] for r in db.execute(
+        """SELECT p.id FROM pilots p
+           JOIN competition_pilots cp ON cp.pilot_id = p.id
+           WHERE cp.competition_id = ? ORDER BY p.name""", (comp_id,)).fetchall()]
+    if not pilots:
+        return RedirectResponse("/rounds", status_code=303)
+
+    # Standings from contested rounds before this one (best-first); empty -> random
+    prior = db.execute(
+        "SELECT id, round_no FROM rounds WHERE competition_id = ? AND round_no < ? ORDER BY round_no",
+        (comp_id, rnd["round_no"])).fetchall()
+    round_scores = {}
+    for pr in prior:
+        scores = scoring.round_norm_scores(db, pr["id"])
+        if scores:
+            round_scores[pr["round_no"]] = scores
+    order = None
+    if round_scores:
+        comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+        drop_at = [comp["drop1_at_round"], comp["drop2_at_round"], comp["drop3_at_round"]]
+        order = [r["pilot_id"] for r in scoring.standings(round_scores, drop_at)]
+
+    assignment = draw.draw_round(pilots, len(groups), standings_order=order)
+    group_by_no = {i + 1: g["id"] for i, g in enumerate(groups)}
+    for g in groups:
+        db.execute("DELETE FROM group_pilots WHERE group_id = ?", (g["id"],))
+    for pid, gno in assignment.items():
+        db.execute("INSERT INTO group_pilots (group_id, pilot_id) VALUES (?, ?)",
+                   (group_by_no[gno], pid))
+    db.commit()
+    return RedirectResponse("/rounds", status_code=303)
+
+
+def _flight_ordinal(db, flight_id: int) -> tuple:
+    """(pilot_id, ordinal-within-group) for a flight — ordinal matches the run
+    page flight log numbering (COALESCE(flight_no), recorded_at order)."""
+    row = db.execute("SELECT pilot_id, group_id FROM flights WHERE id = ?",
+                     (flight_id,)).fetchone()
+    if row is None:
+        return None, None
+    ids = [r["id"] for r in db.execute(
+        """SELECT id FROM flights WHERE pilot_id = ? AND group_id IS ?
+           ORDER BY COALESCE(flight_no, 9999), recorded_at""",
+        (row["pilot_id"], row["group_id"])).fetchall()]
+    return row["pilot_id"], ids.index(flight_id) + 1
+
+
+@app.get("/api/run/altitudes")
+async def api_run_altitudes():
+    """Flights of the loaded heat for the F5K CD altitude entry panel (B1)."""
+    db = _db()
+    sm = app.state.server.state_machine
+    loaded = sm._loaded if sm else None
+    if not loaded or not loaded.get("group_id"):
+        return {"ok": False, "error": "No heat loaded"}
+    group_id = loaded["group_id"]
+    rnd = db.execute(
+        "SELECT r.* FROM rounds r JOIN groups g ON g.round_id = r.id WHERE g.id = ?",
+        (group_id,)).fetchone()
+    comp = db.execute("SELECT * FROM competitions WHERE id = ?",
+                      (rnd["competition_id"],)).fetchone()
+    ref = rnd["ref_height_m"] if rnd["ref_height_m"] is not None else comp["f5k_ref_height"]
+    flights = db.execute(
+        """SELECT f.id, f.pilot_id, p.name AS pilot_name, f.duration_ms,
+                  f.altitude_m, f.altitude_source
+           FROM flights f JOIN pilots p ON p.id = f.pilot_id
+           WHERE f.group_id = ?
+           ORDER BY p.name, COALESCE(f.flight_no, 9999), f.recorded_at""",
+        (group_id,)).fetchall()
+    return {"ok": True, "ref_height": ref,
+            "min_time_s": comp["f5k_min_time_for_bonus"],
+            "flights": [dict(f) for f in flights]}
+
+
+@app.post("/api/run/altitude/set")
+async def api_run_altitude_set(flight_id: int = Form(...), altitude_m: str = Form("")):
+    """CD altitude entry/correction (B1/E1) — tagged 'cd_entry' for the audit trail."""
+    db = _db()
+    alt = float(altitude_m) if str(altitude_m).strip() else None
+    if alt is None:
+        db.execute("UPDATE flights SET altitude_m = NULL, altitude_source = NULL WHERE id = ?",
+                   (flight_id,))
+    else:
+        db.execute("UPDATE flights SET altitude_m = ?, altitude_source = 'cd_entry' WHERE id = ?",
+                   (alt, flight_id))
+    db.commit()
+    pilot_id, ordinal = _flight_ordinal(db, flight_id)
+    if pilot_id is not None and alt is not None:
+        await manager.broadcast({"type": "altitude", "pilot_id": pilot_id,
+                                 "flight_no": ordinal, "altitude_m": alt})
+    return {"ok": True}
+
+
+@app.get("/api/run/scores")
+async def api_run_scores(group_id: int):
+    """Raw/normalised score preview for a heat (C3) — computed on demand."""
+    db = _db()
+    scored = scoring.score_group_db(db, group_id)
+    return {"ok": True, "scores": {
+        pid: {"raw": p["total"], "norm": p["norm"], "rank": p["rank"]}
+        for pid, p in scored["pilots"].items()
+    }}
+
+
+@app.post("/setup/competition/{comp_id}/scoring")
+async def setup_scoring_config(
+    comp_id: int,
+    drop1_at_round: int = Form(99),
+    drop2_at_round: int = Form(99),
+    drop3_at_round: int = Form(99),
+    f5k_ref_height: float = Form(60),
+    f5k_min_time_for_bonus: int = Form(30),
+):
+    db = _db()
+    db.execute(
+        """UPDATE competitions SET drop1_at_round = ?, drop2_at_round = ?,
+           drop3_at_round = ?, f5k_ref_height = ?, f5k_min_time_for_bonus = ?
+           WHERE id = ?""",
+        (drop1_at_round or 99, drop2_at_round or 99, drop3_at_round or 99,
+         f5k_ref_height, f5k_min_time_for_bonus, comp_id),
+    )
+    db.commit()
+    return RedirectResponse("/setup", status_code=303)
+
+
+@app.post("/setup/pilots/import")
+async def setup_pilots_import(file: UploadFile = File(...)):
+    """Bulk pilot import from a CSV roster (Phase G2).
+
+    Accepts either one name per line, or FirstName,LastName[,FAINumber,...]
+    columns (standard entry-form export). Skips duplicates by FAI number when
+    present, otherwise by exact name.
+    """
+    content = (await file.read()).decode("utf-8-sig", errors="replace")
+    db = _db()
+    existing_names = {r["name"].strip().lower()
+                      for r in db.execute("SELECT name FROM pilots").fetchall()}
+    existing_fai = {str(r["fai_number"])
+                    for r in db.execute(
+                        "SELECT fai_number FROM pilots WHERE fai_number IS NOT NULL"
+                    ).fetchall()}
+    added = skipped = 0
+    for row in csv.reader(io.StringIO(content)):
+        cells = [c.strip() for c in row if c.strip()]
+        if not cells:
+            continue
+        low = [c.lower() for c in cells]
+        if "name" in low or "firstname" in low or "first name" in low:
+            continue  # header row
+        if len(cells) == 1:
+            name, fai = cells[0], None
+        else:
+            name = f"{cells[0]} {cells[1]}"
+            fai = cells[2] if len(cells) > 2 and cells[2] else None
+        if (fai and fai in existing_fai) or name.lower() in existing_names:
+            skipped += 1
+            continue
+        db.execute("INSERT INTO pilots (name, fai_number) VALUES (?, ?)", (name, fai))
+        existing_names.add(name.lower())
+        if fai:
+            existing_fai.add(fai)
+        added += 1
+    db.commit()
+    return RedirectResponse(
+        f"/setup?msg={urllib.parse.quote(f'Imported {added} pilots ({skipped} duplicates skipped)')}",
+        status_code=303,
+    )
 
 
 # ---------------------------------------------------------------------------

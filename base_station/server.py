@@ -305,7 +305,7 @@ class F3KServer:
         group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
         # Update the most recently inserted flight for this pilot in this group
         self.db.execute(
-            """UPDATE flights SET altitude_m = ?
+            """UPDATE flights SET altitude_m = ?, altitude_source = 'timer'
                WHERE id = (
                    SELECT id FROM flights
                    WHERE pilot_id = ? AND group_id IS ?

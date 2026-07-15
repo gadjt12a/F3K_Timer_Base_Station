@@ -108,6 +108,14 @@
                     </div>
                     {% if not locked %}
                     <div class="flex items-center gap-2 flex-shrink-0">
+                        <form method="post" action="/rounds/round/{{ rnd['id'] }}/autodraw" x-data
+                              @submit.prevent="confirm('Auto-draw Round {{ rnd['round_no'] }}? This replaces the current pilot draw ({{ 'seeded from standings' if rnd['round_no'] > 1 else 'random' }}).') && $el.submit()">
+                            <button type="submit"
+                                    title="Round 1: random draw. Later rounds: FAI reverse-standings snake seeding."
+                                    class="text-xs bg-indigo-700 hover:bg-indigo-600 px-2 py-1 rounded transition-colors">
+                                Draw
+                            </button>
+                        </form>
                         <button @click="showAddGroup = !showAddGroup"
                                 class="text-xs bg-green-700 hover:bg-green-600 px-2 py-1 rounded transition-colors">
                             + Group

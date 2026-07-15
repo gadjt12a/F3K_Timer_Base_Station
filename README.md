@@ -55,7 +55,8 @@ tools/
 | `/setup` | Two-column: competitions (left, full-width) + sticky pilot registry (right); GliderScore-imported competitions show GS Locked badge — pilot draw and structure are read-only |
 | `/rounds` | Round builder — collapsible competition cards (chevron header, round count badge); rounds displayed in a responsive 3-column grid; tasks (A–N), working time, groups with pilot draw + TBD slots; add/delete controls hidden for GS Locked competitions |
 | `/run` | Operator screen — load/start/abort heats, live M:SS.HH countdown (20fps), flight log with altitude, CD skip, dual F3K/F5K heat queue columns, mark heats done/undone, auto-advance 3s toast, readiness check warning, timer connection status strip (T1/T2 pills), pilot status strip (○ unbound → ✓+T#), CD override form to manually log a flight for any pilot |
-| `/results` | Per-heat flight tables — pilots × flights, times in M:SS.hh; F5K altitudes in fuchsia; per-heat Edit mode: delete flights, manually add flights (pilot, flight #, split M:SS.HH input, altitude) |
+| `/results` | Per-heat flight tables — pilots × flights, times in M:SS.hh; F5K altitudes in fuchsia; computed Raw / Score (0–1000) / Rank columns per heat with non-counting flights dimmed and F5K bonus shown per flight; per-heat Edit mode: delete flights, manually add flights (pilot, flight #, split M:SS.HH input, altitude) |
+| `/leaderboard` | Live cumulative standings — rank, per-round normalised scores, drop rounds struck out, total; discipline filter for MIXED comps; auto-reloads on flight events; public JSON at `/api/results/{comp_id}/public` |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV per competition; download F3KSync.exe (Direct Sync tool) |
 | `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore |
@@ -93,6 +94,18 @@ NormalisedScore populates on GliderScore Recalculate; written values survive.
 Task catalogues and digital-timer audio cue schedules are extracted verbatim from
 GliderScore's own database; the reference data lives in `frontend/data/`.
 
+**Self-contained scoring engine** (making GliderScore optional, not removing it) is
+**implemented** — see `SCORING_ENGINE_PROJECT.md` for scope and status. Existing GliderScore
+paths — CSV export, direct DB sync via `F3KSync.exe`, and `.mdb` import — are all retained.
+`frontend/scoring.py` provides native task scoring rules (all F3K tasks A–N/U10/U15 incl.
+variants, all F5K tasks A–E), group normalisation (best = 1000, truncated to 0.1), cumulative
+standings with configurable drop scores and FAI tie-breaking, and the F5K altitude bonus
+(BP Table 2020-10). `frontend/draw.py` adds FAI group draw (round 1 random, later rounds
+reverse-standings snake seeding) via a Draw button on the Rounds page. Scores are computed
+on demand from raw flight data — nothing is persisted, so edits/deletes are always reflected.
+The engine is a discipline-dispatched rule table so future disciplines (F3J, F5J, F3B) can be
+added as plugins. Unit + integration tests in `base_station/tests/`.
+
 ## Audio
 
 The audio engine replicates GliderScore's Big Timer / Digital Timer behaviour exactly.
@@ -118,7 +131,7 @@ behind two on-board Wi-Fi APs (`hostapd` + `dnsmasq`):
 
 ## Disciplines
 
-F3K and F5K today; F5J and (some) F3B planned. F3K and F5K run as separate competitions
+F3K and F5K today; F3J, F5J, and F3B planned. F3K and F5K run as separate competitions
 on the same day, alternating rounds, sharing a pilot pool.
 
 **F5K altitude entry** is implemented end-to-end: after the working time expires the pilot
