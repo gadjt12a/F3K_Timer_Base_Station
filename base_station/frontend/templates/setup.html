@@ -34,6 +34,7 @@
                         <select name="discipline" class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
                             <option value="F3K">F3K</option>
                             <option value="F5K">F5K</option>
+                            <option value="MIXED">MIXED (F3K + F5K)</option>
                         </select>
                     </div>
                     <div>
@@ -188,14 +189,26 @@
 
                 {% if not locked %}
                 {% if item.available %}
-                <form method="post" action="/setup/competition/{{ comp['id'] }}/pilot/add" class="flex gap-2">
-                    <select name="pilot_id" class="bg-gray-700 rounded px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                <form method="post" action="/setup/competition/{{ comp['id'] }}/pilots/add_bulk"
+                      x-data="{ all: false }">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="text-xs text-gray-400">Add pilots:</span>
+                        <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+                            <input type="checkbox" x-model="all" class="accent-yellow-400"
+                                   @change="$el.closest('form').querySelectorAll('input[name=pilot_ids]').forEach(c => c.checked = all)">
+                            Select all ({{ item.available | length }})
+                        </label>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 mb-2 max-h-32 overflow-y-auto">
                         {% for pilot in item.available %}
-                        <option value="{{ pilot['id'] }}">{{ pilot['name'] }}</option>
+                        <label class="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 rounded px-2 py-1 text-xs cursor-pointer">
+                            <input type="checkbox" name="pilot_ids" value="{{ pilot['id'] }}" class="accent-yellow-400">
+                            {{ pilot['name'] }}
+                        </label>
                         {% endfor %}
-                    </select>
+                    </div>
                     <button type="submit" class="bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded text-sm font-medium transition-colors">
-                        Add to Competition
+                        Add Selected to Competition
                     </button>
                 </form>
                 {% else %}

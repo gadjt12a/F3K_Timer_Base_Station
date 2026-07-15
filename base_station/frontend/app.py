@@ -355,10 +355,16 @@ async def round_add(comp_id: int, task: str = Form(...), working_time_m: int = F
         "SELECT MAX(round_no) FROM rounds WHERE competition_id = ?", (comp_id,)
     ).fetchone()[0]
     round_no = (max_no or 0) + 1
+    # MIXED comps submit the task as "F3K:A" / "F5K:B" (discipline per round);
+    # pure comps submit the bare letter and inherit the comp discipline.
+    if ":" in task:
+        discipline, task = task.split(":", 1)
+    else:
+        discipline = comp["discipline"]
     db.execute(
         """INSERT INTO rounds (competition_id, round_no, task, working_time_s, discipline)
            VALUES (?, ?, ?, ?, ?)""",
-        (comp_id, round_no, task, working_time_m * 60, comp["discipline"]),
+        (comp_id, round_no, task, working_time_m * 60, discipline),
     )
     db.commit()
     return RedirectResponse("/rounds", status_code=303)
@@ -1215,6 +1221,164 @@ async def api_run_scores(group_id: int):
         pid: {"raw": p["total"], "norm": p["norm"], "rank": p["rank"]}
         for pid, p in scored["pilots"].items()
     }}
+
+
+@app.post("/setup/competition/{comp_id}/pilots/add_bulk")
+async def setup_pilots_add_bulk(comp_id: int, pilot_ids: list[int] = Form(...)):
+    """Assign several registry pilots to a competition in one submit."""
+    db = _db()
+    if _gs_locked(db, comp_id):
+        return RedirectResponse("/setup", status_code=303)
+    for pid in pilot_ids:
+        db.execute(
+            "INSERT OR IGNORE INTO competition_pilots (competition_id, pilot_id) VALUES (?, ?)",
+            (comp_id, pid))
+    db.commit()
+    return RedirectResponse("/setup", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Draw Wizard — multi-round roster draw with preview / accept
+# ---------------------------------------------------------------------------
+
+def _comp_round_groups(db, comp_id: int) -> list:
+    """Existing rounds with their group pilot lists and flight status."""
+    out = []
+    for rnd in db.execute(
+            "SELECT * FROM rounds WHERE competition_id = ? ORDER BY round_no",
+            (comp_id,)).fetchall():
+        groups = []
+        has_flights = False
+        for grp in db.execute(
+                "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no",
+                (rnd["id"],)).fetchall():
+            pids = [r["pilot_id"] for r in db.execute(
+                "SELECT pilot_id FROM group_pilots WHERE group_id = ?",
+                (grp["id"],)).fetchall()]
+            n = db.execute("SELECT COUNT(*) FROM flights WHERE group_id = ?",
+                           (grp["id"],)).fetchone()[0]
+            has_flights = has_flights or n > 0
+            groups.append({"group_no": grp["group_no"], "pilot_ids": pids,
+                           "completed": bool(grp["completed"])})
+        out.append({"round_id": rnd["id"], "round_no": rnd["round_no"],
+                    "task": rnd["task"], "discipline": rnd["discipline"],
+                    "wt_min": rnd["working_time_s"] // 60,
+                    "groups": groups, "has_flights": has_flights})
+    return out
+
+
+@app.get("/api/draw/context")
+async def api_draw_context(comp_id: int):
+    """Everything the Draw Wizard needs: pilots, existing rounds with flight
+    status, and the first round that can safely be redrawn."""
+    db = _db()
+    comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+    if comp is None:
+        return {"ok": False, "error": "Competition not found"}
+    pilots = [{"id": r["id"], "name": r["name"]} for r in db.execute(
+        """SELECT p.id, p.name FROM pilots p
+           JOIN competition_pilots cp ON cp.pilot_id = p.id
+           WHERE cp.competition_id = ? ORDER BY p.name""", (comp_id,)).fetchall()]
+    rounds = _comp_round_groups(db, comp_id)
+    # Earliest safe redraw point: after the last round with flights recorded
+    suggested = max((r["round_no"] for r in rounds if r["has_flights"]), default=0) + 1
+    return {"ok": True, "locked": _gs_locked(db, comp_id),
+            "discipline": comp["discipline"], "pilots": pilots,
+            "rounds": rounds, "suggested_start": suggested}
+
+
+@app.post("/api/draw/preview")
+async def api_draw_preview(request: Request):
+    """Generate a draw proposal. Body: {comp_id, start_round, num_rounds,
+    groups_per_round, avoid_back_to_back}. Rounds before start_round are kept
+    and seed the pair-meeting matrix; the round immediately before feeds the
+    back-to-back check."""
+    body = await request.json()
+    db = _db()
+    comp_id = int(body["comp_id"])
+    start_round = int(body.get("start_round", 1))
+    num_rounds = int(body["num_rounds"])
+    groups_n = int(body["groups_per_round"])
+    avoid = bool(body.get("avoid_back_to_back", True))
+
+    pilots = [r["id"] for r in db.execute(
+        """SELECT p.id FROM pilots p
+           JOIN competition_pilots cp ON cp.pilot_id = p.id
+           WHERE cp.competition_id = ? ORDER BY p.name""", (comp_id,)).fetchall()]
+    if len(pilots) < groups_n:
+        return {"ok": False, "error": "More groups than pilots"}
+
+    kept = [r for r in _comp_round_groups(db, comp_id) if r["round_no"] < start_round]
+    history = [[g["pilot_ids"] for g in r["groups"]] for r in kept]
+    prev_last = (history[-1][-1] if history and history[-1] else [])
+
+    try:
+        res = draw.draw_competition(
+            pilots, num_rounds, groups_n, avoid_back_to_back=avoid,
+            history=history, prev_last_group=prev_last)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    names = {r["id"]: r["name"] for r in db.execute(
+        "SELECT id, name FROM pilots").fetchall()}
+    return {"ok": True, "stats": res["stats"], "rounds": [
+        [[{"id": pid, "name": names.get(pid, f"Pilot {pid}")} for pid in grp]
+         for grp in rnd]
+        for rnd in res["rounds"]
+    ]}
+
+
+@app.post("/api/draw/accept")
+async def api_draw_accept(request: Request):
+    """Write an accepted draw. Body: {comp_id, start_round, rounds: [{task,
+    discipline, wt_min, groups: [[pilot_id, ...], ...]}, ...]}. Replaces all
+    rounds from start_round onward; refuses if any of those have flights."""
+    body = await request.json()
+    db = _db()
+    comp_id = int(body["comp_id"])
+    start_round = int(body["start_round"])
+    new_rounds = body["rounds"]
+    comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+    if comp is None or _gs_locked(db, comp_id):
+        return {"ok": False, "error": "Competition locked or not found"}
+    for rd in new_rounds:
+        if rd["discipline"] not in ("F3K", "F5K") or not str(rd.get("task", "")).strip():
+            return {"ok": False, "error": "Each round needs a discipline and task"}
+
+    n_flights = db.execute(
+        """SELECT COUNT(*) FROM flights f
+           JOIN groups g ON g.id = f.group_id
+           JOIN rounds r ON r.id = g.round_id
+           WHERE r.competition_id = ? AND r.round_no >= ?""",
+        (comp_id, start_round)).fetchone()[0]
+    if n_flights:
+        return {"ok": False,
+                "error": f"Rounds from {start_round} already have {n_flights} "
+                         "flight(s) recorded — pick a later start round"}
+
+    old = db.execute(
+        "SELECT id FROM rounds WHERE competition_id = ? AND round_no >= ?",
+        (comp_id, start_round)).fetchall()
+    for r in old:
+        db.execute("DELETE FROM group_pilots WHERE group_id IN "
+                   "(SELECT id FROM groups WHERE round_id = ?)", (r["id"],))
+        db.execute("DELETE FROM groups WHERE round_id = ?", (r["id"],))
+        db.execute("DELETE FROM rounds WHERE id = ?", (r["id"],))
+
+    for i, rd in enumerate(new_rounds):
+        db.execute(
+            "INSERT INTO rounds (competition_id, round_no, task, working_time_s, discipline)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (comp_id, start_round + i, rd["task"],
+             int(rd.get("wt_min", 10)) * 60, rd["discipline"]))
+        rid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        for gno, pids in enumerate(rd["groups"], start=1):
+            db.execute("INSERT INTO groups (round_id, group_no) VALUES (?, ?)", (rid, gno))
+            gid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            for pid in pids:
+                db.execute("INSERT INTO group_pilots (group_id, pilot_id) VALUES (?, ?)",
+                           (gid, int(pid)))
+    db.commit()
+    return {"ok": True, "rounds_written": len(new_rounds)}
 
 
 @app.post("/setup/competition/{comp_id}/scoring")

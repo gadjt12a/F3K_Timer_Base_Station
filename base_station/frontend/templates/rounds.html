@@ -10,7 +10,7 @@
 {% for item in comp_data %}
 {% set comp = item.comp %}
 {% set locked = comp['gliderscore_comp_no'] %}
-<div class="bg-gray-800 rounded-lg mb-4" x-data="{ open: true, showAddRound: false }">
+<div class="bg-gray-800 rounded-lg mb-4" x-data="{ open: true, showAddRound: false, showWizard: false }">
 
     <!-- Competition header — click to expand/collapse -->
     <div class="flex items-center justify-between px-5 py-4 cursor-pointer select-none"
@@ -40,10 +40,16 @@
             </span>
         </div>
         {% if not locked %}
-        <button @click.stop="showAddRound = !showAddRound; open = true"
-                class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm font-medium transition-colors flex-shrink-0">
-            + Add Round
-        </button>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <button @click.stop="showWizard = !showWizard; open = true"
+                    class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                Draw Wizard
+            </button>
+            <button @click.stop="showAddRound = !showAddRound; open = true"
+                    class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                + Add Round
+            </button>
+        </div>
         {% endif %}
     </div>
 
@@ -69,9 +75,17 @@
                     <select name="task"
                             @change="$refs.wt_{{ comp['id'] }}.value = 10"
                             class="bg-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400 text-sm">
+                        {% if comp['discipline'] == 'MIXED' %}
+                        {% for disc in ['F3K', 'F5K'] %}
+                        {% for letter, info in tasks.get(disc, {}).items() %}
+                        <option value="{{ disc }}:{{ letter }}">{{ disc }} {{ letter }} — {{ info.name }}</option>
+                        {% endfor %}
+                        {% endfor %}
+                        {% else %}
                         {% for letter, info in tasks.get(comp['discipline'], {}).items() %}
                         <option value="{{ letter }}">{{ letter }} — {{ info.name }}</option>
                         {% endfor %}
+                        {% endif %}
                     </select>
                 </div>
                 <div>
@@ -85,6 +99,147 @@
                     Add Round
                 </button>
             </form>
+        </div>
+        {% endif %}
+
+        <!-- Draw Wizard -->
+        {% if not locked %}
+        <div x-show="showWizard" x-data="drawWizard({{ comp['id'] }}, '{{ comp['discipline'] }}')"
+             x-effect="if (showWizard && !ctx) load()"
+             class="bg-gray-700 rounded p-4 mt-4">
+            <template x-if="ctx">
+                <div>
+                    <div class="text-sm font-semibold text-gray-200 mb-1">Draw Wizard</div>
+                    <div class="text-xs text-gray-400 mb-3">
+                        <span x-text="ctx.pilots.length"></span> pilots ·
+                        <span x-text="ctx.rounds.length"></span> existing round(s)
+                        <template x-if="ctx.suggested_start > 1">
+                            <span class="text-amber-400">
+                                — rounds 1–<span x-text="ctx.suggested_start - 1"></span> have flights and are kept;
+                                the draw seeds from them (redraw covers unmet pairings, e.g. after a pilot pull-out)
+                            </span>
+                        </template>
+                    </div>
+
+                    <!-- Parameters -->
+                    <div class="flex flex-wrap gap-4 items-end mb-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Rounds to draw</label>
+                            <input type="number" min="1" max="20" x-model.number="numRounds"
+                                   class="w-16 bg-gray-600 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Groups / round</label>
+                            <input type="number" min="1" max="8" x-model.number="groupsPerRound"
+                                   class="w-16 bg-gray-600 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                        </div>
+                        <div x-show="ctx.rounds.length > 0">
+                            <label class="block text-xs text-gray-400 mb-1" title="Rounds from here onward are replaced by the new draw">Start at round</label>
+                            <input type="number" :min="ctx.suggested_start" max="99" x-model.number="startRound"
+                                   class="w-16 bg-gray-600 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                        </div>
+                        <label class="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer pb-1.5"
+                               title="Avoid pilots flying in the last group of one round and the first group of the next (needs 3+ groups to be fully avoidable)">
+                            <input type="checkbox" x-model="avoidB2B" class="accent-yellow-400">
+                            Avoid back-to-back flights
+                        </label>
+                    </div>
+
+                    <!-- Task selection (cycled across rounds; editable per round in preview) -->
+                    <div class="mb-3">
+                        <label class="block text-xs text-gray-400 mb-1">Tasks to use (cycled in order; adjust per round after preview)</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            <template x-for="t in taskChoices()" :key="t.key">
+                                <label class="flex items-center gap-1 rounded px-2 py-0.5 text-xs cursor-pointer"
+                                       :class="selTasks.includes(t.key) ? 'bg-yellow-700/60 text-yellow-100' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'">
+                                    <input type="checkbox" class="hidden" :value="t.key"
+                                           @change="toggleTask(t.key)">
+                                    <span x-text="t.label"></span>
+                                </label>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 mb-3">
+                        <button @click="generate()" :disabled="busy"
+                                class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-1.5 rounded text-sm font-medium transition-colors">
+                            <span x-text="plan ? 'Re-shuffle' : 'Preview draw'"></span>
+                        </button>
+                        <template x-if="plan">
+                            <button @click="accept()" :disabled="busy"
+                                    class="bg-green-600 hover:bg-green-500 disabled:opacity-50 px-4 py-1.5 rounded text-sm font-medium transition-colors">
+                                Accept draw
+                            </button>
+                        </template>
+                        <button @click="plan = null; showWizard = false"
+                                class="bg-gray-600 hover:bg-gray-500 px-4 py-1.5 rounded text-sm transition-colors">
+                            Cancel
+                        </button>
+                    </div>
+                    <div x-show="error" class="text-xs text-red-400 mb-2" x-text="error"></div>
+
+                    <!-- Preview -->
+                    <template x-if="plan">
+                        <div>
+                            <!-- Stats banner -->
+                            <div class="flex flex-wrap gap-3 text-xs mb-3 bg-gray-800 rounded px-3 py-2">
+                                <span :class="stats.pairs_unmet === 0 ? 'text-green-400' : 'text-amber-400'">
+                                    Pairings: <b x-text="stats.coverage_pct + '%'"></b>
+                                    (<span x-text="stats.pairs_unmet"></span> of <span x-text="stats.total_pairs"></span> pairs never meet)
+                                </span>
+                                <span :class="stats.back_to_back === 0 ? 'text-green-400' : 'text-amber-400'">
+                                    Back-to-back: <b x-text="stats.back_to_back"></b>
+                                </span>
+                                <span :class="stats.timers_ok ? 'text-green-400' : 'text-red-400'"
+                                      title="1 pilot-timekeeper per flying pilot needs at least as many free pilots as the biggest group">
+                                    Timekeepers: <b x-text="stats.timers_ok ? 'OK' : 'short'"></b>
+                                    (max group <span x-text="stats.max_group_size"></span>,
+                                    free <span x-text="ctx.pilots.length - stats.max_group_size"></span>)
+                                </span>
+                            </div>
+
+                            <!-- Proposed rounds -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <template x-for="(rd, i) in plan" :key="i">
+                                    <div class="border border-gray-600 rounded p-2.5">
+                                        <div class="flex items-center gap-2 mb-2 flex-wrap">
+                                            <span class="text-xs text-gray-400 uppercase" x-text="'R' + (startRound + i)"></span>
+                                            {% if comp['discipline'] == 'MIXED' %}
+                                            <select x-model="rd.discipline" @change="rd.task = firstTask(rd.discipline)"
+                                                    class="bg-gray-600 rounded px-1.5 py-0.5 text-xs text-white">
+                                                <option>F3K</option><option>F5K</option>
+                                            </select>
+                                            {% endif %}
+                                            <select x-model="rd.task"
+                                                    class="bg-gray-600 rounded px-1.5 py-0.5 text-xs text-white">
+                                                <template x-for="t in Object.keys(DRAW_TASKS[rd.discipline] || {})" :key="t">
+                                                    <option :value="t" x-text="t + ' — ' + DRAW_TASKS[rd.discipline][t].name"></option>
+                                                </template>
+                                            </select>
+                                            <input type="number" min="1" max="30" x-model.number="rd.wt_min"
+                                                   class="w-12 bg-gray-600 rounded px-1.5 py-0.5 text-xs text-white" title="Working time (min)">
+                                            <span class="text-xs text-gray-500">min</span>
+                                        </div>
+                                        <template x-for="(grp, gi) in rd.groups" :key="gi">
+                                            <div class="mb-1">
+                                                <span class="text-xs font-bold text-gray-400 mr-1"
+                                                      x-text="'ABCDEFGH'[gi]"></span>
+                                                <template x-for="p in grp" :key="p.id">
+                                                    <span class="inline-block bg-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200 mr-1 mb-0.5"
+                                                          x-text="p.name"></span>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+            <template x-if="!ctx">
+                <p class="text-xs text-gray-500">Loading…</p>
+            </template>
         </div>
         {% endif %}
 
@@ -103,7 +258,7 @@
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-xs text-gray-400 uppercase tracking-wide">R{{ rnd['round_no'] }}</span>
                         <span class="font-semibold text-yellow-300 text-sm">Task {{ rnd['task'] }}</span>
-                        <span class="text-xs text-gray-300">{{ tasks.get(comp['discipline'], {}).get(rnd['task'], {}).get('name', '') }}</span>
+                        <span class="text-xs text-gray-300">{{ tasks.get(rnd['discipline'], {}).get(rnd['task'], {}).get('name', '') }}</span>
                         <span class="text-xs text-gray-500">{{ rnd['working_time_s'] // 60 }}m</span>
                     </div>
                     {% if not locked %}
@@ -221,4 +376,123 @@
 {% endfor %}
 
 {% endif %}
+
+<script>
+const DRAW_TASKS = {{ tasks | tojson }};
+// Default working-time minutes per task (editable per round in the preview)
+const DRAW_WT = {
+    F3K: { M: 15, U15: 15 },
+    F5K: { B: 7 },
+};
+
+function drawWizard(compId, discipline) {
+    return {
+        ctx: null,
+        numRounds: 5,
+        groupsPerRound: 2,
+        startRound: 1,
+        avoidB2B: true,
+        selTasks: [],
+        plan: null,
+        stats: null,
+        busy: false,
+        error: '',
+
+        async load() {
+            const r = await (await fetch(`/api/draw/context?comp_id=${compId}`)).json();
+            if (!r.ok) { this.error = r.error; return; }
+            this.ctx = r;
+            this.startRound = r.suggested_start;
+            if (r.rounds.length >= r.suggested_start) {
+                // Redrawing existing rounds: default to replacing all of them
+                this.numRounds = Math.max(1, r.rounds.length - r.suggested_start + 1);
+            }
+        },
+
+        taskChoices() {
+            const discs = discipline === 'MIXED' ? ['F3K', 'F5K'] : [discipline];
+            const out = [];
+            for (const d of discs) {
+                for (const t of Object.keys(DRAW_TASKS[d] || {})) {
+                    out.push({
+                        key: `${d}:${t}`,
+                        label: (discs.length > 1 ? d + ' ' : '') + t + ' ' + DRAW_TASKS[d][t].name,
+                    });
+                }
+            }
+            return out;
+        },
+
+        toggleTask(key) {
+            const i = this.selTasks.indexOf(key);
+            if (i >= 0) this.selTasks.splice(i, 1); else this.selTasks.push(key);
+        },
+
+        firstTask(d) { return Object.keys(DRAW_TASKS[d] || {})[0] || 'A'; },
+
+        taskForRound(i) {
+            // Cycle the selected tasks in order; sensible default if none picked
+            const defDisc = discipline === 'MIXED' ? 'F3K' : discipline;
+            if (!this.selTasks.length) return { discipline: defDisc, task: this.firstTask(defDisc) };
+            const [d, t] = this.selTasks[i % this.selTasks.length].split(':');
+            return { discipline: d, task: t };
+        },
+
+        async generate() {
+            this.busy = true;
+            this.error = '';
+            try {
+                const r = await (await fetch('/api/draw/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        comp_id: compId,
+                        start_round: this.startRound,
+                        num_rounds: this.numRounds,
+                        groups_per_round: this.groupsPerRound,
+                        avoid_back_to_back: this.avoidB2B,
+                    }),
+                })).json();
+                if (!r.ok) { this.error = r.error; this.plan = null; return; }
+                this.stats = r.stats;
+                const keepTasks = this.plan && this.plan.length === r.rounds.length;
+                this.plan = r.rounds.map((groups, i) => {
+                    // Re-shuffle keeps any per-round task edits; fresh preview cycles the selection
+                    const prev = keepTasks ? this.plan[i] : null;
+                    const t = prev ? { discipline: prev.discipline, task: prev.task } : this.taskForRound(i);
+                    const wt = prev ? prev.wt_min : ((DRAW_WT[t.discipline] || {})[t.task] || 10);
+                    return { discipline: t.discipline, task: t.task, wt_min: wt, groups };
+                });
+            } finally {
+                this.busy = false;
+            }
+        },
+
+        async accept() {
+            this.busy = true;
+            this.error = '';
+            try {
+                const r = await (await fetch('/api/draw/accept', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        comp_id: compId,
+                        start_round: this.startRound,
+                        rounds: this.plan.map(rd => ({
+                            discipline: rd.discipline,
+                            task: rd.task,
+                            wt_min: rd.wt_min,
+                            groups: rd.groups.map(g => g.map(p => p.id)),
+                        })),
+                    }),
+                })).json();
+                if (!r.ok) { this.error = r.error; return; }
+                location.reload();
+            } finally {
+                this.busy = false;
+            }
+        },
+    };
+}
+</script>
 {% endblock %}
