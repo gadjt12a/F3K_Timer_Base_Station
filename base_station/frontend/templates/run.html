@@ -6,6 +6,16 @@
 const INITIAL_STATE = {{ initial_state | safe }};
 const TASKS = {{ tasks | tojson }};
 const HEATS = {{ heats | tojson }};
+const SEL_COMPS = {{ sel_ids | tojson }};
+
+// Competition filter chips: toggle in/out, max two shown at once (oldest drops)
+function toggleComp(id) {
+    let sel = SEL_COMPS.slice();
+    const i = sel.indexOf(id);
+    if (i >= 0) sel.splice(i, 1);
+    else { sel.push(id); if (sel.length > 2) sel.shift(); }
+    location.href = sel.length ? '/run?comps=' + sel.join(',') : '/run';
+}
 
 // group_ids that are already marked complete (from server render)
 const DONE_INIT = new Set({{ heats | selectattr('completed') | map(attribute='group_id') | list | tojson }});
@@ -311,131 +321,49 @@ function runner(initialState) {
 <div x-data="runner(INITIAL_STATE)" x-init="init()"
      class="flex gap-6 h-[calc(100vh-8rem)]">
 
-    {% set f3k_heats = heats | selectattr('discipline', 'equalto', 'F3K') | list %}
-    {% set f5k_heats = heats | selectattr('discipline', 'equalto', 'F5K') | list %}
-    {% set dual = f3k_heats | length > 0 and f5k_heats | length > 0 %}
-
-    <!-- Left: heat queue (single column or dual F3K/F5K columns) -->
-    <div class="{{ 'w-[35rem]' if dual else 'w-72' }} flex-shrink-0 bg-gray-800 rounded-lg p-4 overflow-y-auto">
+    <!-- Left: heat queue -->
+    <div class="{{ 'w-[35rem]' if queue_cols | length > 1 else 'w-72' }} flex-shrink-0 bg-gray-800 rounded-lg p-4 overflow-y-auto">
         <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3">Heat Queue</h2>
 
-        {% if not heats %}
-        <p class="text-gray-300 text-sm">No heats — build rounds first.</p>
-
-        {% elif dual %}
-        <div class="flex gap-3">
-            <!-- F3K column -->
-            <div class="flex-1 min-w-0">
-                <div class="text-xs font-bold text-orange-400 uppercase mb-2 pb-1 border-b border-orange-400/40">F3K</div>
-                {% for h in f3k_heats %}
-                {% set gid = h.group_id %}
-                <div class="mb-3 p-2 bg-gray-700 rounded relative"
-                     :class="{ 'opacity-50': doneGroups.has({{ gid }}) }">
-                    <!-- Status badge -->
-                    <template x-if="loadedGroupId === {{ gid }} && !doneGroups.has({{ gid }})">
-                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
-                    </template>
-                    <template x-if="doneGroups.has({{ gid }})">
-                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">DONE ✓</span>
-                    </template>
-                    <div class="flex items-center justify-between mb-1 pr-14">
-                        <span class="text-xs font-bold text-orange-400 truncate">{{ h.comp_name }}</span>
-                        <span class="text-xs text-gray-300 flex-shrink-0 ml-1 font-mono">{{ h.task }}</span>
-                    </div>
-                    <div class="text-xs font-semibold mb-1">
-                        R{{ h.round_no }} · {{ h.heat }}
-                        <span class="text-gray-300 font-normal">({{ h.working_time_s // 60 }}m)</span>
-                    </div>
-                    <div class="text-xs text-gray-200 mb-1 leading-tight">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
-                    <div class="text-xs text-gray-300 mb-2 truncate">{{ h.pilots | join(', ') }}</div>
-                    <div class="flex gap-1">
-                        <button @click="loadHeat({{ h.round_id }}, {{ gid }})"
-                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
-                                class="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
-                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
-                            Load
-                        </button>
-                        <button @click="toggleDone({{ gid }})"
-                                :disabled="!doneGroups.has({{ gid }}) && state !== 'IDLE'"
-                                :class="doneGroups.has({{ gid }}) ? 'bg-gray-500 hover:bg-gray-400' : 'bg-green-700 hover:bg-green-600'"
-                                :title="doneGroups.has({{ gid }}) ? 'Undo' : 'Mark complete'"
-                                class="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors"
-                                x-text="doneGroups.has({{ gid }}) ? '↩' : '✓'">
-                        </button>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-
-            <!-- F5K column -->
-            <div class="flex-1 min-w-0">
-                <div class="text-xs font-bold text-fuchsia-400 uppercase mb-2 pb-1 border-b border-fuchsia-400/40">F5K</div>
-                {% for h in f5k_heats %}
-                {% set gid = h.group_id %}
-                <div class="mb-3 p-2 bg-gray-700 rounded relative"
-                     :class="{ 'opacity-50': doneGroups.has({{ gid }}) }">
-                    <template x-if="loadedGroupId === {{ gid }} && !doneGroups.has({{ gid }})">
-                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
-                    </template>
-                    <template x-if="doneGroups.has({{ gid }})">
-                        <span class="absolute top-2 right-2 text-[10px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">DONE ✓</span>
-                    </template>
-                    <div class="flex items-center justify-between mb-1 pr-14">
-                        <span class="text-xs font-bold text-fuchsia-400 truncate">{{ h.comp_name }}</span>
-                        <span class="text-xs text-gray-300 flex-shrink-0 ml-1 font-mono">{{ h.task }}</span>
-                    </div>
-                    <div class="text-xs font-semibold mb-1">
-                        R{{ h.round_no }} · {{ h.heat }}
-                        <span class="text-gray-300 font-normal">({{ h.working_time_s // 60 }}m)</span>
-                    </div>
-                    <div class="text-xs text-gray-200 mb-1 leading-tight">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
-                    <div class="text-xs text-gray-300 mb-2 truncate">{{ h.pilots | join(', ') }}</div>
-                    <div class="flex gap-1">
-                        <button @click="loadHeat({{ h.round_id }}, {{ gid }})"
-                                :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
-                                class="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
-                                       disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors">
-                            Load
-                        </button>
-                        <button @click="toggleDone({{ gid }})"
-                                :disabled="!doneGroups.has({{ gid }}) && state !== 'IDLE'"
-                                :class="doneGroups.has({{ gid }}) ? 'bg-gray-500 hover:bg-gray-400' : 'bg-green-700 hover:bg-green-600'"
-                                :title="doneGroups.has({{ gid }}) ? 'Undo' : 'Mark complete'"
-                                class="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors"
-                                x-text="doneGroups.has({{ gid }}) ? '↩' : '✓'">
-                        </button>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
+        <!-- Competition filter: show all, or up to two side-by-side -->
+        {% if comp_options | length > 1 %}
+        <div class="flex flex-wrap gap-1.5 mb-3">
+            <button onclick="location.href='/run'"
+                    class="text-[11px] px-2 py-0.5 rounded border {{ 'border-yellow-500 text-yellow-400' if not sel_ids else 'border-gray-600 text-gray-400 hover:text-gray-200' }}">
+                All
+            </button>
+            {% for c in comp_options %}
+            <button onclick="toggleComp({{ c.id }})"
+                    title="{{ c.discipline }} — click to show (max 2 at once)"
+                    class="text-[11px] px-2 py-0.5 rounded border truncate max-w-[10rem]
+                           {{ 'border-yellow-500 text-yellow-400 bg-gray-700' if c.id in sel_ids else 'border-gray-600 text-gray-400 hover:text-gray-200' }}">
+                {{ c.name }}
+            </button>
+            {% endfor %}
         </div>
+        {% endif %}
 
-        {% else %}
-        {% for h in heats %}
+        {% macro heat_card(h, color, compact) %}
         {% set gid = h.group_id %}
-        <div class="mb-3 p-3 bg-gray-700 rounded relative"
+        <div class="mb-3 {{ 'p-2' if compact else 'p-3' }} bg-gray-700 rounded relative"
              :class="{ 'opacity-50': doneGroups.has({{ gid }}) }">
-            <!-- Status badge -->
             <template x-if="loadedGroupId === {{ gid }} && !doneGroups.has({{ gid }})">
-                <span class="absolute top-3 right-3 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
+                <span class="absolute top-2 right-2 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
             </template>
             <template x-if="doneGroups.has({{ gid }})">
-                <span class="absolute top-3 right-3 text-[10px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">DONE ✓</span>
+                <span class="absolute top-2 right-2 text-[10px] font-bold bg-green-600 text-white px-1.5 py-0.5 rounded">DONE ✓</span>
             </template>
-            <div class="flex items-center justify-between mb-1 pr-16">
-                <span class="text-xs font-bold
-                    {% if h.discipline == 'F3K' %}text-orange-400{% else %}text-fuchsia-400{% endif %}">
-                    {{ h.comp_name }}
-                </span>
-                <span class="text-xs text-gray-300 font-mono">{{ h.task }}</span>
+            <div class="flex items-center justify-between mb-1 pr-14">
+                <span class="text-xs font-bold text-{{ color }}-400 truncate">{{ h.comp_name }}</span>
+                <span class="text-xs text-gray-300 flex-shrink-0 ml-1 font-mono">{{ h.task }}</span>
             </div>
-            <div class="text-sm font-semibold mb-1">
-                Round {{ h.round_no }} · Heat {{ h.heat }}
-                <span class="text-gray-300 font-normal">({{ h.working_time_s // 60 }}min)</span>
+            <div class="text-xs font-semibold mb-1">
+                R{{ h.round_no }} · {{ h.heat }}
+                <span class="text-gray-300 font-normal">({{ h.working_time_s // 60 }}m)</span>
             </div>
-            <div class="text-xs text-gray-200 mb-1">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
-            <div class="text-xs text-gray-300 mb-2">{{ h.pilots | join(', ') }}</div>
-            <div class="flex gap-2">
+            <div class="text-xs text-gray-200 mb-1 leading-tight">{{ tasks.get(h.discipline, {}).get(h.task, {}).get('name', '') }}</div>
+            <div class="text-xs text-gray-300 mb-2 truncate">{{ h.pilots | join(', ') }}</div>
+            <div class="flex gap-1">
                 <button @click="loadHeat({{ h.round_id }}, {{ gid }})"
                         :disabled="state !== 'IDLE' || doneGroups.has({{ gid }})"
                         class="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40
@@ -445,12 +373,32 @@ function runner(initialState) {
                 <button @click="toggleDone({{ gid }})"
                         :disabled="!doneGroups.has({{ gid }}) && state !== 'IDLE'"
                         :class="doneGroups.has({{ gid }}) ? 'bg-gray-500 hover:bg-gray-400' : 'bg-green-700 hover:bg-green-600'"
-                        :title="doneGroups.has({{ gid }}) ? 'Undo done' : 'Mark heat complete'"
-                        class="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5 rounded text-xs font-medium transition-colors"
-                        x-text="doneGroups.has({{ gid }}) ? '↩ Undo' : '✓ Done'">
+                        :title="doneGroups.has({{ gid }}) ? 'Undo' : 'Mark complete'"
+                        class="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1 rounded text-xs font-medium transition-colors"
+                        x-text="doneGroups.has({{ gid }}) ? '↩' : '✓'">
                 </button>
             </div>
         </div>
+        {% endmacro %}
+
+        {% if not heats %}
+        <p class="text-gray-300 text-sm">No heats — build rounds first{% if sel_ids %} (or pick another competition above){% endif %}.</p>
+
+        {% elif queue_cols | length > 1 %}
+        <div class="flex gap-3">
+            {% for col in queue_cols %}
+            <div class="flex-1 min-w-0">
+                <div class="text-xs font-bold text-{{ col.color }}-400 uppercase mb-2 pb-1 border-b border-{{ col.color }}-400/40 truncate">{{ col.label }}</div>
+                {% for h in col.heats %}
+                {{ heat_card(h, col.color, true) }}
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+
+        {% else %}
+        {% for h in queue_cols[0].heats %}
+        {{ heat_card(h, 'orange' if h.discipline == 'F3K' else 'fuchsia', false) }}
         {% endfor %}
         {% endif %}
 

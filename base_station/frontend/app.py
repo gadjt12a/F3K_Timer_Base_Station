@@ -3,6 +3,7 @@ import datetime
 import io
 import json
 import os
+import re
 import tempfile
 import urllib.parse
 from pathlib import Path
@@ -288,14 +289,42 @@ F5K_TASKS = {
 }
 TASKS = {"F3K": F3K_TASKS, "F5K": F5K_TASKS}
 
+RULE_KINDS = {
+    "last_n": "Last N flights count",
+    "best_n": "N longest flights count",
+    "first_n": "First N flights count (all-up)",
+    "ladder": "Ladder (target grows each time it is reached)",
+    "targets": "Fixed targets, any order",
+    "sequence": "Fixed targets, in order",
+    "poker": "Poker (N longest, no cap)",
+    "all": "All flights count",
+}
+
+
+def merged_tasks(db) -> dict:
+    """Built-in catalogue + user-defined custom tasks (for dropdowns/labels)."""
+    out = {d: dict(t) for d, t in TASKS.items()}
+    for r in db.execute(
+            "SELECT * FROM custom_tasks ORDER BY discipline, code").fetchall():
+        out.setdefault(r["discipline"], {})[r["code"]] = {
+            "name": r["name"], "desc": r["descr"], "custom": True,
+            "wt_min": r["wt_min"], "id": r["id"], "based_on": r["based_on"],
+        }
+    return out
+
 
 def task_label(discipline: str, letter: str) -> str:
     t = TASKS.get(discipline, {}).get(letter)
-    return t["name"] if t else letter
+    if t:
+        return t["name"]
+    row = _db().execute(
+        "SELECT name FROM custom_tasks WHERE discipline = ? AND code = ?",
+        (discipline, letter)).fetchone()
+    return row["name"] if row else letter
 
 
 @app.get("/rounds")
-async def rounds_get(request: Request):
+async def rounds_get(request: Request, error: str = None):
     db = _db()
     competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
 
@@ -339,7 +368,11 @@ async def rounds_get(request: Request):
     return templates.TemplateResponse(request, "rounds.html", {
         "active": "rounds",
         "comp_data": comp_data,
-        "tasks": TASKS,
+        "tasks": merged_tasks(db),
+        "custom_tasks": db.execute(
+            "SELECT * FROM custom_tasks ORDER BY discipline, code").fetchall(),
+        "rule_kinds": RULE_KINDS,
+        "error": error,
     })
 
 
@@ -788,12 +821,32 @@ async def websocket_endpoint(ws: WebSocket):
 # Runner UI
 # ---------------------------------------------------------------------------
 
+def _disc_color(discipline: str) -> str:
+    return {"F3K": "orange", "F5K": "fuchsia"}.get(discipline, "amber")
+
+
 @app.get("/run")
-async def run_get(request: Request):
+async def run_get(request: Request, comps: str = None):
+    """Operator screen. ?comps=1,2 shows only those competitions (max 2,
+    side-by-side columns); no selection shows everything (discipline split)."""
     db = _db()
+    all_comps = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    valid_ids = {c["id"] for c in all_comps}
+    sel_ids: list = []
+    if comps:
+        for tok in comps.split(","):
+            try:
+                cid = int(tok)
+            except ValueError:
+                continue
+            if cid in valid_ids and cid not in sel_ids:
+                sel_ids.append(cid)
+        sel_ids = sel_ids[:2]
+
     heats = []
-    comps = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
-    for comp in comps:
+    for comp in all_comps:
+        if sel_ids and comp["id"] not in sel_ids:
+            continue
         rounds = db.execute(
             "SELECT * FROM rounds WHERE competition_id = ? ORDER BY round_no",
             (comp["id"],),
@@ -812,8 +865,9 @@ async def run_get(request: Request):
                 ).fetchall()
                 names = [r["name"] for r in pilots] + ["— TBD —"] * grp["dummy_count"]
                 heats.append({
+                    "comp_id": comp["id"],
                     "comp_name": comp["name"],
-                    "discipline": comp["discipline"],
+                    "discipline": rnd["discipline"],
                     "round_id": rnd["id"],
                     "round_no": rnd["round_no"],
                     "task": rnd["task"],
@@ -824,12 +878,38 @@ async def run_get(request: Request):
                     "pilots": names,
                     "completed": bool(grp["completed"]),
                 })
+
+    # Queue columns: two selected comps -> one column each; otherwise split by
+    # discipline when both are present (original behaviour), else one column.
+    if len(sel_ids) == 2:
+        by_comp = {c["id"]: c for c in all_comps}
+        queue_cols = [{
+            "label": by_comp[cid]["name"],
+            "color": _disc_color(by_comp[cid]["discipline"]),
+            "heats": [h for h in heats if h["comp_id"] == cid],
+        } for cid in sel_ids]
+    else:
+        f3k = [h for h in heats if h["discipline"] == "F3K"]
+        f5k = [h for h in heats if h["discipline"] == "F5K"]
+        if f3k and f5k:
+            queue_cols = [{"label": "F3K", "color": "orange", "heats": f3k},
+                          {"label": "F5K", "color": "fuchsia", "heats": f5k}]
+        else:
+            queue_cols = [{"label": None, "color": _disc_color(
+                heats[0]["discipline"] if heats else "F3K"), "heats": heats}]
+
     sm = app.state.state_machine
     return templates.TemplateResponse(request, "run.html", {
         "active": "run",
         "heats": heats,
+        "queue_cols": queue_cols,
+        "comp_options": [
+            {"id": c["id"], "name": c["name"], "discipline": c["discipline"]}
+            for c in all_comps
+        ],
+        "sel_ids": sel_ids,
         "initial_state": json.dumps(sm.get_status()),
-        "tasks": TASKS,
+        "tasks": merged_tasks(db),
     })
 
 
@@ -1235,6 +1315,113 @@ async def setup_pilots_add_bulk(comp_id: int, pilot_ids: list[int] = Form(...)):
             (comp_id, pid))
     db.commit()
     return RedirectResponse("/setup", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Custom tasks — clone a catalogue task and adjust its rule settings
+# ---------------------------------------------------------------------------
+
+def _parse_targets(s: str) -> list:
+    """'1:00, 90, 2:30' -> [60.0, 90.0, 150.0]."""
+    out = []
+    for tok in (s or "").replace(";", ",").split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if ":" in tok:
+            m, sec = tok.split(":", 1)
+            out.append(float(m) * 60 + float(sec))
+        else:
+            out.append(float(tok))
+    return out
+
+
+@app.get("/api/tasks/rule")
+async def api_task_rule(discipline: str, task: str):
+    """Rule parameters of a task — prefills the clone form."""
+    letter, variant = scoring.parse_task(task)
+    rules = scoring.DISCIPLINE_RULES.get(discipline, {})
+    rule = rules.get((letter, variant)) or rules.get((letter, None))
+    if rule is None:
+        return {"ok": False, "error": "Unknown task"}
+    info = merged_tasks(_db()).get(discipline, {}).get(letter, {})
+    return {"ok": True, "kind": rule.kind, "n": rule.n, "cap_s": rule.cap_s,
+            "targets": list(rule.targets_s), "start_s": rule.start_s,
+            "step_s": rule.step_s, "max_flights": rule.max_flights,
+            "name": info.get("name", ""), "desc": info.get("desc", ""),
+            "wt_min": info.get("wt_min", 10)}
+
+
+@app.post("/tasks/custom/add")
+async def custom_task_add(
+    discipline: str = Form(...), code: str = Form(...), name: str = Form(...),
+    descr: str = Form(""), kind: str = Form(...), n: int = Form(0),
+    cap_s: str = Form("0"), targets: str = Form(""), start_s: str = Form("0"),
+    step_s: str = Form("0"), max_flights: int = Form(0), wt_min: int = Form(10),
+    based_on: str = Form(""),
+):
+    def fail(msg):
+        return RedirectResponse(f"/rounds?error={urllib.parse.quote(msg)}", status_code=303)
+
+    code = code.strip().upper()
+    db = _db()
+    if not re.fullmatch(r"[A-Z][A-Z0-9]{0,3}", code):
+        return fail("Task code must be 1-4 characters, letters/digits, starting with a letter")
+    if code in TASKS.get(discipline, {}) or scoring.parse_task(code)[0] in TASKS.get(discipline, {}):
+        return fail(f"Code {code} clashes with a built-in {discipline} task")
+    if kind not in RULE_KINDS:
+        return fail("Unknown rule type")
+    try:
+        cap = _parse_targets(cap_s)[0] if cap_s.strip() else 0.0
+        start = _parse_targets(start_s)[0] if start_s.strip() else 0.0
+        step = _parse_targets(step_s)[0] if step_s.strip() else 0.0
+        tgts = _parse_targets(targets)
+    except ValueError:
+        return fail("Times must be seconds or M:SS (e.g. 180 or 3:00)")
+    if kind in ("targets", "sequence") and not tgts:
+        return fail("This rule type needs at least one target time")
+    if kind in ("last_n", "best_n", "first_n", "poker") and n < 1:
+        return fail("This rule type needs N of at least 1")
+    try:
+        db.execute(
+            """INSERT INTO custom_tasks (discipline, code, name, descr, kind, n,
+               cap_s, targets, start_s, step_s, max_flights, wt_min, based_on)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (discipline, code, name.strip(), descr.strip(), kind, n, cap,
+             json.dumps(tgts), start, step, max_flights, wt_min,
+             based_on.strip() or None))
+        db.commit()
+    except Exception:
+        return fail(f"A {discipline} custom task with code {code} already exists")
+    scoring.load_custom_rules(db)
+    return RedirectResponse("/rounds", status_code=303)
+
+
+@app.post("/tasks/custom/{task_id}/delete")
+async def custom_task_delete(task_id: int):
+    db = _db()
+    row = db.execute("SELECT * FROM custom_tasks WHERE id = ?", (task_id,)).fetchone()
+    if row:
+        used = db.execute(
+            "SELECT COUNT(*) FROM rounds WHERE task = ? AND discipline = ?",
+            (row["code"], row["discipline"])).fetchone()[0]
+        if used:
+            msg = (f"Task {row['code']} is used by {used} round(s) — "
+                   "delete or redraw those rounds first")
+            return RedirectResponse(
+                f"/rounds?error={urllib.parse.quote(msg)}", status_code=303)
+        db.execute("DELETE FROM custom_tasks WHERE id = ?", (task_id,))
+        db.commit()
+        scoring.load_custom_rules(db)
+    return RedirectResponse("/rounds", status_code=303)
+
+
+@app.on_event("startup")
+async def _load_custom_task_rules():
+    try:
+        scoring.load_custom_rules(_db())
+    except Exception:
+        pass  # table exists after init_db; never block startup
 
 
 # ---------------------------------------------------------------------------

@@ -124,6 +124,25 @@ class TestScoringDb(unittest.TestCase):
         self.assertTrue(rows[p1]["rounds"][2]["dropped"])
         self.assertEqual(rows[p1]["name"], "Alice")
 
+    def test_custom_task_rule_loading(self):
+        # Clone of F3K B with a 2:00 cap and 3 flights counting, code T1
+        self.db.execute(
+            """INSERT INTO custom_tasks (discipline, code, name, kind, n, cap_s, based_on)
+               VALUES ('F3K', 'T1', 'Last 3 short', 'last_n', 3, 120, 'B')""")
+        self.db.commit()
+        scoring.load_custom_rules(self.db)
+        try:
+            r = scoring.score_task("F3K", "T1", [150_000, 90_000, 130_000, 60_000])
+            self.assertEqual(r.flight_scores, [0, 90, 120, 60])
+            # Reload after delete clears the rule; unknown task falls back to all-count
+            self.db.execute("DELETE FROM custom_tasks")
+            self.db.commit()
+            scoring.load_custom_rules(self.db)
+            r = scoring.score_task("F3K", "T1", [150_000])
+            self.assertEqual(r.flight_scores, [150])
+        finally:
+            scoring.load_custom_rules(self.db)  # leave no stale registrations
+
     def test_uncontested_round_excluded(self):
         ids = _setup_comp(self.db, "F3K", task="A", rounds=2)
         gid = ids["groups"][0]

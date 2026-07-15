@@ -67,6 +67,24 @@ def init_db(path: str) -> sqlite3.Connection:
             FOREIGN KEY (pilot_id) REFERENCES pilots(id)
         );
 
+        CREATE TABLE IF NOT EXISTS custom_tasks (
+            id          INTEGER PRIMARY KEY,
+            discipline  TEXT NOT NULL CHECK(discipline IN ('F3K', 'F5K')),
+            code        TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            descr       TEXT NOT NULL DEFAULT '',
+            kind        TEXT NOT NULL,
+            n           INTEGER NOT NULL DEFAULT 0,
+            cap_s       REAL NOT NULL DEFAULT 0,
+            targets     TEXT NOT NULL DEFAULT '[]',
+            start_s     REAL NOT NULL DEFAULT 0,
+            step_s      REAL NOT NULL DEFAULT 0,
+            max_flights INTEGER NOT NULL DEFAULT 0,
+            wt_min      INTEGER NOT NULL DEFAULT 10,
+            based_on    TEXT,
+            UNIQUE (discipline, code)
+        );
+
         CREATE TABLE IF NOT EXISTS competition_pilots (
             competition_id INTEGER NOT NULL,
             pilot_id       INTEGER NOT NULL,

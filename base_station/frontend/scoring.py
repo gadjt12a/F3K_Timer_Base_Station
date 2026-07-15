@@ -14,6 +14,7 @@ SQLite schema from db.py and are exercised through the web UI.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass, field
@@ -104,6 +105,26 @@ def register_discipline(code: str, rules: dict[tuple, Rule] | None = None,
         CUSTOM_SCORERS[code] = scorer
 
 
+# User-defined tasks (custom_tasks table) registered at runtime; tracked so a
+# reload can clear stale entries after an edit/delete.
+_CUSTOM_TASK_KEYS: set = set()
+
+
+def load_custom_rules(db) -> None:
+    """(Re)register user-defined tasks from the custom_tasks table."""
+    for disc, code in _CUSTOM_TASK_KEYS:
+        DISCIPLINE_RULES.get(disc, {}).pop((code, None), None)
+    _CUSTOM_TASK_KEYS.clear()
+    for r in db.execute("SELECT * FROM custom_tasks").fetchall():
+        code = r["code"].upper()
+        DISCIPLINE_RULES.setdefault(r["discipline"], {})[(code, None)] = Rule(
+            kind=r["kind"], n=r["n"] or 0, cap_s=r["cap_s"] or 0,
+            targets_s=tuple(json.loads(r["targets"] or "[]")),
+            start_s=r["start_s"] or 0, step_s=r["step_s"] or 0,
+            max_flights=r["max_flights"] or 0)
+        _CUSTOM_TASK_KEYS.add((r["discipline"], code))
+
+
 _TASK_RE = re.compile(r"^\s*([A-Z]+[0-9]*)\s*(?:\((\d+)\))?\s*$", re.IGNORECASE)
 
 
@@ -147,7 +168,9 @@ def score_task(discipline: str, task: str, flights_ms: Sequence[int],
         raise ValueError(f"Unknown discipline: {discipline}")
     rule = rules.get((letter, variant)) or rules.get((letter, None))
     if rule is None:
-        raise ValueError(f"Unknown task {task!r} for {discipline}")
+        # Unknown task (e.g. a deleted custom task still referenced by a
+        # round): count every flight rather than crash results mid-competition.
+        rule = Rule("all")
 
     times = [_trunc(max(ms, 0) / 1000.0, time_decimals) for ms in flights_ms]
     scores = [0.0] * len(times)
