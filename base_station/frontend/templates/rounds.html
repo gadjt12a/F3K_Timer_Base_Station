@@ -29,7 +29,7 @@
                 <span class="text-gray-200">{{ t['name'] }}</span>
                 <span class="text-gray-500">{{ rule_kinds.get(t['kind'], t['kind']) }}
                     {%- if t['n'] %} · N={{ t['n'] }}{% endif %}
-                    {%- if t['cap_s'] %} · cap {{ t['cap_s'] | int }}s{% endif %}
+                    {%- if t['cap_s'] %} · cap {{ (t['cap_s'] // 60) | int }}:{{ '%02d' | format((t['cap_s'] % 60) | int) }}{% endif %}
                     {%- if t['max_flights'] %} · max {{ t['max_flights'] }} flights{% endif %}
                     · {{ t['wt_min'] }}m window
                     {%- if t['based_on'] %} · from Task {{ t['based_on'] }}{% endif %}</span>
@@ -95,12 +95,12 @@
                            class="w-16 bg-gray-600 rounded px-2 py-1 text-sm text-white">
                 </div>
                 <div x-show="!['poker','targets','sequence'].includes(form.kind)">
-                    <label class="block text-xs text-gray-400 mb-1" title="Seconds or M:SS; 0 = no cap">Per-flight cap</label>
+                    <label class="block text-xs text-gray-400 mb-1" title="M:SS (or plain seconds); empty = no cap">Per-flight cap (M:SS)</label>
                     <input name="cap_s" x-model="form.cap_s" placeholder="3:00"
                            class="w-16 bg-gray-600 rounded px-2 py-1 text-sm text-white font-mono">
                 </div>
                 <div x-show="['targets','sequence'].includes(form.kind)" class="min-w-[12rem]">
-                    <label class="block text-xs text-gray-400 mb-1" title="Comma-separated, seconds or M:SS">Targets</label>
+                    <label class="block text-xs text-gray-400 mb-1" title="Comma-separated M:SS (or plain seconds)">Targets (M:SS)</label>
                     <input name="targets" x-model="form.targets" placeholder="1:00, 2:00, 3:00"
                            class="w-full bg-gray-600 rounded px-2 py-1 text-sm text-white font-mono">
                 </div>
@@ -524,6 +524,13 @@ function customTasks() {
 
         baseTasks() { return Object.keys(DRAW_TASKS[this.disc] || {}); },
 
+        // Seconds -> "M:SS" for the form (the server accepts M:SS or seconds)
+        fmtS(s) {
+            if (!s) return '';
+            const m = Math.floor(s / 60);
+            return `${m}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+        },
+
         async clone() {
             const r = await (await fetch(`/api/tasks/rule?discipline=${this.disc}&task=${this.base}`)).json();
             if (!r.ok) return;
@@ -533,10 +540,10 @@ function customTasks() {
                 descr: r.desc,
                 kind: r.kind,
                 n: r.n,
-                cap_s: r.cap_s || '',
-                targets: r.targets.join(', '),
-                start_s: r.start_s || '',
-                step_s: r.step_s || '',
+                cap_s: this.fmtS(r.cap_s),
+                targets: r.targets.map(t => this.fmtS(t)).join(', '),
+                start_s: this.fmtS(r.start_s),
+                step_s: this.fmtS(r.step_s),
                 max_flights: r.max_flights,
                 wt_min: r.wt_min || 10,
                 based_on: this.base,
