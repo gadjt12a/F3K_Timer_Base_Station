@@ -124,11 +124,12 @@ function runner(initialState) {
             ws.onclose = () => setTimeout(() => this.connect(), 2000);
         },
 
+        // Big countdown shows tenths — hundredths are noise at a glance
         fmt(s) {
             const si = Math.floor(s);
             const m = Math.floor(si / 60);
-            const hh = Math.floor((s - si) * 100);
-            return `${m}:${String(si % 60).padStart(2, '0')}.${String(hh).padStart(2, '0')}`;
+            const t = Math.floor((s - si) * 10);
+            return `${m}:${String(si % 60).padStart(2, '0')}.${t}`;
         },
 
         fmtMs(ms) {
