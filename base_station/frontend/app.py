@@ -109,6 +109,16 @@ def _comp_id_of_group(db, group_id: int) -> int | None:
     return row["competition_id"] if row else None
 
 
+def _comp_pilots(db, comp_id: int) -> list:
+    """Pilots entered in a competition (id, name), ordered by name."""
+    return db.execute(
+        """SELECT p.id, p.name FROM pilots p
+           JOIN competition_pilots cp ON cp.pilot_id = p.id
+           WHERE cp.competition_id = ? ORDER BY p.name""",
+        (comp_id,),
+    ).fetchall()
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "timers_connected": len(app.state.server._clients)}
@@ -127,12 +137,7 @@ async def setup_get(request: Request, msg: str = None):
     # For each competition, attach its pilot list
     comp_data = []
     for comp in competitions:
-        comp_pilots = db.execute(
-            """SELECT p.id, p.name FROM pilots p
-               JOIN competition_pilots cp ON cp.pilot_id = p.id
-               WHERE cp.competition_id = ? ORDER BY p.name""",
-            (comp["id"],),
-        ).fetchall()
+        comp_pilots = _comp_pilots(db, comp["id"])
         # Pilots not yet in this competition (available to add)
         in_ids = {r["id"] for r in comp_pilots}
         available = [p for p in pilots if p["id"] not in in_ids]
@@ -261,7 +266,8 @@ async def pilot_delete(pilot_id: int):
 # IMPORTANT: F3K and F5K reuse the same LETTERS with DIFFERENT meanings — keep separate.
 # Base letters use the primary variant; GliderScore variants (A(1), C(3)...) are captured
 # in base_station/frontend/data/gliderscore_audio_library.json for when we build import.
-# Each entry: letter -> {"name": short label, "desc": objective for the run screen}.
+# Each entry: letter -> {"name": short label, "desc": objective for the run screen};
+# "wt_min" only where the usual 10-minute window doesn't apply (Draw Wizard default).
 F3K_TASKS = {
     "A": {"name": "Last flight",      "desc": "Only your last flight counts — 5:00 max; unlimited flights in the window."},
     "B": {"name": "Last 2 flights",   "desc": "Your last two flights count — 4:00 max each; unlimited flights in 10 min."},
@@ -275,14 +281,14 @@ F3K_TASKS = {
     "J": {"name": "Last 3",           "desc": "Your last 3 flights count — 3:00 max each; unlimited flights in 10 min."},
     "K": {"name": "Big Ladder",       "desc": "5 flights in order — 1:00, 1:30, 2:00, 2:30, 3:00 — each scored up to its target."},
     "L": {"name": "One flight",       "desc": "A single flight, up to 9:59, in a 10-minute window."},
-    "M": {"name": "Huge Ladder",      "desc": "3 flights of 3:00, 5:00, 7:00 in order; 15-minute window; 3 flights max."},
+    "M": {"name": "Huge Ladder",      "desc": "3 flights of 3:00, 5:00, 7:00 in order; 15-minute window; 3 flights max.", "wt_min": 15},
     "N": {"name": "Best flight",      "desc": "Your single best flight counts; 10-minute window."},
 }
 # F5K reuses letters with DIFFERENT tasks (GliderScore class F5K2024). Scoring also adds a
 # motor-cut height bonus vs the round's reference height — see GLIDERSCORE.md.
 F5K_TASKS = {
     "A": {"name": "1-2-3-4",          "desc": "4 flights in 10 min — targets 1, 2, 3 and 4 minutes in any order."},
-    "B": {"name": "Last flight",      "desc": "Only your last flight counts — 5:00 max; max 3 flights in 7 min."},
+    "B": {"name": "Last flight",      "desc": "Only your last flight counts — 5:00 max; max 3 flights in 7 min.", "wt_min": 7},
     "C": {"name": "All up",           "desc": "All gliders launch together — 4:00 max; 3 flights per round."},
     "D": {"name": "3 flights (3-3-4)","desc": "Three flights of 3:00, 3:00 and 4:00 in any order; max 3 flights in 10 min."},
     "E": {"name": "Poker",            "desc": "Call your own target times; best 3 timed flights count; max 3 flights in 10 min."},
@@ -352,17 +358,10 @@ async def rounds_get(request: Request, error: str = None):
                 group_data.append({"group": grp, "pilots": gpilots})
             round_data.append({"round": rnd, "groups": group_data})
 
-        comp_pilots = db.execute(
-            """SELECT p.id, p.name FROM pilots p
-               JOIN competition_pilots cp ON cp.pilot_id = p.id
-               WHERE cp.competition_id = ? ORDER BY p.name""",
-            (comp["id"],),
-        ).fetchall()
-
         comp_data.append({
             "comp": comp,
             "rounds": round_data,
-            "comp_pilots": comp_pilots,
+            "comp_pilots": _comp_pilots(db, comp["id"]),
         })
 
     return templates.TemplateResponse(request, "rounds.html", {
@@ -1199,10 +1198,7 @@ async def round_autodraw(round_id: int):
         groups = db.execute(
             "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (round_id,)
         ).fetchall()
-    pilots = [r["id"] for r in db.execute(
-        """SELECT p.id FROM pilots p
-           JOIN competition_pilots cp ON cp.pilot_id = p.id
-           WHERE cp.competition_id = ? ORDER BY p.name""", (comp_id,)).fetchall()]
+    pilots = [r["id"] for r in _comp_pilots(db, comp_id)]
     if not pilots:
         return RedirectResponse("/rounds", status_code=303)
 
@@ -1462,10 +1458,7 @@ async def api_draw_context(comp_id: int):
     comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
     if comp is None:
         return {"ok": False, "error": "Competition not found"}
-    pilots = [{"id": r["id"], "name": r["name"]} for r in db.execute(
-        """SELECT p.id, p.name FROM pilots p
-           JOIN competition_pilots cp ON cp.pilot_id = p.id
-           WHERE cp.competition_id = ? ORDER BY p.name""", (comp_id,)).fetchall()]
+    pilots = [{"id": r["id"], "name": r["name"]} for r in _comp_pilots(db, comp_id)]
     rounds = _comp_round_groups(db, comp_id)
     # Earliest safe redraw point: after the last round with flights recorded
     suggested = max((r["round_no"] for r in rounds if r["has_flights"]), default=0) + 1
@@ -1488,10 +1481,7 @@ async def api_draw_preview(request: Request):
     groups_n = int(body["groups_per_round"])
     avoid = bool(body.get("avoid_back_to_back", True))
 
-    pilots = [r["id"] for r in db.execute(
-        """SELECT p.id FROM pilots p
-           JOIN competition_pilots cp ON cp.pilot_id = p.id
-           WHERE cp.competition_id = ? ORDER BY p.name""", (comp_id,)).fetchall()]
+    pilots = [r["id"] for r in _comp_pilots(db, comp_id)]
     if len(pilots) < groups_n:
         return {"ok": False, "error": "More groups than pilots"}
 

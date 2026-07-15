@@ -151,10 +151,6 @@ class TaskResult:
     flight_scores: list = field(default_factory=list)
     raw_s: float = 0.0
 
-    @property
-    def counted(self) -> list:
-        return [i for i, s in enumerate(self.flight_scores) if s > 0]
-
 
 def score_task(discipline: str, task: str, flights_ms: Sequence[int],
                time_decimals: int = 1) -> TaskResult:
@@ -227,8 +223,6 @@ def score_task(discipline: str, task: str, flights_ms: Sequence[int],
 # NZ Nats 2026 database. Rows of (metres_offset_threshold, pts_per_metre):
 # the rate applies from that signed offset upward until the next threshold.
 BP_TABLE_2020_10: tuple = ((-1, 0.5), (0, 0.0), (1, -1.0), (11, -3.0))
-
-BONUS_TABLES: dict[int, tuple] = {1: BP_TABLE_2020_10}
 
 
 def f5k_bonus(altitude_m: float, ref_height_m: float,
@@ -444,13 +438,9 @@ def competition_standings(db, comp_id: int, discipline: str | None = None) -> di
 
     rows = standings(round_scores, cfg["drop_at"])
     names = {r["id"]: r["name"] for r in db.execute(
-        """SELECT p.id, p.name FROM pilots p
-           JOIN competition_pilots cp ON cp.pilot_id = p.id
-           WHERE cp.competition_id = ?""", (comp_id,)).fetchall()}
+        "SELECT id, name FROM pilots").fetchall()}
     for row in rows:
-        row["name"] = names.get(row["pilot_id"]) or (db.execute(
-            "SELECT name FROM pilots WHERE id = ?", (row["pilot_id"],)).fetchone() or
-            {"name": f"Pilot {row['pilot_id']}"})["name"]
+        row["name"] = names.get(row["pilot_id"], f"Pilot {row['pilot_id']}")
     return {
         "rounds": round_meta,
         "standings": rows,

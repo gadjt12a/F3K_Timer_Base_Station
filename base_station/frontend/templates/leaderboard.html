@@ -58,7 +58,7 @@
         </thead>
         <tbody>
             {% for row in data.standings %}
-            <tr class="border-t border-gray-700 {% if row.rank <= 3 %}bg-gray-800{% else %}bg-gray-850{% endif %}">
+            <tr class="border-t border-gray-700">
                 <td class="px-4 py-2 font-mono {% if row.rank == 1 %}text-yellow-400 font-bold{% elif row.rank <= 3 %}text-gray-200{% else %}text-gray-400{% endif %}">
                     {{ row.rank }}
                 </td>

@@ -509,11 +509,6 @@
 
 <script>
 const DRAW_TASKS = {{ tasks | tojson }};
-// Default working-time minutes per task (editable per round in the preview)
-const DRAW_WT = {
-    F3K: { M: 15, U15: 15 },
-    F5K: { B: 7 },
-};
 
 function customTasks() {
     return {
@@ -628,8 +623,7 @@ function drawWizard(compId, discipline) {
                     const prev = keepTasks ? this.plan[i] : null;
                     const t = prev ? { discipline: prev.discipline, task: prev.task } : this.taskForRound(i);
                     const info = (DRAW_TASKS[t.discipline] || {})[t.task] || {};
-                    const wt = prev ? prev.wt_min
-                        : (info.wt_min || (DRAW_WT[t.discipline] || {})[t.task] || 10);
+                    const wt = prev ? prev.wt_min : (info.wt_min || 10);
                     return { discipline: t.discipline, task: t.task, wt_min: wt, groups };
                 });
             } finally {

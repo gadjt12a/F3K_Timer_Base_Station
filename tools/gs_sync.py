@@ -502,7 +502,7 @@ class _LogRedirect:
 class SyncApp:
     _CONFIG_PATH = Path(os.environ.get("APPDATA", str(Path.home()))) / "F3KSync" / "config.json"
 
-    def __init__(self, root: "tk.Tk") -> None:
+    def __init__(self, root) -> None:  # root: tkinter.Tk (imported lazily)
         import tkinter as tk
         from tkinter import ttk
         self._tk = tk
