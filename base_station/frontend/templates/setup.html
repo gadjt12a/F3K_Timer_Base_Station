@@ -44,6 +44,11 @@
                                class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
                     </div>
                     <div>
+                        <label class="block text-xs text-gray-400 mb-1">Location <span class="text-gray-500">(flying field)</span></label>
+                        <input name="location" type="text" placeholder="e.g. Awatoto Field"
+                               class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    </div>
+                    <div>
                         <label class="block text-xs text-gray-400 mb-1">GliderScore Comp No <span class="text-gray-500">(optional)</span></label>
                         <input name="gliderscore_comp_no" type="number"
                                class="w-full bg-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400">
@@ -91,32 +96,51 @@
                 </form>
             </div>
 
-            <!-- Competition cards -->
-            {% for item in comp_data %}
+            {% macro comp_card(item, expanded) %}
             {% set comp = item.comp %}
             {% set locked = comp['gliderscore_comp_no'] %}
-            <div class="bg-gray-800 rounded-lg p-5 mb-4">
-                <div class="flex items-start justify-between mb-4">
-                    <div class="flex flex-wrap items-center gap-2">
+            {% set is_archived = comp['archived'] %}
+            <div class="bg-gray-800 rounded-lg mb-3 {% if is_archived %}opacity-80{% endif %}"
+                 x-data="{ open: {{ 'true' if expanded else 'false' }} }">
+
+                <!-- Header — click to expand/collapse -->
+                <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer select-none"
+                     @click="open = !open">
+                    <div class="flex flex-wrap items-center gap-2 min-w-0">
+                        <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-150"
+                             :class="open ? 'rotate-90' : ''"
+                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
                         <span class="text-base font-semibold">{{ comp['name'] }}</span>
                         <span class="px-2 py-0.5 rounded text-xs font-medium
                             {% if comp['discipline'] == 'F3K' %}bg-blue-700 text-blue-200{% else %}bg-purple-700 text-purple-200{% endif %}">
                             {{ comp['discipline'] }}
                         </span>
                         <span class="text-sm text-gray-400">{{ comp['date'] }}</span>
+                        {% if comp['location'] %}
+                        <span class="text-sm text-gray-500">· {{ comp['location'] }}</span>
+                        {% endif %}
                         {% if locked %}
                         <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/60 text-amber-300"
-                              title="Imported from GliderScore — pilot draw is locked">
-                            GS Locked
-                        </span>
+                              title="Imported from GliderScore — pilot draw is locked">GS Locked</span>
                         {% endif %}
+                        <span class="text-xs text-gray-500" x-show="!open">
+                            {{ item.pilots | length }} pilot{{ 's' if item.pilots | length != 1 }}
+                        </span>
                     </div>
-                    <div class="flex items-center gap-3 flex-shrink-0">
+                    <div class="flex items-center gap-3 flex-shrink-0" @click.stop>
+                        {% if is_archived %}
+                        <form method="post" action="/setup/competition/{{ comp['id'] }}/unarchive">
+                            <button type="submit" class="text-yellow-500 hover:text-yellow-400 text-sm">Unarchive</button>
+                        </form>
+                        {% else %}
                         <form method="post" action="/setup/competition/{{ comp['id'] }}/archive" x-data
                               @submit.prevent="confirm('Archive {{ comp['name'] }}? It disappears from Rounds/Run/Results/Leaderboard until unarchived.') && $el.submit()">
                             <button type="submit" class="text-gray-400 hover:text-yellow-400 text-sm"
                                     title="Hide from all pages without deleting anything">Archive</button>
                         </form>
+                        {% endif %}
                         <form method="post" action="/setup/competition/{{ comp['id'] }}/delete" x-data
                               @submit.prevent="confirm('Delete {{ comp['name'] }}?') && $el.submit()">
                             <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Delete</button>
@@ -124,108 +148,105 @@
                     </div>
                 </div>
 
-                {% if locked %}
-                <div class="text-xs text-amber-400/80 bg-amber-900/20 border border-amber-800 rounded px-3 py-2 mb-3">
-                    Pilot draw locked — managed in GliderScore (CompNo {{ locked }}). Re-import to update.
-                </div>
-                {% endif %}
-
-                <!-- Pilots in this competition -->
-                <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Pilots</p>
-                <div class="flex flex-wrap gap-2 mb-3">
-                    {% for pilot in item.pilots %}
-                    <div class="flex items-center gap-1 bg-gray-700 rounded px-2 py-1 text-sm">
-                        <span>{{ pilot['name'] }}</span>
-                        {% if not locked %}
-                        <form method="post" action="/setup/competition/{{ comp['id'] }}/pilot/{{ pilot['id'] }}/remove">
-                            <button type="submit" class="text-gray-400 hover:text-red-400 text-xs ml-1">✕</button>
-                        </form>
-                        {% endif %}
+                <!-- Body -->
+                <div x-show="open" class="border-t border-gray-700 px-5 pb-4 pt-3">
+                    {% if locked %}
+                    <div class="text-xs text-amber-400/80 bg-amber-900/20 border border-amber-800 rounded px-3 py-2 mb-3">
+                        Pilot draw locked — managed in GliderScore (CompNo {{ locked }}). Re-import to update.
                     </div>
-                    {% else %}
-                    <span class="text-gray-500 text-sm">No pilots assigned yet.</span>
-                    {% endfor %}
-                </div>
+                    {% endif %}
 
-                <!-- Scoring config (self-contained scoring engine) -->
-                <div x-data="{ showScoring: false }" class="mb-3">
-                    <button @click="showScoring = !showScoring" type="button"
-                            class="text-xs text-gray-400 hover:text-yellow-400 flex items-center gap-1">
-                        <span :class="showScoring ? 'rotate-90' : ''" class="inline-block transition-transform">▸</span>
-                        Scoring — drops{% if comp['discipline'] != 'F3K' %} &amp; F5K height bonus{% endif %}
-                        {% if comp['drop1_at_round'] != 99 %}
-                        <span class="text-yellow-500">(drop after Rd {{ comp['drop1_at_round'] }})</span>
-                        {% endif %}
-                    </button>
-                    <form x-show="showScoring" method="post" action="/setup/competition/{{ comp['id'] }}/scoring"
-                          class="mt-2 bg-gray-700/50 rounded p-3 flex flex-wrap gap-3 items-end">
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1" title="Lowest score dropped once this many rounds are flown (99 = never)">Drop 1 after Rd</label>
-                            <input name="drop1_at_round" type="number" min="1" max="99" value="{{ comp['drop1_at_round'] }}"
-                                   class="w-16 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1">Drop 2 after Rd</label>
-                            <input name="drop2_at_round" type="number" min="1" max="99" value="{{ comp['drop2_at_round'] }}"
-                                   class="w-16 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1">Drop 3 after Rd</label>
-                            <input name="drop3_at_round" type="number" min="1" max="99" value="{{ comp['drop3_at_round'] }}"
-                                   class="w-16 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
-                        </div>
-                        {% if comp['discipline'] != 'F3K' %}
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1">F5K ref height (m)</label>
-                            <input name="f5k_ref_height" type="number" min="0" max="300" step="1" value="{{ comp['f5k_ref_height'] | int }}"
-                                   class="w-20 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1" title="Minimum flight time before the height bonus applies">Min time for bonus (s)</label>
-                            <input name="f5k_min_time_for_bonus" type="number" min="0" max="300" value="{{ comp['f5k_min_time_for_bonus'] }}"
-                                   class="w-20 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                    <p class="text-xs text-gray-400 uppercase tracking-wide mb-2">Pilots</p>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        {% for pilot in item.pilots %}
+                        <div class="flex items-center gap-1 bg-gray-700 rounded px-2 py-1 text-sm">
+                            <span>{{ pilot['name'] }}</span>
+                            {% if not locked and not is_archived %}
+                            <form method="post" action="/setup/competition/{{ comp['id'] }}/pilot/{{ pilot['id'] }}/remove">
+                                <button type="submit" class="text-gray-400 hover:text-red-400 text-xs ml-1">✕</button>
+                            </form>
+                            {% endif %}
                         </div>
                         {% else %}
-                        <input type="hidden" name="f5k_ref_height" value="{{ comp['f5k_ref_height'] }}">
-                        <input type="hidden" name="f5k_min_time_for_bonus" value="{{ comp['f5k_min_time_for_bonus'] }}">
-                        {% endif %}
-                        <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-xs font-medium transition-colors">
-                            Save
-                        </button>
-                    </form>
-                </div>
+                        <span class="text-gray-500 text-sm">No pilots assigned yet.</span>
+                        {% endfor %}
+                    </div>
 
-                {% if not locked %}
-                <p class="text-xs text-gray-500">Add pilots: tick them in the registry → and choose this competition.</p>
-                {% endif %}
+                    <!-- Scoring config (self-contained scoring engine) -->
+                    <div x-data="{ showScoring: false }" class="mb-3">
+                        <button @click="showScoring = !showScoring" type="button"
+                                class="text-xs text-gray-400 hover:text-yellow-400 flex items-center gap-1">
+                            <span :class="showScoring ? 'rotate-90' : ''" class="inline-block transition-transform">▸</span>
+                            Scoring — drops{% if comp['discipline'] != 'F3K' %} &amp; F5K height bonus{% endif %}
+                            {% if comp['drop1_at_round'] != 99 %}
+                            <span class="text-yellow-500">(drop after Rd {{ comp['drop1_at_round'] }})</span>
+                            {% endif %}
+                        </button>
+                        <form x-show="showScoring" method="post" action="/setup/competition/{{ comp['id'] }}/scoring"
+                              class="mt-2 bg-gray-700/50 rounded p-3 flex flex-wrap gap-3 items-end">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1" title="Lowest score dropped once this many rounds are flown (99 = never)">Drop 1 after Rd</label>
+                                <input name="drop1_at_round" type="number" min="1" max="99" value="{{ comp['drop1_at_round'] }}"
+                                       class="w-16 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Drop 2 after Rd</label>
+                                <input name="drop2_at_round" type="number" min="1" max="99" value="{{ comp['drop2_at_round'] }}"
+                                       class="w-16 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Drop 3 after Rd</label>
+                                <input name="drop3_at_round" type="number" min="1" max="99" value="{{ comp['drop3_at_round'] }}"
+                                       class="w-16 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                            </div>
+                            {% if comp['discipline'] != 'F3K' %}
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">F5K ref height (m)</label>
+                                <input name="f5k_ref_height" type="number" min="0" max="300" step="1" value="{{ comp['f5k_ref_height'] | int }}"
+                                       class="w-20 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1" title="Minimum flight time before the height bonus applies">Min time for bonus (s)</label>
+                                <input name="f5k_min_time_for_bonus" type="number" min="0" max="300" value="{{ comp['f5k_min_time_for_bonus'] }}"
+                                       class="w-20 bg-gray-700 rounded px-2 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                            </div>
+                            {% else %}
+                            <input type="hidden" name="f5k_ref_height" value="{{ comp['f5k_ref_height'] }}">
+                            <input type="hidden" name="f5k_min_time_for_bonus" value="{{ comp['f5k_min_time_for_bonus'] }}">
+                            {% endif %}
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-xs font-medium transition-colors">
+                                Save
+                            </button>
+                        </form>
+                    </div>
+
+                    {% if not locked and not is_archived %}
+                    <p class="text-xs text-gray-500">Add pilots: tick them in the registry → and choose this competition.</p>
+                    {% endif %}
+                </div>
             </div>
+            {% endmacro %}
+
+            <!-- Competition cards — newest expanded, the rest collapsed -->
+            {% set active_comps = comp_data | rejectattr('comp.archived') | list %}
+            {% set archived_comps = comp_data | selectattr('comp.archived') | list %}
+            {% for item in active_comps %}
+            {{ comp_card(item, loop.first) }}
             {% else %}
             <p class="text-gray-500 text-sm">No competitions yet — click "+ New Competition" above.</p>
             {% endfor %}
 
-            <!-- Archived competitions -->
-            {% if archived %}
+            <!-- Archived competitions — same cards, collapsed, data still viewable -->
+            {% if archived_comps %}
             <div class="mt-6" x-data="{ showArch: false }">
                 <button @click="showArch = !showArch"
-                        class="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                        class="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1 mb-2">
                     <span :class="showArch ? 'rotate-90' : ''" class="inline-block transition-transform">▸</span>
-                    Archived ({{ archived | length }})
+                    Archived ({{ archived_comps | length }})
                 </button>
-                <div x-show="showArch" class="mt-2 flex flex-col gap-1.5">
-                    {% for comp in archived %}
-                    <div class="flex items-center gap-3 bg-gray-800/60 rounded px-4 py-2 text-sm text-gray-400">
-                        <span class="text-gray-300">{{ comp['name'] }}</span>
-                        <span class="text-xs">{{ comp['discipline'] }} · {{ comp['date'] }}</span>
-                        <div class="ml-auto flex items-center gap-3">
-                            <form method="post" action="/setup/competition/{{ comp['id'] }}/unarchive">
-                                <button type="submit" class="text-xs text-yellow-500 hover:text-yellow-400">Unarchive</button>
-                            </form>
-                            <form method="post" action="/setup/competition/{{ comp['id'] }}/delete" x-data
-                                  @submit.prevent="confirm('Delete {{ comp['name'] }}?') && $el.submit()">
-                                <button type="submit" class="text-xs text-red-400 hover:text-red-300">Delete</button>
-                            </form>
-                        </div>
-                    </div>
+                <div x-show="showArch">
+                    {% for item in archived_comps %}
+                    {{ comp_card(item, false) }}
                     {% endfor %}
                 </div>
             </div>
@@ -238,7 +259,7 @@
         <section class="bg-gray-800 rounded-lg p-5">
             <h2 class="text-lg font-semibold mb-4 text-gray-200">Pilot Registry</h2>
 
-            {% set assignable = comp_data | rejectattr('comp.gliderscore_comp_no') | list %}
+            {% set assignable = comp_data | rejectattr('comp.gliderscore_comp_no') | rejectattr('comp.archived') | list %}
             <form method="post" action="/setup/pilots/assign" x-data="{ sel: 0 }"
                   @change="sel = $el.querySelectorAll('input[name=pilot_ids]:checked').length">
                 <div class="overflow-y-auto max-h-[calc(100vh-20rem)] mb-3 pr-2">

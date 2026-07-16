@@ -132,11 +132,14 @@ function runner(initialState) {
                     }
                 } else if (msg.type === 'flight') {
                     this.flights.push(msg);
+                    if (this.altOpen) this.refreshAltitudes();
                 } else if (msg.type === 'altitude') {
                     this.altitudes = {
                         ...this.altitudes,
                         [msg.pilot_id]: { ...(this.altitudes[msg.pilot_id] || {}), [msg.flight_no]: msg.altitude_m },
                     };
+                    // Keep the CD's altitude panel in step with watch submissions
+                    if (this.altData) this.refreshAltitudes();
                 } else if (msg.type === 'timer_pilot') {
                     const idx = this.timers.findIndex(t => t.id === msg.timer_id);
                     if (idx >= 0) {
@@ -322,6 +325,12 @@ function runner(initialState) {
         nextUp() {
             const h = HEATS.find(h => !this.doneGroups.has(h.group_id));
             return h ? h.group_id : null;
+        },
+
+        missingAlt() {
+            if (!this.altData) return 0;
+            return this.altData.flights.filter(
+                f => f.altitude_m === null || f.altitude_m === '').length;
         },
 
         bonusFor(f) {
@@ -675,9 +684,14 @@ function runner(initialState) {
             <template x-if="loaded && loaded.discipline === 'F5K'">
                 <div class="mt-3 pt-3 border-t border-gray-700">
                     <button @click="toggleAltPanel()"
-                            class="text-xs text-fuchsia-400 hover:text-fuchsia-300 flex items-center gap-1">
+                            class="text-xs text-fuchsia-400 hover:text-fuchsia-300 flex items-center gap-1.5">
                         <span x-text="altOpen ? '▲' : '▼'"></span>
                         Altitudes — enter / correct motor-cut heights
+                        <span x-show="altData && missingAlt() > 0"
+                              class="bg-amber-900/70 text-amber-300 rounded px-1.5 py-0.5 font-semibold"
+                              x-text="'⚠ ' + missingAlt() + ' missing'"></span>
+                        <span x-show="altData && altData.flights.length > 0 && missingAlt() === 0"
+                              class="text-green-500">✓ all in</span>
                     </button>
                     <div x-show="altOpen" class="mt-2">
                         <template x-if="altData && altData.flights.length === 0">
@@ -696,7 +710,8 @@ function runner(initialState) {
                                             <span class="font-mono text-green-400 text-xs" x-text="fmtMs(f.duration_ms)"></span>
                                             <input type="number" min="0" max="999" placeholder="—"
                                                    x-model="f.altitude_m" @change="setAltitude(f)"
-                                                   class="w-16 bg-gray-700 border border-gray-600 text-gray-100 rounded px-2 py-0.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-fuchsia-400">
+                                                   :class="f.altitude_m === null || f.altitude_m === '' ? 'border-amber-500' : 'border-gray-600'"
+                                                   class="w-16 bg-gray-700 border text-gray-100 rounded px-2 py-0.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-fuchsia-400">
                                             <span class="w-12 text-right font-mono text-xs"
                                                   :class="bonusFor(f) === null ? 'text-gray-600' : (bonusFor(f) >= 0 ? 'text-cyan-400' : 'text-red-400')"
                                                   x-text="bonusFor(f) === null ? '—' : (bonusFor(f) >= 0 ? '+' : '') + bonusFor(f).toFixed(1)"></span>

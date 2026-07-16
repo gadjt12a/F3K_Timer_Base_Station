@@ -138,19 +138,15 @@ async def setup_get(request: Request, msg: str = None):
     pilots = db.execute("SELECT * FROM pilots ORDER BY name").fetchall()
     competitions = db.execute("SELECT * FROM competitions ORDER BY id DESC").fetchall()
 
-    # Active comps get full cards (newest first); archived collapse to one row
-    comp_data = []
-    for comp in competitions:
-        if comp["archived"]:
-            continue
-        comp_data.append({"comp": comp, "pilots": _comp_pilots(db, comp["id"])})
-    archived = [c for c in competitions if c["archived"]]
+    # Full card data for every comp (newest first) — archived ones render the
+    # same card inside the Archived section so their data stays viewable.
+    comp_data = [{"comp": comp, "pilots": _comp_pilots(db, comp["id"])}
+                 for comp in competitions]
 
     return templates.TemplateResponse(request, "setup.html", {
         "active": "setup",
         "all_pilots": pilots,
         "comp_data": comp_data,
-        "archived": archived,
         "msg": msg,
     })
 
@@ -160,6 +156,7 @@ async def competition_new(
     name: str = Form(...),
     discipline: str = Form(...),
     date: str = Form(...),
+    location: str = Form(""),
     gliderscore_comp_no: str = Form(""),
     prep_time_s: int = Form(180),
     land_time_s: int = Form(30),
@@ -172,10 +169,10 @@ async def competition_new(
     comp_no = int(gliderscore_comp_no) if gliderscore_comp_no.strip() else None
     db.execute(
         """INSERT INTO competitions
-           (name, discipline, date, gliderscore_comp_no,
+           (name, discipline, date, location, gliderscore_comp_no,
             prep_time_s, land_time_s, heat_gap_s, round_gap_s, focus_time_s, count_last_s)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (name, discipline, date, comp_no,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (name, discipline, date, location.strip(), comp_no,
          prep_time_s, land_time_s, heat_gap_s, round_gap_s, focus_time_s, count_last_s),
     )
     db.commit()

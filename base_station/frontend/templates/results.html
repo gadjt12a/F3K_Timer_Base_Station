@@ -13,14 +13,26 @@
 {% endif %}
 
 {% for cd in comp_data %}
-<div class="mb-10">
-    <h2 class="text-lg font-bold mb-4 flex items-center gap-3">
+<div class="mb-6" x-data="{ open: {{ 'true' if loop.first else 'false' }} }">
+    <h2 class="text-lg font-bold mb-4 flex items-center gap-3 cursor-pointer select-none"
+        @click="open = !open">
+        <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-150"
+             :class="open ? 'rotate-90' : ''"
+             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
         <span class="{% if cd.comp.discipline == 'F3K' %}text-orange-400{% else %}text-fuchsia-400{% endif %}">
             {{ cd.comp.name }}
         </span>
-        <span class="text-sm text-gray-400 font-normal">{{ cd.comp.discipline }} · {{ cd.comp.date }}</span>
+        <span class="text-sm text-gray-400 font-normal">
+            {{ cd.comp.discipline }} · {{ cd.comp.date }}{% if cd.comp.location %} · {{ cd.comp.location }}{% endif %}
+        </span>
+        <span class="text-xs text-gray-500 font-normal" x-show="!open">
+            {{ cd.rounds | length }} round{{ 's' if cd.rounds | length != 1 }}
+        </span>
     </h2>
 
+    <div x-show="open">
     {% if not cd.rounds %}
     <p class="text-gray-500 text-sm ml-1">No rounds defined.</p>
     {% endif %}
@@ -191,6 +203,7 @@
 
     </div>
     {% endfor %}
+    </div>
 </div>
 {% endfor %}
 
