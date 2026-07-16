@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Setup — Glide Base{% endblock %}
 {% block main_class %}p-6{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Comp Setup</h1>
@@ -110,10 +111,17 @@
                         </span>
                         {% endif %}
                     </div>
-                    <form method="post" action="/setup/competition/{{ comp['id'] }}/delete" x-data
-                          @submit.prevent="confirm('Delete {{ comp['name'] }}?') && $el.submit()">
-                        <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Delete</button>
-                    </form>
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <form method="post" action="/setup/competition/{{ comp['id'] }}/archive" x-data
+                              @submit.prevent="confirm('Archive {{ comp['name'] }}? It disappears from Rounds/Run/Results/Leaderboard until unarchived.') && $el.submit()">
+                            <button type="submit" class="text-gray-400 hover:text-yellow-400 text-sm"
+                                    title="Hide from all pages without deleting anything">Archive</button>
+                        </form>
+                        <form method="post" action="/setup/competition/{{ comp['id'] }}/delete" x-data
+                              @submit.prevent="confirm('Delete {{ comp['name'] }}?') && $el.submit()">
+                            <button type="submit" class="text-red-400 hover:text-red-300 text-sm">Delete</button>
+                        </form>
+                    </div>
                 </div>
 
                 {% if locked %}
@@ -188,37 +196,40 @@
                 </div>
 
                 {% if not locked %}
-                {% if item.available %}
-                <form method="post" action="/setup/competition/{{ comp['id'] }}/pilots/add_bulk"
-                      x-data="{ all: false }">
-                    <div class="flex items-center gap-3 mb-2">
-                        <span class="text-xs text-gray-400">Add pilots:</span>
-                        <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
-                            <input type="checkbox" x-model="all" class="accent-yellow-400"
-                                   @change="$el.closest('form').querySelectorAll('input[name=pilot_ids]').forEach(c => c.checked = all)">
-                            Select all ({{ item.available | length }})
-                        </label>
-                    </div>
-                    <div class="flex flex-wrap gap-1.5 mb-2 max-h-32 overflow-y-auto">
-                        {% for pilot in item.available %}
-                        <label class="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 rounded px-2 py-1 text-xs cursor-pointer">
-                            <input type="checkbox" name="pilot_ids" value="{{ pilot['id'] }}" class="accent-yellow-400">
-                            {{ pilot['name'] }}
-                        </label>
-                        {% endfor %}
-                    </div>
-                    <button type="submit" class="bg-green-700 hover:bg-green-600 px-3 py-1.5 rounded text-sm font-medium transition-colors">
-                        Add Selected to Competition
-                    </button>
-                </form>
-                {% else %}
-                <p class="text-xs text-gray-500">All registered pilots assigned.</p>
-                {% endif %}
+                <p class="text-xs text-gray-500">Add pilots: tick them in the registry → and choose this competition.</p>
                 {% endif %}
             </div>
             {% else %}
             <p class="text-gray-500 text-sm">No competitions yet — click "+ New Competition" above.</p>
             {% endfor %}
+
+            <!-- Archived competitions -->
+            {% if archived %}
+            <div class="mt-6" x-data="{ showArch: false }">
+                <button @click="showArch = !showArch"
+                        class="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+                    <span :class="showArch ? 'rotate-90' : ''" class="inline-block transition-transform">▸</span>
+                    Archived ({{ archived | length }})
+                </button>
+                <div x-show="showArch" class="mt-2 flex flex-col gap-1.5">
+                    {% for comp in archived %}
+                    <div class="flex items-center gap-3 bg-gray-800/60 rounded px-4 py-2 text-sm text-gray-400">
+                        <span class="text-gray-300">{{ comp['name'] }}</span>
+                        <span class="text-xs">{{ comp['discipline'] }} · {{ comp['date'] }}</span>
+                        <div class="ml-auto flex items-center gap-3">
+                            <form method="post" action="/setup/competition/{{ comp['id'] }}/unarchive">
+                                <button type="submit" class="text-xs text-yellow-500 hover:text-yellow-400">Unarchive</button>
+                            </form>
+                            <form method="post" action="/setup/competition/{{ comp['id'] }}/delete" x-data
+                                  @submit.prevent="confirm('Delete {{ comp['name'] }}?') && $el.submit()">
+                                <button type="submit" class="text-xs text-red-400 hover:text-red-300">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
         </section>
     </div>
 
@@ -227,35 +238,68 @@
         <section class="bg-gray-800 rounded-lg p-5">
             <h2 class="text-lg font-semibold mb-4 text-gray-200">Pilot Registry</h2>
 
-            <div class="overflow-y-auto max-h-[calc(100vh-16rem)] mb-4 pr-2">
-                <table class="w-full text-sm">
-                    <thead class="sticky top-0 bg-gray-800">
-                        <tr class="text-gray-400 text-left border-b border-gray-700">
-                            <th class="pb-2 w-10">ID</th>
-                            <th class="pb-2">Name</th>
-                            <th class="pb-2"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for pilot in all_pilots %}
-                        <tr class="border-b border-gray-700">
-                            <td class="py-2 text-gray-500">{{ pilot['id'] }}</td>
-                            <td class="py-2">{{ pilot['name'] }}</td>
-                            <td class="py-2 text-right">
-                                <form method="post" action="/setup/pilot/{{ pilot['id'] }}/delete" x-data
-                                      @submit.prevent="confirm('Remove {{ pilot['name'] }} from registry?') && $el.submit()">
-                                    <button type="submit" class="text-red-400 hover:text-red-300 text-xs">Delete</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="3" class="py-3 text-gray-500 text-sm">No pilots yet.</td>
-                        </tr>
+            {% set assignable = comp_data | rejectattr('comp.gliderscore_comp_no') | list %}
+            <form method="post" action="/setup/pilots/assign" x-data="{ sel: 0 }"
+                  @change="sel = $el.querySelectorAll('input[name=pilot_ids]:checked').length">
+                <div class="overflow-y-auto max-h-[calc(100vh-20rem)] mb-3 pr-2">
+                    <table class="w-full text-sm">
+                        <thead class="sticky top-0 bg-gray-800">
+                            <tr class="text-gray-400 text-left border-b border-gray-700">
+                                <th class="pb-2 w-8">
+                                    <input type="checkbox" class="accent-yellow-400" title="Select all"
+                                           @change="$el.closest('table').querySelectorAll('input[name=pilot_ids]').forEach(c => c.checked = $event.target.checked)">
+                                </th>
+                                <th class="pb-2">Name</th>
+                                <th class="pb-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pilot in all_pilots %}
+                            <tr class="border-b border-gray-700 hover:bg-gray-700/40">
+                                <td class="py-2">
+                                    <input type="checkbox" name="pilot_ids" value="{{ pilot['id'] }}"
+                                           class="accent-yellow-400">
+                                </td>
+                                <td class="py-2">
+                                    <label class="cursor-pointer block"
+                                           @click="const c = $el.closest('tr').querySelector('input[name=pilot_ids]'); c.checked = !c.checked; $dispatch('change')">
+                                        {{ pilot['name'] }}
+                                    </label>
+                                </td>
+                                <td class="py-2 text-right">
+                                    <button type="submit" formaction="/setup/pilot/{{ pilot['id'] }}/delete"
+                                            formnovalidate
+                                            @click="if (!confirm('Remove {{ pilot['name'] }} from registry?')) $event.preventDefault()"
+                                            class="text-red-400 hover:text-red-300 text-xs">Delete</button>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" class="py-3 text-gray-500 text-sm">No pilots yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Bind selection to a competition -->
+                {% if assignable and all_pilots %}
+                <div class="flex items-center gap-2 mb-3 bg-gray-700/50 rounded p-2.5">
+                    <span class="text-xs text-gray-400 whitespace-nowrap"
+                          x-text="sel + ' selected'"></span>
+                    <select name="comp_id" required
+                            class="flex-1 min-w-0 bg-gray-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+                        {% for item in assignable %}
+                        <option value="{{ item.comp['id'] }}">{{ item.comp['name'] }}</option>
                         {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+                    </select>
+                    <button type="submit" :disabled="sel === 0"
+                            class="bg-green-700 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap">
+                        Add to comp
+                    </button>
+                </div>
+                {% endif %}
+            </form>
 
             <form method="post" action="/setup/pilot/add" class="flex gap-2">
                 <input name="name" type="text" placeholder="Pilot name" required autofocus

@@ -115,6 +115,7 @@ def _migrate_competitions(db: sqlite3.Connection) -> None:
         ("f5k_ref_height",         "REAL NOT NULL DEFAULT 60"),
         ("f5k_min_time_for_bonus", "INTEGER NOT NULL DEFAULT 30"),
         ("time_decimals",          "INTEGER NOT NULL DEFAULT 1"),
+        ("archived",               "BOOLEAN NOT NULL DEFAULT 0"),
     ]
     for col_name, col_type in additions:
         if col_name not in existing:

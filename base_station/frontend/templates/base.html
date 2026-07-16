@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Glide Base</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <title>{% block title %}Glide Base{% endblock %}</title>
+    <script src="/static/tailwind.js"></script>
+    <script defer src="/static/alpine.min.js"></script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
     <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex gap-8 text-sm font-medium items-center">

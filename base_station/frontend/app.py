@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket
 from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from frontend import audio_control, draw, scoring
@@ -45,6 +46,9 @@ manager = ConnectionManager()
 app = FastAPI(title="Glide Base")
 app.state.ws_manager = manager
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+# Tailwind + Alpine are vendored — the field networks have no internet, so CDN
+# scripts would leave every page unstyled and dead on an uncached device.
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 
 def _fmt_ms(ms) -> str:
@@ -132,21 +136,21 @@ async def health():
 async def setup_get(request: Request, msg: str = None):
     db = _db()
     pilots = db.execute("SELECT * FROM pilots ORDER BY name").fetchall()
-    competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    competitions = db.execute("SELECT * FROM competitions ORDER BY id DESC").fetchall()
 
-    # For each competition, attach its pilot list
+    # Active comps get full cards (newest first); archived collapse to one row
     comp_data = []
     for comp in competitions:
-        comp_pilots = _comp_pilots(db, comp["id"])
-        # Pilots not yet in this competition (available to add)
-        in_ids = {r["id"] for r in comp_pilots}
-        available = [p for p in pilots if p["id"] not in in_ids]
-        comp_data.append({"comp": comp, "pilots": comp_pilots, "available": available})
+        if comp["archived"]:
+            continue
+        comp_data.append({"comp": comp, "pilots": _comp_pilots(db, comp["id"])})
+    archived = [c for c in competitions if c["archived"]]
 
     return templates.TemplateResponse(request, "setup.html", {
         "active": "setup",
         "all_pilots": pilots,
         "comp_data": comp_data,
+        "archived": archived,
         "msg": msg,
     })
 
@@ -332,7 +336,7 @@ def task_label(discipline: str, letter: str) -> str:
 @app.get("/rounds")
 async def rounds_get(request: Request, error: str = None):
     db = _db()
-    competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    competitions = db.execute("SELECT * FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
 
     comp_data = []
     for comp in competitions:
@@ -482,7 +486,7 @@ async def group_delete(group_id: int):
 @app.get("/results")
 async def results_get(request: Request, error: str = None):
     db = _db()
-    competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    competitions = db.execute("SELECT * FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
 
     comp_data = []
     for comp in competitions:
@@ -666,7 +670,7 @@ _TASK_NO = {"F3K": 5, "F5K": 6}
 @app.get("/export")
 async def export_get(request: Request):
     db = _db()
-    competitions = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    competitions = db.execute("SELECT * FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
     comp_data = []
     for comp in competitions:
         flight_count = db.execute(
@@ -829,7 +833,7 @@ async def run_get(request: Request, comps: str = None):
     """Operator screen. ?comps=1,2 shows only those competitions (max 2,
     side-by-side columns); no selection shows everything (discipline split)."""
     db = _db()
-    all_comps = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
+    all_comps = db.execute("SELECT * FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
     valid_ids = {c["id"] for c in all_comps}
     sel_ids: list = []
     if comps:
@@ -896,6 +900,11 @@ async def run_get(request: Request, comps: str = None):
         else:
             queue_cols = [{"label": None, "color": _disc_color(
                 heats[0]["discipline"] if heats else "F3K"), "heats": heats}]
+
+    # Completed heats sink to the bottom of each column (stable sort keeps
+    # round/heat order within each half) so the CD isn't scrolling past them.
+    for col in queue_cols:
+        col["heats"] = sorted(col["heats"], key=lambda h: h["completed"])
 
     sm = app.state.state_machine
     return templates.TemplateResponse(request, "run.html", {
@@ -1148,8 +1157,9 @@ async def api_db_restore(file: UploadFile = File(...)):
 @app.get("/leaderboard")
 async def leaderboard_get(request: Request, comp_id: int = None, discipline: str = None):
     db = _db()
-    comps = db.execute("SELECT * FROM competitions ORDER BY id").fetchall()
-    comp = next((c for c in comps if c["id"] == comp_id), comps[-1] if comps else None)
+    comps = db.execute("SELECT * FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
+    # Comps are newest-first; default to the most recent active competition
+    comp = next((c for c in comps if c["id"] == comp_id), comps[0] if comps else None)
     data = scoring.competition_standings(db, comp["id"], discipline or None) if comp else None
     return templates.TemplateResponse(request, "leaderboard.html", {
         "active": "leaderboard",
@@ -1243,14 +1253,17 @@ def _flight_ordinal(db, flight_id: int) -> tuple:
 
 
 @app.get("/api/run/altitudes")
-async def api_run_altitudes():
-    """Flights of the loaded heat for the F5K CD altitude entry panel (B1)."""
+async def api_run_altitudes(group_id: int = None):
+    """Flights of a heat for the F5K CD altitude entry panel (B1). The client
+    passes its group_id explicitly so the panel keeps working after the round
+    ends (the state machine clears its loaded heat at IDLE)."""
     db = _db()
-    sm = app.state.server.state_machine
-    loaded = sm._loaded if sm else None
-    if not loaded or not loaded.get("group_id"):
-        return {"ok": False, "error": "No heat loaded"}
-    group_id = loaded["group_id"]
+    if group_id is None:
+        sm = app.state.server.state_machine
+        loaded = sm._loaded if sm else None
+        if not loaded or not loaded.get("group_id"):
+            return {"ok": False, "error": "No heat loaded"}
+        group_id = loaded["group_id"]
     rnd = db.execute(
         "SELECT r.* FROM rounds r JOIN groups g ON g.round_id = r.id WHERE g.id = ?",
         (group_id,)).fetchone()
@@ -1299,16 +1312,36 @@ async def api_run_scores(group_id: int):
     }}
 
 
-@app.post("/setup/competition/{comp_id}/pilots/add_bulk")
-async def setup_pilots_add_bulk(comp_id: int, pilot_ids: list[int] = Form(...)):
-    """Assign several registry pilots to a competition in one submit."""
+@app.post("/setup/pilots/assign")
+async def setup_pilots_assign(comp_id: int = Form(...), pilot_ids: list[int] = Form(...)):
+    """Bind pilots selected in the registry panel to a competition."""
     db = _db()
     if _gs_locked(db, comp_id):
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(
+            f"/setup?msg={urllib.parse.quote('That competition is GS-locked — pilots are managed in GliderScore')}",
+            status_code=303)
     for pid in pilot_ids:
         db.execute(
             "INSERT OR IGNORE INTO competition_pilots (competition_id, pilot_id) VALUES (?, ?)",
             (comp_id, pid))
+    db.commit()
+    comp = db.execute("SELECT name FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+    msg = f"{len(pilot_ids)} pilot(s) added to {comp['name'] if comp else 'competition'}"
+    return RedirectResponse(f"/setup?msg={urllib.parse.quote(msg)}", status_code=303)
+
+
+@app.post("/setup/competition/{comp_id}/archive")
+async def competition_archive(comp_id: int):
+    db = _db()
+    db.execute("UPDATE competitions SET archived = 1 WHERE id = ?", (comp_id,))
+    db.commit()
+    return RedirectResponse("/setup", status_code=303)
+
+
+@app.post("/setup/competition/{comp_id}/unarchive")
+async def competition_unarchive(comp_id: int):
+    db = _db()
+    db.execute("UPDATE competitions SET archived = 0 WHERE id = ?", (comp_id,))
     db.commit()
     return RedirectResponse("/setup", status_code=303)
 
@@ -1624,17 +1657,30 @@ async def setup_pilots_import(file: UploadFile = File(...)):
 
 
 # ---------------------------------------------------------------------------
+# Pilot view — read-only phone page for pilots on the F3K_OPS WiFi
+# ---------------------------------------------------------------------------
+
+@app.get("/pilot")
+async def pilot_get(request: Request):
+    return templates.TemplateResponse(request, "pilot.html", {
+        "tasks": merged_tasks(_db()),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Captive portal — F3K_OPS network (wlan0, 192.168.20.0/24)
-# dnsmasq resolves all DNS to 192.168.20.1; iptables redirects :80 → :8080.
-# OS captive-portal probes land here as unrecognised paths → redirect to /run.
+# dnsmasq resolves all DNS to 192.168.20.1; nftables redirects :80 → :8080.
+# OS captive-portal probes land here as unrecognised paths → redirect to the
+# read-only /pilot page (phones can't drive /run, and it exposes CD controls).
 # All named routes above take priority; only truly unknown GET paths reach this.
 # ---------------------------------------------------------------------------
 
 @app.get("/{path:path}")
 async def captive_portal_catchall(path: str, request: Request):
-    # OPS WiFi captive portal: redirect OS probes to the run page via the AP's address.
-    # All other clients (ethernet, home network, external proxy) get a plain relative redirect.
+    # OPS WiFi captive portal: redirect OS probes to the pilot page via the AP's
+    # address. All other clients (ethernet, home network, external proxy) get a
+    # plain relative redirect.
     client = request.client.host if request.client else ""
     if client.startswith("192.168.20."):
-        return RedirectResponse(url="http://192.168.20.1:8080/run", status_code=302)
-    return RedirectResponse(url="/run", status_code=302)
+        return RedirectResponse(url="http://192.168.20.1:8080/pilot", status_code=302)
+    return RedirectResponse(url="/pilot", status_code=302)

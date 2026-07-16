@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Run — Glide Base{% endblock %}
 {% block main_class %}p-6{% endblock %}
 {% block content %}
 
@@ -8,13 +9,31 @@ const TASKS = {{ tasks | tojson }};
 const HEATS = {{ heats | tojson }};
 const SEL_COMPS = {{ sel_ids | tojson }};
 
+// Remember the comp selection across reloads (per browser)
+(function () {
+    const saved = localStorage.getItem('runComps');
+    if (!location.search.includes('comps=') && saved) {
+        location.replace('/run?comps=' + saved);
+    }
+})();
+
 // Competition filter chips: toggle in/out, max two shown at once (oldest drops)
 function toggleComp(id) {
     let sel = SEL_COMPS.slice();
     const i = sel.indexOf(id);
     if (i >= 0) sel.splice(i, 1);
     else { sel.push(id); if (sel.length > 2) sel.shift(); }
-    location.href = sel.length ? '/run?comps=' + sel.join(',') : '/run';
+    if (sel.length) {
+        localStorage.setItem('runComps', sel.join(','));
+        location.href = '/run?comps=' + sel.join(',');
+    } else {
+        localStorage.removeItem('runComps');
+        location.href = '/run';
+    }
+}
+function showAllComps() {
+    localStorage.removeItem('runComps');
+    location.href = '/run';
 }
 
 // group_ids that are already marked complete (from server render)
@@ -97,11 +116,19 @@ function runner(initialState) {
                         pilot_id_names: msg.pilot_id_names || [],
                     };
                 } else if (msg.type === 'state_change') {
+                    const wasLive = this.state !== 'IDLE';
                     this.state = msg.state;
                     this._tickAt = 0;
                     if (msg.state === 'IDLE') {
                         this.secondsRemaining = 0;
                         this.liveSeconds = 0;
+                        // F5K: prompt the CD for motor-cut altitudes as soon as
+                        // the round ends — forgetting them breaks scoring.
+                        if (wasLive && this.loaded && this.loaded.discipline === 'F5K'
+                                && this.flights.length) {
+                            this.altOpen = true;
+                            this.refreshAltitudes();
+                        }
                     }
                 } else if (msg.type === 'flight') {
                     this.flights.push(msg);
@@ -245,7 +272,11 @@ function runner(initialState) {
         allPilotsReady() { return this.readyChecks().every(c => c.ok); },
 
         async startHeat() { await fetch('/api/run/start', {method:'POST'}); },
-        async abortHeat() { await fetch('/api/run/abort', {method:'POST'}); },
+        async abortHeat() {
+            // One misclick here would kill the round for the whole group
+            if (!confirm('ABORT this round for all pilots?')) return;
+            await fetch('/api/run/abort', {method:'POST'});
+        },
         async skipTo1Min() { await fetch('/api/run/skip?to=60', {method:'POST'}); },
 
         openCdOverride() {
@@ -283,8 +314,14 @@ function runner(initialState) {
         },
 
         async refreshAltitudes() {
-            const r = await (await fetch('/api/run/altitudes')).json();
+            const q = this.loadedGroupId ? `?group_id=${this.loadedGroupId}` : '';
+            const r = await (await fetch('/api/run/altitudes' + q)).json();
             this.altData = r.ok ? r : null;
+        },
+
+        nextUp() {
+            const h = HEATS.find(h => !this.doneGroups.has(h.group_id));
+            return h ? h.group_id : null;
         },
 
         bonusFor(f) {
@@ -329,7 +366,7 @@ function runner(initialState) {
         <!-- Competition filter: show all, or up to two side-by-side -->
         {% if comp_options | length > 1 %}
         <div class="flex flex-wrap gap-1.5 mb-3">
-            <button onclick="location.href='/run'"
+            <button onclick="showAllComps()"
                     class="text-[11px] px-2 py-0.5 rounded border {{ 'border-yellow-500 text-yellow-400' if not sel_ids else 'border-gray-600 text-gray-400 hover:text-gray-200' }}">
                 All
             </button>
@@ -347,7 +384,8 @@ function runner(initialState) {
         {% macro heat_card(h, color, compact) %}
         {% set gid = h.group_id %}
         <div class="mb-3 {{ 'p-2' if compact else 'p-3' }} bg-gray-700 rounded relative"
-             :class="{ 'opacity-50': doneGroups.has({{ gid }}) }">
+             :class="{ 'opacity-50': doneGroups.has({{ gid }}),
+                       'ring-1 ring-yellow-500/60': nextUp() === {{ gid }} && loadedGroupId !== {{ gid }} }">
             <template x-if="loadedGroupId === {{ gid }} && !doneGroups.has({{ gid }})">
                 <span class="absolute top-2 right-2 text-[10px] font-bold bg-yellow-500 text-black px-1.5 py-0.5 rounded">LOADED</span>
             </template>

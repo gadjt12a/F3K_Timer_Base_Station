@@ -60,7 +60,14 @@ tools/
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV per competition; download F3KSync.exe (Direct Sync tool) |
 | `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore |
+| `/pilot` | Mobile read-only pilot view — state, live countdown, current heat + pilots, leaderboard link; captive-portal landing page for phones on F3K_OPS |
 | `/health` | JSON status (timers connected) |
+
+Tailwind and Alpine are vendored under `frontend/static/` and served by the Pi — no
+internet needed at the field. Competitions list newest-first everywhere; archived
+competitions (Setup → Archive) are hidden from all pages except Setup. Pilots are
+assigned to competitions from the registry panel: tick pilots, pick the competition,
+Add to comp.
 
 ## GliderScore Integration
 
