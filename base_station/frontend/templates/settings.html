@@ -156,6 +156,34 @@
     </table>
   </section>
 
+  <!-- ── Software Update ── -->
+  <section class="bg-gray-800 rounded-lg p-5 mb-6">
+    <h2 class="text-lg font-semibold mb-4 text-gray-200">Software Update</h2>
+    <template x-if="!sysInfo.git">
+      <p class="text-sm text-yellow-400">
+        Not running from a git clone — run <code class="bg-gray-700 px-1 rounded">migrate-to-git.sh</code> on this Pi first.
+      </p>
+    </template>
+    <template x-if="sysInfo.git">
+      <div>
+        <p class="text-sm text-gray-400 mb-1">
+          Current version: <span class="font-mono text-gray-200" x-text="sysInfo.commit"></span>
+          <span class="text-gray-500 ml-2" x-text="sysInfo.date"></span>
+        </p>
+        <p class="text-xs text-gray-500 mb-4" x-text="sysInfo.message"></p>
+        <div class="flex items-center gap-4 flex-wrap">
+          <button @click="update()" :disabled="updateBusy"
+                  class="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded font-medium"
+                  x-text="updateBusy ? 'Pulling…' : 'Update from GitHub'"></button>
+          <span class="text-sm" :class="updateOk === false ? 'text-red-400' : 'text-green-400'"
+                x-text="updateMsg" x-show="updateMsg"></span>
+        </div>
+        <pre x-show="updateOutput" x-text="updateOutput"
+             class="mt-3 text-xs font-mono bg-gray-900 rounded p-3 text-gray-300 whitespace-pre-wrap"></pre>
+      </div>
+    </template>
+  </section>
+
   <!-- ── Data Backup ── -->
   <section class="bg-gray-800 rounded-lg p-5">
     <h2 class="text-lg font-semibold mb-4 text-gray-200">Data Backup</h2>
@@ -191,11 +219,33 @@ function settings() {
     discovered: [], scanBusy: false, msg: '',
     timers: [], events: [],
     restoreBusy: false, restoreError: '',
+    sysInfo: { git: false }, updateBusy: false, updateMsg: '', updateOutput: '', updateOk: null,
 
     async init() {
       await this.loadAudio();
       await this.loadTimers();
+      await this.loadSysInfo();
       setInterval(() => this.loadTimers(), 3000);
+    },
+    async loadSysInfo() {
+      this.sysInfo = await (await fetch('/api/system/info')).json();
+    },
+    async update() {
+      this.updateBusy = true; this.updateMsg = ''; this.updateOutput = ''; this.updateOk = null;
+      try {
+        const r = await (await fetch('/api/system/update', { method: 'POST' })).json();
+        if (!r.ok) {
+          this.updateOk = false; this.updateMsg = r.error || 'Update failed';
+        } else if (!r.changed) {
+          this.updateOk = true; this.updateMsg = 'Already up to date.';
+        } else {
+          this.updateOk = true;
+          this.updateOutput = r.output;
+          this.updateMsg = 'Updated — restarting in 3s…';
+          setTimeout(() => location.reload(), 5000);
+        }
+      } catch (e) { this.updateOk = false; this.updateMsg = 'Network error'; }
+      this.updateBusy = false;
     },
     async loadAudio() {
       this.audio = await (await fetch('/api/audio/status')).json();

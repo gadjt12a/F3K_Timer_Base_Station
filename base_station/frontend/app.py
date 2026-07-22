@@ -8,7 +8,7 @@ import tempfile
 import urllib.parse
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile, WebSocket
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1662,6 +1662,70 @@ async def pilot_get(request: Request):
     return templates.TemplateResponse(request, "pilot.html", {
         "tasks": merged_tasks(_db()),
     })
+
+
+# ---------------------------------------------------------------------------
+# System info & OTA update — pull latest code from GitHub and restart
+# ---------------------------------------------------------------------------
+
+def _git_root():
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, cwd=Path(__file__).parent,
+        )
+        return Path(r.stdout.strip()) if r.returncode == 0 else None
+    except FileNotFoundError:
+        return None
+
+
+@app.get("/api/system/info")
+async def api_system_info():
+    import subprocess
+    root = _git_root()
+    if root is None:
+        return {"git": False}
+    r = subprocess.run(
+        ["git", "log", "-1", "--format=%h|%s|%ci"],
+        capture_output=True, text=True, cwd=root,
+    )
+    if r.returncode != 0:
+        return {"git": False}
+    parts = r.stdout.strip().split("|", 2)
+    return {"git": True, "commit": parts[0], "message": parts[1],
+            "date": parts[2][:16] if len(parts) > 2 else ""}
+
+
+@app.post("/api/system/update")
+async def api_system_update(background_tasks: BackgroundTasks):
+    import subprocess
+    root = _git_root()
+    if root is None:
+        return {"ok": False, "error": "Not a git repository — run the migration script first."}
+    before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=root,
+    ).stdout.strip()
+    pull = subprocess.run(
+        ["git", "pull", "origin", "main"], capture_output=True, text=True, cwd=root,
+    )
+    if pull.returncode != 0:
+        return {"ok": False, "error": (pull.stderr or pull.stdout).strip()}
+    after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=root,
+    ).stdout.strip()
+    changed = before != after
+    if changed:
+        for py in (root / "base_station").rglob("*.py"):
+            py.touch()
+        background_tasks.add_task(_restart_after_update)
+    return {"ok": True, "changed": changed, "output": pull.stdout.strip()}
+
+
+async def _restart_after_update():
+    import asyncio, subprocess
+    await asyncio.sleep(2)
+    subprocess.run(["sudo", "systemctl", "restart", "f3k-server"])
 
 
 # ---------------------------------------------------------------------------
