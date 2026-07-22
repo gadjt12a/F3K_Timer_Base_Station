@@ -18,7 +18,24 @@ You should see the F3K Timer web interface.
 
 ---
 
-## Step 2: Check the timer WiFi is broadcasting
+## Step 2: Migrate to git-based updates (do this first, once only)
+
+The Pi was set up with a manual file copy. Run this one-liner over SSH to switch it to git so you can pull future updates directly from the web UI:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/gadjt12a/F3K_Timer_Base_Station/main/setup/migrate-to-git.sh)
+```
+
+This takes about 2 minutes (mostly downloading packages). When it prints **"Migration complete!"** the service has restarted with the latest code.
+
+> **The Pi needs internet access for this step** — make sure it's connected via ethernet to your router before running it.
+
+**After migration, future updates are one click:**
+Open the web UI → **Settings** → scroll to **Software Update** → click **Update from GitHub**. The page reloads automatically when the new code is running.
+
+---
+
+## Step 3: Check the timer WiFi is broadcasting
 
 The Pi's onboard WiFi is already set up as an access point called **F3K_BASE**.
 
@@ -32,7 +49,7 @@ You can connect a timer (or any device) to `F3K_BASE` to test the timer network.
 
 ---
 
-## Step 3: Add the USB WiFi adapter (MT7612U) for full dual-AP setup
+## Step 4: Add the USB WiFi adapter (MT7612U) for full dual-AP setup
 
 When you have the **MT7612U USB WiFi adapter**:
 
@@ -77,7 +94,7 @@ Phones/tablets for ops use connect to `F3K_OPS` — any HTTP request redirects a
 
 ---
 
-## Step 4: Set up Bluetooth audio (optional)
+## Step 5: Set up Bluetooth audio (optional)
 
 Bluetooth audio is not set up by default. You can test everything (timers, comp management, scoring) without it. Audio via the **3.5mm jack works out of the box** — just plug in a speaker.
 
