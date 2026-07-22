@@ -8,8 +8,8 @@ import tempfile
 import urllib.parse
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile, WebSocket
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -1665,8 +1665,11 @@ async def pilot_get(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# System info & OTA update — pull latest code from GitHub and restart
+# System info, base-station git update, and timer OTA firmware server
 # ---------------------------------------------------------------------------
+
+OTA_DIR = Path.home() / "f3k_timer_ota"
+
 
 def _git_root():
     import subprocess
@@ -1680,21 +1683,31 @@ def _git_root():
         return None
 
 
+def _ota_version() -> str | None:
+    ver_path = OTA_DIR / "version.json"
+    try:
+        return json.loads(ver_path.read_text()).get("version") if ver_path.exists() else None
+    except Exception:
+        return None
+
+
 @app.get("/api/system/info")
 async def api_system_info():
     import subprocess
     root = _git_root()
+    ota_version = _ota_version()
     if root is None:
-        return {"git": False}
+        return {"git": False, "ota_version": ota_version}
     r = subprocess.run(
         ["git", "log", "-1", "--format=%h|%s|%ci"],
         capture_output=True, text=True, cwd=root,
     )
     if r.returncode != 0:
-        return {"git": False}
+        return {"git": False, "ota_version": ota_version}
     parts = r.stdout.strip().split("|", 2)
     return {"git": True, "commit": parts[0], "message": parts[1],
-            "date": parts[2][:16] if len(parts) > 2 else ""}
+            "date": parts[2][:16] if len(parts) > 2 else "",
+            "ota_version": ota_version}
 
 
 @app.post("/api/system/update")
@@ -1703,6 +1716,8 @@ async def api_system_update(background_tasks: BackgroundTasks):
     root = _git_root()
     if root is None:
         return {"ok": False, "error": "Not a git repository — run the migration script first."}
+
+    # Pull base station code
     before = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=root,
     ).stdout.strip()
@@ -1718,14 +1733,55 @@ async def api_system_update(background_tasks: BackgroundTasks):
     if changed:
         for py in (root / "base_station").rglob("*.py"):
             py.touch()
+
+    # Sync timer OTA firmware files (non-fatal if no internet at the field)
+    ota_version = None
+    ota_error = None
+    try:
+        OTA_DIR.mkdir(exist_ok=True)
+        for fname in ("firmware.bin", "version.json"):
+            r = subprocess.run(
+                ["wget", "-q", "-O", str(OTA_DIR / fname),
+                 f"https://raw.githubusercontent.com/gadjt12a/F3K_Timer/main/firmware/ota/{fname}"],
+                capture_output=True, timeout=60,
+            )
+            if r.returncode != 0:
+                raise RuntimeError(f"wget {fname} failed (no internet?)")
+        ota_version = _ota_version()
+    except Exception as exc:
+        ota_error = str(exc)
+
+    if changed:
         background_tasks.add_task(_restart_after_update)
-    return {"ok": True, "changed": changed, "output": pull.stdout.strip()}
+
+    return {
+        "ok": True, "changed": changed, "output": pull.stdout.strip(),
+        "ota": {"version": ota_version, "error": ota_error},
+    }
 
 
 async def _restart_after_update():
     import asyncio, subprocess
     await asyncio.sleep(2)
     subprocess.run(["sudo", "systemctl", "restart", "f3k-server"])
+
+
+@app.get("/ota/version.json")
+async def ota_version_json():
+    path = OTA_DIR / "version.json"
+    if not path.exists():
+        raise HTTPException(404, "No firmware cached — run an update first")
+    return Response(content=path.read_bytes(), media_type="application/json",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.get("/ota/firmware.bin")
+async def ota_firmware_bin():
+    path = OTA_DIR / "firmware.bin"
+    if not path.exists():
+        raise HTTPException(404, "No firmware cached — run an update first")
+    return FileResponse(str(path), media_type="application/octet-stream",
+                        headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------

@@ -167,10 +167,14 @@
     <template x-if="sysInfo.git">
       <div>
         <p class="text-sm text-gray-400 mb-1">
-          Current version: <span class="font-mono text-gray-200" x-text="sysInfo.commit"></span>
+          Base station: <span class="font-mono text-gray-200" x-text="sysInfo.commit"></span>
           <span class="text-gray-500 ml-2" x-text="sysInfo.date"></span>
         </p>
-        <p class="text-xs text-gray-500 mb-4" x-text="sysInfo.message"></p>
+        <p class="text-xs text-gray-500 mb-1" x-text="sysInfo.message"></p>
+        <p class="text-sm text-gray-400 mb-4">
+          Timer firmware: <span class="font-mono" :class="sysInfo.ota_version ? 'text-gray-200' : 'text-gray-500'"
+                                x-text="sysInfo.ota_version || 'none cached'"></span>
+        </p>
         <div class="flex items-center gap-4 flex-wrap">
           <button @click="update()" :disabled="updateBusy"
                   class="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm px-4 py-2 rounded font-medium"
@@ -236,13 +240,17 @@ function settings() {
         const r = await (await fetch('/api/system/update', { method: 'POST' })).json();
         if (!r.ok) {
           this.updateOk = false; this.updateMsg = r.error || 'Update failed';
-        } else if (!r.changed) {
-          this.updateOk = true; this.updateMsg = 'Already up to date.';
         } else {
           this.updateOk = true;
-          this.updateOutput = r.output;
-          this.updateMsg = 'Updated — restarting in 3s…';
-          setTimeout(() => location.reload(), 5000);
+          const otaPart = r.ota?.version ? ` · firmware ${r.ota.version}` : (r.ota?.error ? ' · firmware sync failed (no internet?)' : '');
+          if (!r.changed) {
+            this.updateMsg = 'Base station already up to date' + otaPart + '.';
+            if (r.ota?.version) await this.loadSysInfo();
+          } else {
+            this.updateOutput = r.output;
+            this.updateMsg = 'Updated' + otaPart + ' — restarting in 3s…';
+            setTimeout(() => location.reload(), 5000);
+          }
         }
       } catch (e) { this.updateOk = false; this.updateMsg = 'Network error'; }
       this.updateBusy = false;
