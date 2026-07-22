@@ -17,8 +17,8 @@ A single asyncio process runs two servers in one event loop:
 - **Web app** (`frontend/app.py`, FastAPI + uvicorn, port 8080) — operator UI plus a
   WebSocket stream of live timing and flight events.
 
-State is stored in SQLite. The web UI is server-rendered Jinja2 with Tailwind (CDN) and
-Alpine.js — no front-end build step.
+State is stored in SQLite. The web UI is server-rendered Jinja2 with Tailwind and Alpine.js
+(both vendored to `frontend/static/` — no CDN, no build step, works offline at the field).
 
 ```
 base_station/
@@ -43,6 +43,8 @@ base_station/
     └── data/                 # GliderScore-derived reference data
         ├── gliderscore_timer_profiles.json   # 18 timer/audio cue profiles
         └── gliderscore_audio_library.json    # 233-row announcement library
+setup/
+└── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
 tools/
 ├── gs_sync.py                # Windows bridge: GUI + CLI; fetches JSON from base station → writes scored results direct to GliderScore .mdb (ACE OLEDB via 32-bit PS)
 └── build_exe.ps1             # PyInstaller build script → dist/F3KSync.exe (deploy to Pi for CD download)
@@ -59,7 +61,7 @@ tools/
 | `/leaderboard` | Live cumulative standings — rank, per-round normalised scores, drop rounds struck out, total; discipline filter for MIXED comps; auto-reloads on flight events; public JSON at `/api/results/{comp_id}/public` |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV per competition; download F3KSync.exe (Direct Sync tool) |
-| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore |
+| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore, **Software Update** (git pull base station code + sync timer OTA firmware files, shows current commit + cached firmware version) |
 | `/pilot` | Mobile read-only pilot view — state, live countdown, current heat + pilots, leaderboard link; captive-portal landing page for phones on F3K_OPS |
 | `/health` | JSON status (timers connected) |
 
