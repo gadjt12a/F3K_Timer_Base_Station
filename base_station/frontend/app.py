@@ -1717,15 +1717,20 @@ async def api_system_update(background_tasks: BackgroundTasks):
     if root is None:
         return {"ok": False, "error": "Not a git repository — run the migration script first."}
 
-    # Pull base station code
+    # Fetch + hard reset so locally-modified tracked files never block the update
     before = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=root,
     ).stdout.strip()
-    pull = subprocess.run(
-        ["git", "pull", "origin", "main"], capture_output=True, text=True, cwd=root,
+    fetch = subprocess.run(
+        ["git", "fetch", "origin", "main"], capture_output=True, text=True, cwd=root,
     )
-    if pull.returncode != 0:
-        return {"ok": False, "error": (pull.stderr or pull.stdout).strip()}
+    if fetch.returncode != 0:
+        return {"ok": False, "error": (fetch.stderr or fetch.stdout).strip()}
+    reset = subprocess.run(
+        ["git", "reset", "--hard", "origin/main"], capture_output=True, text=True, cwd=root,
+    )
+    if reset.returncode != 0:
+        return {"ok": False, "error": (reset.stderr or reset.stdout).strip()}
     after = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=root,
     ).stdout.strip()
@@ -1755,7 +1760,7 @@ async def api_system_update(background_tasks: BackgroundTasks):
         background_tasks.add_task(_restart_after_update)
 
     return {
-        "ok": True, "changed": changed, "output": pull.stdout.strip(),
+        "ok": True, "changed": changed, "output": reset.stdout.strip(),
         "ota": {"version": ota_version, "error": ota_error},
     }
 
