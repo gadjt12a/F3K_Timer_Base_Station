@@ -492,6 +492,7 @@ async def flight_cards_get(comp_id: int, request: Request):
            WHERE cp.competition_id = ? ORDER BY p.name""",
         (comp_id,),
     ).fetchall()
+    all_tasks = merged_tasks(db)
     pilot_cards = []
     for p in pilots:
         rounds = db.execute(
@@ -503,7 +504,15 @@ async def flight_cards_get(comp_id: int, request: Request):
                ORDER BY r.round_no""",
             (comp_id, p["id"]),
         ).fetchall()
-        pilot_cards.append({"pilot": p, "rounds": rounds})
+        by_disc: dict[str, list] = {}
+        for r in rounds:
+            rd = dict(r)
+            rd["task_name"] = all_tasks.get(r["discipline"], {}).get(r["task"], {}).get("name", r["task"])
+            by_disc.setdefault(r["discipline"], []).append(rd)
+        for disc, disc_rounds in by_disc.items():
+            pilot_cards.append({"pilot": p, "rounds": disc_rounds, "is_f5k": disc == "F5K"})
+        if not rounds:
+            pilot_cards.append({"pilot": p, "rounds": [], "is_f5k": False})
     return templates.TemplateResponse(request, "flight_cards.html", {
         "comp": comp,
         "pilot_cards": pilot_cards,
