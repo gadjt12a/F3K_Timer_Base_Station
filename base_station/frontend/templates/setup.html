@@ -117,7 +117,7 @@
                             {% if comp['discipline'] == 'F3K' %}bg-blue-700 text-blue-200{% else %}bg-purple-700 text-purple-200{% endif %}">
                             {{ comp['discipline'] }}
                         </span>
-                        <span class="text-sm text-gray-400">{{ comp['date'] }}</span>
+                        <span class="text-sm text-gray-400">{{ comp['date'] | fmt_date }}</span>
                         {% if comp['location'] %}
                         <span class="text-sm text-gray-500">· {{ comp['location'] }}</span>
                         {% endif %}
@@ -276,22 +276,54 @@
                         </thead>
                         <tbody>
                             {% for pilot in all_pilots %}
-                            <tr class="border-b border-gray-700 hover:bg-gray-700/40">
+                            <tr class="border-b border-gray-700 hover:bg-gray-700/40"
+                                x-data="{
+                                    editing: false,
+                                    nm: {{ pilot['name'] | tojson }},
+                                    async save() {
+                                        const n = this.nm.trim();
+                                        if (!n) return;
+                                        const r = await fetch('/setup/pilot/{{ pilot['id'] }}/rename', {
+                                            method: 'POST',
+                                            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                                            body: 'name=' + encodeURIComponent(n)
+                                        });
+                                        if (r.ok) { this.nm = n; this.editing = false; }
+                                    }
+                                }">
                                 <td class="py-2">
                                     <input type="checkbox" name="pilot_ids" value="{{ pilot['id'] }}"
                                            class="accent-yellow-400">
                                 </td>
                                 <td class="py-2">
-                                    <label class="cursor-pointer block"
-                                           @click="const c = $el.closest('tr').querySelector('input[name=pilot_ids]'); c.checked = !c.checked; $dispatch('change')">
-                                        {{ pilot['name'] }}
-                                    </label>
+                                    <label x-show="!editing" class="cursor-pointer block"
+                                           @click="const c = $el.closest('tr').querySelector('input[name=pilot_ids]'); c.checked = !c.checked; $dispatch('change')"
+                                           x-text="nm"></label>
+                                    <input x-show="editing" x-model="nm" type="text"
+                                           @keydown.enter.prevent="save()"
+                                           @keydown.escape="editing = false"
+                                           class="bg-gray-600 rounded px-2 py-0.5 text-white text-sm w-36 focus:outline-none focus:ring-1 focus:ring-yellow-400">
                                 </td>
                                 <td class="py-2 text-right">
-                                    <button type="submit" formaction="/setup/pilot/{{ pilot['id'] }}/delete"
-                                            formnovalidate
-                                            @click="if (!confirm('Remove {{ pilot['name'] }} from registry?')) $event.preventDefault()"
-                                            class="text-red-400 hover:text-red-300 text-xs">Delete</button>
+                                    <span class="inline-flex items-center gap-2">
+                                        <template x-if="!editing">
+                                            <button type="button"
+                                                    @click="editing = true; $nextTick(() => $el.closest('tr').querySelector('input.text-sm')?.focus())"
+                                                    class="text-gray-500 hover:text-yellow-400 text-xs" title="Rename">✎</button>
+                                        </template>
+                                        <template x-if="editing">
+                                            <span class="inline-flex gap-1">
+                                                <button type="button" @click="save()"
+                                                        class="text-green-400 hover:text-green-300 text-xs">✓</button>
+                                                <button type="button" @click="editing = false"
+                                                        class="text-gray-400 hover:text-gray-200 text-xs">✕</button>
+                                            </span>
+                                        </template>
+                                        <button type="submit" formaction="/setup/pilot/{{ pilot['id'] }}/delete"
+                                                formnovalidate
+                                                @click="if (!confirm('Remove ' + nm + ' from registry?')) $event.preventDefault()"
+                                                class="text-red-400 hover:text-red-300 text-xs">Delete</button>
+                                    </span>
                                 </td>
                             </tr>
                             {% else %}

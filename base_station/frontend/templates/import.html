@@ -62,7 +62,7 @@
                 <span class="font-mono text-xs text-gray-500">CompNo {{ comp.comp_no }}</span>
             </div>
             <div class="text-xs text-gray-400">
-                {{ comp.date }}
+                {{ comp.date | fmt_date }}
                 {% if comp.venue %} · {{ comp.venue }}{% endif %}
                 · {{ comp.pilot_count }} pilot{{ 's' if comp.pilot_count != 1 else '' }}
                 · {{ comp.round_count }} round{{ 's' if comp.round_count != 1 else '' }} with tasks set

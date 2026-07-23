@@ -8,7 +8,7 @@
     <script defer src="/static/alpine.min.js"></script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
-    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex gap-8 text-sm font-medium items-center">
+    {% block nav %}<nav class="bg-gray-800 border-b border-gray-700 px-6 py-3 flex gap-8 text-sm font-medium items-center">
         <span class="text-yellow-400 font-bold tracking-wide">GLIDE BASE</span>
         <a href="/setup" class="hover:text-yellow-400 {% if active == 'setup' %}text-yellow-400{% else %}text-gray-300{% endif %}">Comp Setup</a>
         <a href="/rounds" class="hover:text-yellow-400 {% if active == 'rounds' %}text-yellow-400{% else %}text-gray-300{% endif %}">Rounds</a>
@@ -28,7 +28,7 @@
             </div>
         </div>
         <a href="/settings" class="hover:text-yellow-400 {% if active == 'settings' %}text-yellow-400{% else %}text-gray-300{% endif %}">Settings</a>
-    </nav>
+    </nav>{% endblock %}
     <main class="{% block main_class %}p-6 max-w-4xl{% endblock %}">
         {% block content %}{% endblock %}
     </main>

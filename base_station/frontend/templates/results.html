@@ -2,7 +2,26 @@
 {% block title %}Results — Glide Base{% endblock %}
 {% block content %}
 
-<h1 class="text-xl font-bold text-gray-100 mb-6">Results</h1>
+<h1 class="text-xl font-bold text-gray-100 mb-4">Results</h1>
+
+{% if all_comps | length > 1 %}
+<div class="flex flex-wrap gap-2 mb-6">
+    <a href="/results"
+       class="text-sm px-3 py-1 rounded border
+              {% if not active_comp_id %}border-yellow-500 text-yellow-400 bg-gray-800
+              {% else %}border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500{% endif %}">
+        All
+    </a>
+    {% for c in all_comps %}
+    <a href="/results?comp_id={{ c.id }}"
+       class="text-sm px-3 py-1 rounded border
+              {% if active_comp_id == c.id %}border-yellow-500 text-yellow-400 bg-gray-800
+              {% else %}border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500{% endif %}">
+        {{ c.name }}
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
 
 {% if error %}
 <div class="mb-4 bg-red-900 border border-red-700 text-red-200 rounded px-4 py-2 text-sm">{{ error }}</div>
@@ -25,7 +44,7 @@
             {{ cd.comp.name }}
         </span>
         <span class="text-sm text-gray-400 font-normal">
-            {{ cd.comp.discipline }} · {{ cd.comp.date }}{% if cd.comp.location %} · {{ cd.comp.location }}{% endif %}
+            {{ cd.comp.discipline }} · {{ cd.comp.date | fmt_date }}{% if cd.comp.location %} · {{ cd.comp.location }}{% endif %}
         </span>
         <span class="text-xs text-gray-500 font-normal" x-show="!open">
             {{ cd.rounds | length }} round{{ 's' if cd.rounds | length != 1 }}

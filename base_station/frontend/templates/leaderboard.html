@@ -1,10 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Leaderboard — Glide Base{% endblock %}
-{% block main_class %}p-6{% endblock %}
+{% block main_class %}{% if kiosk %}p-4{% else %}p-6{% endif %}{% endblock %}
+{% block nav %}{% if not kiosk %}{{ super() }}{% endif %}{% endblock %}
 {% block content %}
 
+{% if not kiosk %}
 <div class="flex items-center gap-4 mb-6 flex-wrap">
     <h1 class="text-xl font-bold text-gray-100">Leaderboard</h1>
+
+    {% if comp %}
+    <a href="/leaderboard?comp_id={{ comp.id }}&kiosk=1"
+       class="ml-auto text-xs text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded px-2 py-1"
+       title="Open fullscreen kiosk view for projector / big screen" target="_blank">⛶ Kiosk</a>
+    {% endif %}
 
     {% if comps %}
     <div class="flex gap-2 items-center ml-4">
@@ -35,6 +43,18 @@
     </span>
     {% endif %}
 </div>
+{% else %}
+<!-- Kiosk header -->
+<div class="flex items-center justify-between mb-4">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-100">{{ comp.name if comp else 'Leaderboard' }}</h1>
+        {% if comp %}
+        <p class="text-base text-gray-400 mt-0.5">{{ comp.discipline }} · {{ comp.date | fmt_date }}{% if comp.location %} · {{ comp.location }}{% endif %}</p>
+        {% endif %}
+    </div>
+    <a href="/leaderboard?comp_id={{ comp.id if comp }}" class="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 rounded px-2 py-1">Exit kiosk</a>
+</div>
+{% endif %}
 
 {% if not comp %}
 <p class="text-gray-400">No competitions yet. Set up a competition and add rounds first.</p>
@@ -43,30 +63,30 @@
 {% else %}
 
 <div class="bg-gray-800 rounded-lg overflow-x-auto">
-    <table class="text-sm w-full">
+    <table class="{% if kiosk %}text-base{% else %}text-sm{% endif %} w-full">
         <thead>
-            <tr class="text-xs text-gray-400 bg-gray-900 border-b border-gray-700">
-                <th class="text-left font-normal px-4 py-2 w-12">#</th>
-                <th class="text-left font-normal px-4 py-2">Pilot</th>
+            <tr class="{% if kiosk %}text-sm{% else %}text-xs{% endif %} text-gray-400 bg-gray-900 border-b border-gray-700">
+                <th class="text-left font-normal {% if kiosk %}px-5 py-3{% else %}px-4 py-2{% endif %} w-12">#</th>
+                <th class="text-left font-normal {% if kiosk %}px-5 py-3{% else %}px-4 py-2{% endif %}">Pilot</th>
                 {% for r in data.rounds %}
-                <th class="text-right font-normal px-3 py-2 whitespace-nowrap {% if not r.contested %}text-gray-600{% endif %}">
+                <th class="text-right font-normal {% if kiosk %}px-4 py-3{% else %}px-3 py-2{% endif %} whitespace-nowrap {% if not r.contested %}text-gray-600{% endif %}">
                     Rd {{ r.round_no }}
                     <span class="{% if r.discipline == 'F3K' %}text-orange-400{% else %}text-fuchsia-400{% endif %}">{{ r.task }}</span>
                 </th>
                 {% endfor %}
-                <th class="text-right font-normal px-4 py-2">Total</th>
+                <th class="text-right font-normal {% if kiosk %}px-5 py-3{% else %}px-4 py-2{% endif %}">Total</th>
             </tr>
         </thead>
         <tbody>
             {% for row in data.standings %}
             <tr class="border-t border-gray-700">
-                <td class="px-4 py-2 font-mono {% if row.rank == 1 %}text-yellow-400 font-bold{% elif row.rank <= 3 %}text-gray-200{% else %}text-gray-400{% endif %}">
+                <td class="{% if kiosk %}px-5 py-3{% else %}px-4 py-2{% endif %} font-mono {% if row.rank == 1 %}text-yellow-400 font-bold{% elif row.rank <= 3 %}text-gray-200{% else %}text-gray-400{% endif %}">
                     {{ row.rank }}
                 </td>
-                <td class="px-4 py-2 text-gray-100">{{ row.name }}</td>
+                <td class="{% if kiosk %}px-5 py-3 text-lg font-medium{% else %}px-4 py-2{% endif %} text-gray-100">{{ row.name }}</td>
                 {% for r in data.rounds %}
                 {% set rr = row.rounds.get(r.round_no) %}
-                <td class="px-3 py-2 text-right font-mono">
+                <td class="{% if kiosk %}px-4 py-3{% else %}px-3 py-2{% endif %} text-right font-mono">
                     {% if rr %}
                     <span class="{% if rr.dropped %}text-gray-600 line-through{% elif rr.score >= 1000 %}text-green-400{% else %}text-gray-300{% endif %}">
                         {{ '%.1f'|format(rr.score) }}
@@ -76,7 +96,7 @@
                     {% endif %}
                 </td>
                 {% endfor %}
-                <td class="px-4 py-2 text-right font-mono font-semibold {% if row.rank == 1 %}text-yellow-400{% else %}text-gray-100{% endif %}">
+                <td class="{% if kiosk %}px-5 py-3 text-lg{% else %}px-4 py-2{% endif %} text-right font-mono font-semibold {% if row.rank == 1 %}text-yellow-400{% else %}text-gray-100{% endif %}">
                     {{ '%.1f'|format(row.total) }}
                 </td>
             </tr>
@@ -85,10 +105,12 @@
     </table>
 </div>
 
+{% if not kiosk %}
 <p class="mt-3 text-xs text-gray-500">
     Group winner = 1000 pts; others proportional (0.1 pt resolution). Updates live as flights are recorded.
     Public JSON: <span class="font-mono">/api/results/{{ comp.id }}/public</span>
 </p>
+{% endif %}
 
 {% endif %}
 

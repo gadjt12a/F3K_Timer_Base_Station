@@ -59,7 +59,7 @@
         </div>
 
         <div class="text-sm text-gray-400 mb-2">
-            {{ cd.comp.date }}
+            {{ cd.comp.date | fmt_date }}
             · {{ cd.round_count }} round{{ 's' if cd.round_count != 1 else '' }}
             · {{ cd.flight_count }} flight{{ 's' if cd.flight_count != 1 else '' }} recorded
         </div>

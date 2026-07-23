@@ -51,6 +51,18 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 
+def _fmt_date(value: str) -> str:
+    """YYYY-MM-DD → 22 Jul 2026; passes through anything that doesn't parse."""
+    try:
+        d = datetime.date.fromisoformat(str(value))
+        return d.strftime("%-d %b %Y")
+    except Exception:
+        return str(value) if value else ""
+
+
+templates.env.filters["fmt_date"] = _fmt_date
+
+
 def _fmt_ms(ms) -> str:
     if ms is None:
         return "—"
@@ -98,6 +110,9 @@ def _gs_locked(db, comp_id: int) -> bool:
         "SELECT gliderscore_comp_no FROM competitions WHERE id = ?", (comp_id,)
     ).fetchone()
     return bool(row and row["gliderscore_comp_no"])
+
+
+_GS_LOCK_MSG = urllib.parse.quote("GS Locked — structure is managed in GliderScore. Re-import to update.")
 
 
 def _comp_id_of_round(db, round_id: int) -> int | None:
@@ -212,7 +227,7 @@ async def competition_delete(comp_id: int):
 async def competition_pilot_add(comp_id: int, pilot_id: int = Form(...)):
     db = _db()
     if _gs_locked(db, comp_id):
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(f"/setup?msg={_GS_LOCK_MSG}", status_code=303)
     db.execute(
         "INSERT OR IGNORE INTO competition_pilots (competition_id, pilot_id) VALUES (?, ?)",
         (comp_id, pilot_id),
@@ -225,7 +240,7 @@ async def competition_pilot_add(comp_id: int, pilot_id: int = Form(...)):
 async def competition_pilot_remove(comp_id: int, pilot_id: int):
     db = _db()
     if _gs_locked(db, comp_id):
-        return RedirectResponse("/setup", status_code=303)
+        return RedirectResponse(f"/setup?msg={_GS_LOCK_MSG}", status_code=303)
     db.execute(
         "DELETE FROM competition_pilots WHERE competition_id = ? AND pilot_id = ?",
         (comp_id, pilot_id),
@@ -255,6 +270,17 @@ async def pilot_delete(pilot_id: int):
     db.execute("DELETE FROM pilots WHERE id = ?", (pilot_id,))
     db.commit()
     return RedirectResponse("/setup", status_code=303)
+
+
+@app.post("/setup/pilot/{pilot_id}/rename")
+async def pilot_rename(pilot_id: int, name: str = Form(...)):
+    name = name.strip()
+    if not name:
+        raise HTTPException(400, "Name cannot be empty")
+    db = _db()
+    db.execute("UPDATE pilots SET name = ? WHERE id = ?", (name, pilot_id))
+    db.commit()
+    return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +375,7 @@ async def rounds_get(request: Request, error: str = None):
                 (rnd["id"],),
             ).fetchall()
             group_data = []
+            rnd_has_flights = False
             for grp in groups:
                 gpilots = db.execute(
                     """SELECT p.name FROM pilots p
@@ -357,7 +384,11 @@ async def rounds_get(request: Request, error: str = None):
                     (grp["id"],),
                 ).fetchall()
                 group_data.append({"group": grp, "pilots": gpilots})
-            round_data.append({"round": rnd, "groups": group_data})
+                n = db.execute("SELECT COUNT(*) FROM flights WHERE group_id = ?",
+                               (grp["id"],)).fetchone()[0]
+                if n > 0:
+                    rnd_has_flights = True
+            round_data.append({"round": rnd, "groups": group_data, "has_flights": rnd_has_flights})
 
         comp_data.append({
             "comp": comp,
@@ -380,7 +411,7 @@ async def rounds_get(request: Request, error: str = None):
 async def round_add(comp_id: int, task: str = Form(...), working_time_m: int = Form(10)):
     db = _db()
     if _gs_locked(db, comp_id):
-        return RedirectResponse("/rounds", status_code=303)
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
     comp = db.execute("SELECT discipline FROM competitions WHERE id = ?", (comp_id,)).fetchone()
     if not comp:
         return RedirectResponse("/rounds", status_code=303)
@@ -403,11 +434,42 @@ async def round_add(comp_id: int, task: str = Form(...), working_time_m: int = F
     return RedirectResponse("/rounds", status_code=303)
 
 
+@app.post("/rounds/round/{round_id}/edit")
+async def round_edit(round_id: int, task: str = Form(...), working_time_m: int = Form(...)):
+    db = _db()
+    comp_id = _comp_id_of_round(db, round_id)
+    if comp_id is None:
+        return RedirectResponse("/rounds", status_code=303)
+    if _gs_locked(db, comp_id):
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
+    has_flights = db.execute(
+        """SELECT COUNT(*) FROM flights f
+           JOIN groups g ON g.id = f.group_id
+           WHERE g.round_id = ?""", (round_id,)
+    ).fetchone()[0]
+    if has_flights:
+        return RedirectResponse(
+            f"/rounds?error={urllib.parse.quote('Cannot edit a round that already has flights recorded')}",
+            status_code=303)
+    rnd = db.execute("SELECT discipline FROM rounds WHERE id = ?", (round_id,)).fetchone()
+    if not rnd:
+        return RedirectResponse("/rounds", status_code=303)
+    discipline = rnd["discipline"]
+    if ":" in task:
+        discipline, task = task.split(":", 1)
+    db.execute(
+        "UPDATE rounds SET task = ?, working_time_s = ?, discipline = ? WHERE id = ?",
+        (task, working_time_m * 60, discipline, round_id),
+    )
+    db.commit()
+    return RedirectResponse("/rounds", status_code=303)
+
+
 @app.post("/rounds/round/{round_id}/delete")
 async def round_delete(round_id: int):
     db = _db()
     if _gs_locked(db, _comp_id_of_round(db, round_id)):
-        return RedirectResponse("/rounds", status_code=303)
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
     groups = db.execute("SELECT id FROM groups WHERE round_id = ?", (round_id,)).fetchall()
     for grp in groups:
         db.execute("DELETE FROM group_pilots WHERE group_id = ?", (grp["id"],))
@@ -421,7 +483,7 @@ async def round_delete(round_id: int):
 async def group_add(round_id: int, request: Request):
     db = _db()
     if _gs_locked(db, _comp_id_of_round(db, round_id)):
-        return RedirectResponse("/rounds", status_code=303)
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
     form = await request.form()
     pilot_ids = form.getlist("pilot_ids")
     dummy_count = int(form.get("dummy_count", 0) or 0)
@@ -447,7 +509,7 @@ async def group_add(round_id: int, request: Request):
 async def group_dummy_add(group_id: int):
     db = _db()
     if _gs_locked(db, _comp_id_of_group(db, group_id)):
-        return RedirectResponse("/rounds", status_code=303)
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
     db.execute("UPDATE groups SET dummy_count = dummy_count + 1 WHERE id = ?", (group_id,))
     db.commit()
     return RedirectResponse("/rounds", status_code=303)
@@ -457,7 +519,7 @@ async def group_dummy_add(group_id: int):
 async def group_dummy_remove(group_id: int):
     db = _db()
     if _gs_locked(db, _comp_id_of_group(db, group_id)):
-        return RedirectResponse("/rounds", status_code=303)
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
     db.execute(
         "UPDATE groups SET dummy_count = MAX(0, dummy_count - 1) WHERE id = ?", (group_id,)
     )
@@ -469,7 +531,7 @@ async def group_dummy_remove(group_id: int):
 async def group_delete(group_id: int):
     db = _db()
     if _gs_locked(db, _comp_id_of_group(db, group_id)):
-        return RedirectResponse("/rounds", status_code=303)
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
     db.execute("DELETE FROM group_pilots WHERE group_id = ?", (group_id,))
     db.execute("DELETE FROM groups WHERE id = ?", (group_id,))
     db.commit()
@@ -481,9 +543,13 @@ async def group_delete(group_id: int):
 # ---------------------------------------------------------------------------
 
 @app.get("/results")
-async def results_get(request: Request, error: str = None):
+async def results_get(request: Request, error: str = None, comp_id: int = None):
     db = _db()
-    competitions = db.execute("SELECT * FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
+    all_comps = db.execute("SELECT id, name, discipline FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
+    if comp_id is not None:
+        competitions = [c for c in all_comps if c["id"] == comp_id]
+    else:
+        competitions = list(all_comps)
 
     comp_data = []
     for comp in competitions:
@@ -575,6 +641,8 @@ async def results_get(request: Request, error: str = None):
     return templates.TemplateResponse(request, "results.html", {
         "active": "results",
         "comp_data": comp_data,
+        "all_comps": all_comps,
+        "active_comp_id": comp_id,
         "error": error,
     })
 
@@ -1152,7 +1220,7 @@ async def api_db_restore(file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 
 @app.get("/leaderboard")
-async def leaderboard_get(request: Request, comp_id: int = None, discipline: str = None):
+async def leaderboard_get(request: Request, comp_id: int = None, discipline: str = None, kiosk: bool = False):
     db = _db()
     comps = db.execute("SELECT * FROM competitions WHERE archived = 0 ORDER BY id DESC").fetchall()
     # Comps are newest-first; default to the most recent active competition
@@ -1164,6 +1232,7 @@ async def leaderboard_get(request: Request, comp_id: int = None, discipline: str
         "comp": comp,
         "discipline": discipline or "",
         "data": data,
+        "kiosk": kiosk,
     })
 
 
@@ -1193,8 +1262,10 @@ async def round_autodraw(round_id: int):
     """FAI draw: round 1 random, later rounds reverse-standings snake seeding."""
     db = _db()
     comp_id = _comp_id_of_round(db, round_id)
-    if comp_id is None or _gs_locked(db, comp_id):
+    if comp_id is None:
         return RedirectResponse("/rounds", status_code=303)
+    if _gs_locked(db, comp_id):
+        return RedirectResponse(f"/rounds?error={_GS_LOCK_MSG}", status_code=303)
     rnd = db.execute("SELECT * FROM rounds WHERE id = ?", (round_id,)).fetchone()
     groups = db.execute(
         "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (round_id,)
@@ -1439,6 +1510,42 @@ async def custom_task_delete(task_id: int):
         db.execute("DELETE FROM custom_tasks WHERE id = ?", (task_id,))
         db.commit()
         scoring.load_custom_rules(db)
+    return RedirectResponse("/rounds", status_code=303)
+
+
+@app.post("/tasks/custom/{task_id}/edit")
+async def custom_task_edit(
+    task_id: int,
+    name: str = Form(...), descr: str = Form(""), n: int = Form(0),
+    cap_s: str = Form("0"), targets: str = Form(""), start_s: str = Form("0"),
+    step_s: str = Form("0"), max_flights: int = Form(0), wt_min: int = Form(10),
+):
+    def fail(msg):
+        return RedirectResponse(f"/rounds?error={urllib.parse.quote(msg)}", status_code=303)
+
+    db = _db()
+    row = db.execute("SELECT * FROM custom_tasks WHERE id = ?", (task_id,)).fetchone()
+    if not row:
+        return fail("Custom task not found")
+    kind = row["kind"]
+    try:
+        cap = _parse_targets(cap_s)[0] if cap_s.strip() else 0.0
+        start = _parse_targets(start_s)[0] if start_s.strip() else 0.0
+        step = _parse_targets(step_s)[0] if step_s.strip() else 0.0
+        tgts = _parse_targets(targets)
+    except ValueError:
+        return fail("Times must be seconds or M:SS (e.g. 180 or 3:00)")
+    if kind in ("targets", "sequence") and not tgts:
+        return fail("This rule type needs at least one target time")
+    if kind in ("last_n", "best_n", "first_n", "poker") and n < 1:
+        return fail("This rule type needs N of at least 1")
+    db.execute(
+        """UPDATE custom_tasks SET name=?, descr=?, n=?, cap_s=?, targets=?,
+           start_s=?, step_s=?, max_flights=?, wt_min=? WHERE id=?""",
+        (name.strip(), descr.strip(), n, cap, json.dumps(tgts),
+         start, step, max_flights, wt_min, task_id))
+    db.commit()
+    scoring.load_custom_rules(db)
     return RedirectResponse("/rounds", status_code=303)
 
 

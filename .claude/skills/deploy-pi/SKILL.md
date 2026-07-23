@@ -19,7 +19,7 @@ If no arguments are given, look at which base_station files were modified in thi
 
 ## File Mapping (local → remote)
 
-| Local (`base_station/`) | Remote (`~/f3k_base/`) |
+| Local (`base_station/`) | Remote (`~/f3k_repo/base_station/`) |
 |---|---|
 | `server.py` | `server.py` |
 | `frontend/*.py` | `frontend/*.py` |
@@ -30,13 +30,13 @@ If no arguments are given, look at which base_station files were modified in thi
 
 1. For each file to deploy, run:
    ```powershell
-   scp -i "$env:USERPROFILE\.ssh\f3k_pi" "C:\Kris\Projects\F3K_Timer_Project\base_station\<local-path>" "pi@f3kpi:~/f3k_base/<remote-path>"
+   scp -i "$env:USERPROFILE\.ssh\f3k_pi" "C:\Kris\Projects\F3K_Timer_Project\base_station\<local-path>" "pi@f3kpi:~/f3k_repo/base_station/<remote-path>"
    ```
-   You can scp multiple files in one command by listing them before the destination — but the destination must be a directory (e.g. `pi@f3kpi:~/f3k_base/frontend/templates/`), not a file path, when deploying multiple files to the same directory.
+   You can scp multiple files in one command by listing them before the destination — but the destination must be a directory (e.g. `pi@f3kpi:~/f3k_repo/base_station/frontend/templates/`), not a file path, when deploying multiple files to the same directory.
 
 2. After all files are copied, touch each deployed .py file on the Pi to ensure its mtime is newer than any cached .pyc (scp preserves source timestamps, which can match an existing .pyc and cause Python to use stale bytecode):
    ```powershell
-   ssh -i "$env:USERPROFILE\.ssh\f3k_pi" pi@f3kpi "touch ~/f3k_base/<remote-path> [...]"
+   ssh -i "$env:USERPROFILE\.ssh\f3k_pi" pi@f3kpi "touch ~/f3k_repo/base_station/<remote-path> [...]"
    ```
    Touch only the files that were actually deployed. Use separate paths per file, or a glob if all are in the same directory.
 
