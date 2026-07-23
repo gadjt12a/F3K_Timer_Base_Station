@@ -178,8 +178,12 @@
                 {{ item.rounds | length }} round{{ 's' if item.rounds | length != 1 else '' }}
             </span>
         </div>
-        {% if not locked %}
         <div class="flex items-center gap-2 flex-shrink-0">
+            <a href="/reports/flight_cards/{{ comp['id'] }}" target="_blank" @click.stop
+               class="border border-gray-600 hover:border-gray-400 text-gray-400 hover:text-white px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                🖨 Cards
+            </a>
+            {% if not locked %}
             <button @click.stop="showWizard = !showWizard; open = true"
                     class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded text-sm font-medium transition-colors">
                 Draw Wizard
@@ -188,8 +192,8 @@
                     class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm font-medium transition-colors">
                 + Add Round
             </button>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 
     <!-- Expandable body -->

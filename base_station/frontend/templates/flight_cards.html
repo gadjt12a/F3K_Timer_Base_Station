@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flight Cards — {{ comp['name'] }}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body { font-family: Arial, Helvetica, sans-serif; background: white; color: black; }
+
+.no-print {
+    padding: 10px 20px;
+    background: #1f2937;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.no-print h2 { color: #e5e7eb; font-size: 14px; font-weight: 600; flex: 1; }
+.no-print a {
+    color: #9ca3af;
+    background: #374151;
+    border: 1px solid #4b5563;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    text-decoration: none;
+}
+.no-print button {
+    color: #f9fafb;
+    background: #2563eb;
+    border: 1px solid #1d4ed8;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+}
+
+.card {
+    border: 0.5pt solid #777;
+    padding: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    display: flex;
+    flex-direction: column;
+}
+
+.card-comp {
+    font-size: 6.5pt;
+    color: #666;
+    line-height: 1.4;
+    margin-bottom: 1.5mm;
+}
+
+.card-pilot {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding-bottom: 2mm;
+    border-bottom: 0.6pt solid #999;
+    margin-bottom: 2mm;
+}
+
+.card-pilot-name { font-size: 14pt; font-weight: 800; letter-spacing: -0.3pt; }
+.card-pilot-no { font-size: 8.5pt; color: #555; font-weight: 600; }
+
+table { width: 100%; border-collapse: collapse; }
+
+colgroup col.c-rd   { width: 8%; }
+colgroup col.c-task { width: 11%; }
+colgroup col.c-grp  { width: 9%; }
+colgroup col.c-f    { width: 18%; }
+
+th {
+    font-size: 6pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2pt;
+    padding: 0.8mm 1mm;
+    border: 0.4pt solid #bbb;
+    background: #e8e8e8;
+    text-align: center;
+}
+th.c-f-head { font-size: 5.5pt; color: #888; }
+
+td {
+    font-size: 7.5pt;
+    padding: 0.5mm 1mm;
+    border: 0.4pt solid #d5d5d5;
+    text-align: center;
+    height: 6mm;
+}
+tr:nth-child(even) td { background: #f5f5f5; }
+td:first-child { font-weight: 700; }
+td:nth-child(2) { font-weight: 600; }
+
+.empty-msg { font-size: 7.5pt; color: #aaa; font-style: italic; margin-top: 3mm; }
+
+@media screen {
+    body { background: #111827; }
+    .no-print { position: sticky; top: 0; z-index: 10; }
+    .cards { max-width: 820px; margin: 0 auto; padding: 16px; }
+    .card { background: white; }
+}
+
+@page { size: A4 portrait; margin: 8mm; }
+
+@media print {
+    .no-print { display: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="no-print">
+    <h2>Flight Cards — {{ comp['name'] }} · {{ comp['date'] | fmt_date }}</h2>
+    <a href="/rounds">← Rounds</a>
+    <button onclick="window.print()">🖨 Print</button>
+</div>
+
+<div class="cards">
+{% for pc in pilot_cards %}
+<div class="card">
+    <div class="card-comp">
+        {{ comp['name'] }}{% if comp['location'] %} · {{ comp['location'] }}{% endif %} · {{ comp['date'] | fmt_date }}
+    </div>
+    <div class="card-pilot">
+        <span class="card-pilot-name">{{ pc['pilot']['name'] }}</span>
+        {% if pc['pilot']['gliderscore_pilot_no'] %}
+        <span class="card-pilot-no">#{{ pc['pilot']['gliderscore_pilot_no'] }}</span>
+        {% endif %}
+    </div>
+    {% if pc['rounds'] %}
+    <table>
+        <colgroup>
+            <col class="c-rd"><col class="c-task"><col class="c-grp">
+            <col class="c-f"><col class="c-f"><col class="c-f"><col class="c-f">
+        </colgroup>
+        <thead>
+            <tr>
+                <th>Rd</th>
+                <th>Task</th>
+                <th>Grp</th>
+                <th class="c-f-head">Flight 1</th>
+                <th class="c-f-head">Flight 2</th>
+                <th class="c-f-head">Flight 3</th>
+                <th class="c-f-head">Flight 4</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in pc['rounds'] %}
+            <tr>
+                <td>{{ r['round_no'] }}</td>
+                <td>{{ r['task'] }}</td>
+                <td>{{ r['group_no'] }}</td>
+                <td></td><td></td><td></td><td></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-msg">No rounds assigned yet</p>
+    {% endif %}
+</div>
+{% endfor %}
+</div>
+
+</body>
+</html>

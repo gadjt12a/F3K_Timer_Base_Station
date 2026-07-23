@@ -479,6 +479,37 @@ async def round_delete(round_id: int):
     return RedirectResponse("/rounds", status_code=303)
 
 
+@app.get("/reports/flight_cards/{comp_id}")
+async def flight_cards_get(comp_id: int, request: Request):
+    db = _db()
+    comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
+    if not comp:
+        return RedirectResponse("/rounds", status_code=303)
+    pilots = db.execute(
+        """SELECT p.id, p.name, p.gliderscore_pilot_no, p.fai_number
+           FROM pilots p
+           JOIN competition_pilots cp ON cp.pilot_id = p.id
+           WHERE cp.competition_id = ? ORDER BY p.name""",
+        (comp_id,),
+    ).fetchall()
+    pilot_cards = []
+    for p in pilots:
+        rounds = db.execute(
+            """SELECT r.round_no, r.task, r.discipline, r.working_time_s, g.group_no
+               FROM rounds r
+               JOIN groups g ON g.round_id = r.id
+               JOIN group_pilots gp ON gp.group_id = g.id
+               WHERE r.competition_id = ? AND gp.pilot_id = ?
+               ORDER BY r.round_no""",
+            (comp_id, p["id"]),
+        ).fetchall()
+        pilot_cards.append({"pilot": p, "rounds": rounds})
+    return templates.TemplateResponse(request, "flight_cards.html", {
+        "comp": comp,
+        "pilot_cards": pilot_cards,
+    })
+
+
 @app.post("/rounds/round/{round_id}/group/add")
 async def group_add(round_id: int, request: Request):
     db = _db()
