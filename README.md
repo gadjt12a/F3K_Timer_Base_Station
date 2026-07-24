@@ -66,7 +66,7 @@ tools/
 | `/leaderboard` | Live cumulative standings — rank, per-round normalised scores, drop rounds struck out, total; discipline filter for MIXED comps; auto-reloads on flight events; public JSON at `/api/results/{comp_id}/public`; **kiosk mode** (`?kiosk=1`): hides nav, larger fonts, shows comp name/date/location header — suitable for projector or big screen; "⛶ Kiosk" button on normal view opens in new tab |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV per competition; download F3KSync.exe (Direct Sync tool) |
-| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore, **Software Update** (git pull base station code + sync timer OTA firmware files, shows current commit + cached firmware version) |
+| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore, **Software Update** (git pull base station code + sync timer OTA firmware files; shows `build.N` version number + cached firmware version; smart health-poll reload — waits for server restart before navigating) |
 | `/reports/flight_cards/{id}` | Printable pilot flight cards (A4 landscape, 2×2 per page) — one card per pilot per discipline for the full comp; pre-filled from draw with Rd.Grp, full task name, and blank flight columns; F5K cards include paired Alt columns (blue tint); MIXED comps produce separate F3K and F5K cards per pilot; "🖨 Cards" button on Rounds page |
 | `/pilot` | Mobile read-only pilot view — state, live countdown, current heat + pilots, leaderboard link; captive-portal landing page for phones on F3K_OPS |
 | `/health` | JSON status (timers connected) |
