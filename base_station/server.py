@@ -14,7 +14,7 @@ from frontend.app import app as web_app
 from frontend.db import init_db
 from frontend.state_machine import CompetitionStateMachine
 
-DB_PATH = os.path.expanduser("~/f3k_base/f3k.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "f3k.db")
 PORT = 8765
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

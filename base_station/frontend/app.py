@@ -97,7 +97,7 @@ def _parse_duration(s: str) -> int:
 
 templates.env.filters["fmt_ms"] = _fmt_ms
 
-GS_UPLOAD_PATH = os.path.expanduser("~/f3k_base/gs_upload.mdb")
+GS_UPLOAD_PATH = str(Path(__file__).resolve().parent.parent / "gs_upload.mdb")
 
 
 def _db():
@@ -1188,10 +1188,10 @@ async def api_competitions():
 
 @app.get("/downloads/{filename}")
 async def downloads(filename: str):
-    """Serve files from ~/f3k_base/downloads/ (e.g. F3KSync.exe)."""
+    """Serve files from base_station/downloads/ (e.g. F3KSync.exe)."""
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
-    path = Path.home() / "f3k_base" / "downloads" / filename
+    path = Path(__file__).resolve().parent.parent / "downloads" / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path, filename=filename)
