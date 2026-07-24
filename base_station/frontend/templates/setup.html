@@ -277,20 +277,20 @@
                         <tbody>
                             {% for pilot in all_pilots %}
                             <tr class="border-b border-gray-700 hover:bg-gray-700/40"
-                                x-data="{
+                                x-data='{
                                     editing: false,
-                                    nm: {{ pilot['name'] | tojson }},
+                                    nm: {{ pilot["name"] | tojson }},
                                     async save() {
                                         const n = this.nm.trim();
                                         if (!n) return;
-                                        const r = await fetch('/setup/pilot/{{ pilot['id'] }}/rename', {
-                                            method: 'POST',
-                                            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                                            body: 'name=' + encodeURIComponent(n)
+                                        const r = await fetch("/setup/pilot/{{ pilot["id"] }}/rename", {
+                                            method: "POST",
+                                            headers: {"Content-Type": "application/x-www-form-urlencoded"},
+                                            body: "name=" + encodeURIComponent(n)
                                         });
                                         if (r.ok) { this.nm = n; this.editing = false; }
                                     }
-                                }">
+                                }'>
                                 <td class="py-2">
                                     <input type="checkbox" name="pilot_ids" value="{{ pilot['id'] }}"
                                            class="accent-yellow-400">
