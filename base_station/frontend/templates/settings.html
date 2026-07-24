@@ -267,8 +267,8 @@ function settings() {
           const res = await fetch('/health', { cache: 'no-store' });
           if (res.ok) {
             this.updateMsg = this.updateMsg.replace('restarting…', 'reloading…');
-            await new Promise(r => setTimeout(r, 600));
-            location.reload();
+            await new Promise(r => setTimeout(r, 2000));
+            window.location.href = window.location.href;
             return;
           }
         } catch (_) { /* server still coming up */ }
