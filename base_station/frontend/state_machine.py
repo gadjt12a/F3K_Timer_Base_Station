@@ -90,6 +90,12 @@ class CompetitionStateMachine:
             "pilot_id_names": [(r["id"], r["name"]) for r in real_pilots],
         }
         engine.select_profile(rnd["discipline"], rnd["working_time_s"])
+
+        # Push pilot list to timers immediately so selection is available before PREP starts
+        pilots_str = ",".join(f"{pid}:{name}" for pid, name in self._loaded["pilot_id_names"])
+        if pilots_str:
+            await self._server.broadcast(f"PILOTS {pilots_str}")
+
         log.info(
             "Heat loaded: round=%d heat=%s pilots=%s",
             rnd["round_no"], heat_letter, pilot_names,
