@@ -100,6 +100,8 @@ class TimerClient:
                 if self.server.record_flight(pilot_id, dur_ms):
                     asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
                     log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
+                # ACK regardless of dup — timer dequeues on ACK receipt.
+                await self.send(f"ACK {line}")
 
         elif cmd == "ALTITUDE":
             params = parse_params(parts[1:])
@@ -116,6 +118,7 @@ class TimerClient:
                     "flight_no": flight_no,
                     "altitude_m": alt_m,
                 }))
+                await self.send(f"ACK {line}")
 
         elif cmd == "SELECT":
             params = parse_params(parts[1:])
@@ -134,6 +137,7 @@ class TimerClient:
                     "pilot_name": pilot_name,
                 }))
                 log.info(f"Timer {self.timer_id} selected pilot {pilot_id} ({pilot_name})")
+                await self.send(f"ACK {line}")
 
         elif cmd == "PING":
             self.last_ping_at = time.monotonic()
@@ -279,12 +283,11 @@ class F3KServer:
 
     def record_flight(self, pilot_id: int, dur_ms: int) -> bool:
         group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
-        # Dedup: reject a repeat of the same flight arriving within 10 seconds
-        # (guards against watch sending FLIGHT twice due to any edge case)
+        # Dedup: same pilot + exact duration in the same group = duplicate, regardless of
+        # when it arrived. Covers both the old "double-tap" case and ACK-retry replays
+        # after reconnect (timer retransmits unACKed FLIGHTs on reconnect).
         dup = self.db.execute(
-            """SELECT id FROM flights
-               WHERE pilot_id = ? AND group_id IS ? AND duration_ms = ?
-               AND recorded_at >= datetime('now', '-10 seconds')""",
+            "SELECT id FROM flights WHERE pilot_id = ? AND group_id IS ? AND duration_ms = ?",
             (pilot_id, group_id, dur_ms),
         ).fetchone()
         if dup:
