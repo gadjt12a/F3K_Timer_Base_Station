@@ -5,6 +5,7 @@ import asyncio
 import collections
 import logging
 import os
+import shutil
 import sys
 import time
 
@@ -15,6 +16,11 @@ from frontend.db import init_db
 from frontend.state_machine import CompetitionStateMachine
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "f3k.db")
+_LEGACY_DB = os.path.expanduser("~/f3k_base/f3k.db")
+if not os.path.exists(DB_PATH) and os.path.exists(_LEGACY_DB):
+    shutil.copy2(_LEGACY_DB, DB_PATH)
+    print(f"[startup] DB migrated from {_LEGACY_DB} → {DB_PATH}", flush=True)
+
 PORT = 8765
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

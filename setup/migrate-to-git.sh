@@ -40,11 +40,17 @@ python3 -m venv "$NEW_DIR/base_station/venv"
 "$NEW_DIR/base_station/venv/bin/pip" install -q -r "$NEW_DIR/base_station/requirements.txt"
 echo "      packages installed"
 
-# 4. Copy runtime data from old location
-echo "[4/6] Copying runtime data from $OLD_DIR ..."
-[ -f "$OLD_DIR/f3k.db" ]          && cp -v "$OLD_DIR/f3k.db"          "$NEW_DIR/base_station/f3k.db"
+# 4. Copy runtime data from old location → canonical location inside the repo
+#    The service now resolves all runtime paths relative to server.py, so
+#    ~/f3k_repo/base_station/ is the single source of truth going forward.
+echo "[4/6] Copying runtime data from $OLD_DIR → $NEW_DIR/base_station/ ..."
+if [ -f "$OLD_DIR/f3k.db" ]; then
+    cp -v "$OLD_DIR/f3k.db" "$NEW_DIR/base_station/f3k.db"
+else
+    echo "      (no f3k.db found in $OLD_DIR — skipping)"
+fi
 [ -f "$OLD_DIR/audio_config.json" ] && cp -v "$OLD_DIR/audio_config.json" "$NEW_DIR/base_station/audio_config.json"
-[ -d "$OLD_DIR/downloads" ]        && cp -rv "$OLD_DIR/downloads"      "$NEW_DIR/base_station/downloads"
+[ -d "$OLD_DIR/downloads" ]         && cp -rv "$OLD_DIR/downloads"         "$NEW_DIR/base_station/downloads"
 
 # 5. Update systemd service
 echo "[5/6] Updating f3k-server.service..."
