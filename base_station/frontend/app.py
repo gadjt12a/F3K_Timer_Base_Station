@@ -1852,8 +1852,14 @@ async def api_system_info():
     if r.returncode != 0:
         return {"git": False, "ota_version": ota_version}
     parts = r.stdout.strip().split("|", 2)
+    rev = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        capture_output=True, text=True, cwd=root,
+    )
+    build_no = rev.stdout.strip() if rev.returncode == 0 else None
     return {"git": True, "commit": parts[0], "message": parts[1],
-            "date": parts[2][:16] if len(parts) > 2 else "",
+            "date": parts[2][:10] if len(parts) > 2 else "",
+            "build_no": build_no,
             "ota_version": ota_version}
 
 

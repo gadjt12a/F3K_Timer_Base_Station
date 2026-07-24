@@ -14,6 +14,8 @@ A single asyncio process runs two servers in one event loop:
   JOIN/ASSIGN handshake, PING/PONG keepalive (base sends PONG every 15s; a successful
   send resets the ping clock so freshly reconnected timers aren't evicted before their
   first 30s PING), and the round protocol (TASK / START / STOP / PILOTS / COUNT / FLIGHT / ALTITUDE).
+  FLIGHT, ALTITUDE, and SELECT are acknowledged (`ACK <line>`) so the timer can
+  retransmit unACKed messages on reconnect; see `docs/PROTOCOL_ACK.md`.
 - **Web app** (`frontend/app.py`, FastAPI + uvicorn, port 8080) — operator UI plus a
   WebSocket stream of live timing and flight events.
 
@@ -46,6 +48,8 @@ base_station/
         └── gliderscore_audio_library.json    # 233-row announcement library
 setup/
 └── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
+docs/
+└── PROTOCOL_ACK.md           # ACK extension spec (session 47): FLIGHT/ALTITUDE/SELECT reply pattern, dedup rules, timer-side pending-queue contract
 tools/
 ├── gs_sync.py                # Windows bridge: GUI + CLI; fetches JSON from base station → writes scored results direct to GliderScore .mdb (ACE OLEDB via 32-bit PS)
 └── build_exe.ps1             # PyInstaller build script → dist/F3KSync.exe (deploy to Pi for CD download)

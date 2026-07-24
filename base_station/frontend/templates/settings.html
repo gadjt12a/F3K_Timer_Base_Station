@@ -167,7 +167,9 @@
     <template x-if="sysInfo.git">
       <div>
         <p class="text-sm text-gray-400 mb-1">
-          Base station: <span class="font-mono text-gray-200" x-text="sysInfo.commit"></span>
+          Base station:
+          <span class="font-mono text-gray-200"
+                x-text="sysInfo.build_no ? 'build.' + sysInfo.build_no : sysInfo.commit"></span>
           <span class="text-gray-500 ml-2" x-text="sysInfo.date"></span>
         </p>
         <p class="text-xs text-gray-500 mb-1" x-text="sysInfo.message"></p>
@@ -244,16 +246,34 @@ function settings() {
           this.updateOk = true;
           const otaPart = r.ota?.version ? ` · firmware ${r.ota.version}` : (r.ota?.error ? ' · firmware sync failed (no internet?)' : '');
           if (!r.changed) {
-            this.updateMsg = 'Base station already up to date' + otaPart + '.';
+            this.updateMsg = 'Already up to date' + otaPart + '.';
             if (r.ota?.version) await this.loadSysInfo();
           } else {
             this.updateOutput = r.output;
-            this.updateMsg = 'Updated' + otaPart + ' — restarting in 3s…';
-            setTimeout(() => location.reload(), 5000);
+            this.updateMsg = 'Updated' + otaPart + ' — restarting…';
+            await this._waitForRestart();
           }
         }
       } catch (e) { this.updateOk = false; this.updateMsg = 'Network error'; }
       this.updateBusy = false;
+    },
+    async _waitForRestart() {
+      // The service restarts ~2s after update; poll /health until it responds,
+      // then reload — avoids the user seeing a "page not found" flash.
+      await new Promise(r => setTimeout(r, 2500));
+      for (let i = 0; i < 25; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+          const res = await fetch('/health', { cache: 'no-store' });
+          if (res.ok) {
+            this.updateMsg = this.updateMsg.replace('restarting…', 'reloading…');
+            await new Promise(r => setTimeout(r, 600));
+            location.reload();
+            return;
+          }
+        } catch (_) { /* server still coming up */ }
+      }
+      this.updateMsg += ' — server is taking longer than expected. Reload manually.';
     },
     async loadAudio() {
       this.audio = await (await fetch('/api/audio/status')).json();
