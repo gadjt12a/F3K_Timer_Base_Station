@@ -96,6 +96,12 @@ function runner(initialState) {
         },
 
         connect() {
+            // Never open a second socket: overlapping reconnect timers (e.g. after a
+            // server restart) used to leave 2+ live sockets on the page, and every
+            // flight event was then appended once per socket — duplicate times in
+            // the flight log while the DB (correctly) had one row.
+            if (this.ws && (this.ws.readyState === WebSocket.OPEN ||
+                            this.ws.readyState === WebSocket.CONNECTING)) return;
             const ws = new WebSocket(`ws://${location.host}/ws`);
             this.ws = ws;
             ws.onmessage = (e) => {
@@ -131,8 +137,18 @@ function runner(initialState) {
                         }
                     }
                 } else if (msg.type === 'flight') {
-                    this.flights.push(msg);
+                    // Belt-and-braces vs duplicate delivery: the server already
+                    // rejects identical pilot+duration rows, so an identical entry
+                    // arriving here can only be the same event delivered twice.
+                    if (!this.flights.some(f => !f.jumped && f.pilot_id === msg.pilot_id
+                                                && f.duration_ms === msg.duration_ms)) {
+                        this.flights.push(msg);
+                    }
                     if (this.altOpen) this.refreshAltitudes();
+                } else if (msg.type === 'jumped') {
+                    // Pilot launched before the start horn — note in the flight log
+                    // only; not a scored flight, never recorded in the DB.
+                    this.flights.push({ ...msg, jumped: true });
                 } else if (msg.type === 'altitude') {
                     this.altitudes = {
                         ...this.altitudes,
@@ -151,7 +167,9 @@ function runner(initialState) {
                     }
                 }
             };
-            ws.onclose = () => setTimeout(() => this.connect(), 2000);
+            // Only the current socket may schedule a reconnect — a stale socket's
+            // close event must not spawn a parallel reconnect loop
+            ws.onclose = () => { if (this.ws === ws) setTimeout(() => this.connect(), 2000); };
         },
 
         // Big countdown shows tenths — hundredths are noise at a glance
@@ -189,15 +207,17 @@ function runner(initialState) {
         taskDesc() { const t = this.taskInfo(); return t ? t.desc : ''; },
 
         // Group all recorded flights by pilot, each pilot's times in flight order.
+        // Jumped starts are kept separate so they don't shift flight numbering
+        // (F5K altitude entries are matched to times by index).
         pilotGroups() {
             const groups = {};
             const order = [];
             for (const f of this.flights) {
                 if (!(f.pilot_id in groups)) {
-                    groups[f.pilot_id] = { pilot_id: f.pilot_id, name: f.pilot_name, times: [] };
+                    groups[f.pilot_id] = { pilot_id: f.pilot_id, name: f.pilot_name, times: [], jumps: [] };
                     order.push(f.pilot_id);
                 }
-                groups[f.pilot_id].times.push(f);
+                (f.jumped ? groups[f.pilot_id].jumps : groups[f.pilot_id].times).push(f);
             }
             return order.map(id => groups[id]);
         },
@@ -274,7 +294,17 @@ function runner(initialState) {
 
         allPilotsReady() { return this.readyChecks().every(c => c.ok); },
 
-        async startHeat() { await fetch('/api/run/start', {method:'POST'}); },
+        async startHeat() {
+            // Every pilot should have selected themselves on a timer before the
+            // heat starts. Warn the CD with the missing names — a pilot may be
+            // sitting out this round, so allow starting anyway.
+            const pilots = this.loaded ? this.loaded.pilots.filter(n => n !== '— TBD —') : [];
+            const missing = pilots.filter(n => !this.isPilotBound(n));
+            if (missing.length &&
+                !confirm('No timer registered for:\n  • ' + missing.join('\n  • ') +
+                         '\n\nStart the heat anyway?')) return;
+            await fetch('/api/run/start', {method:'POST'});
+        },
         async abortHeat() {
             // One misclick here would kill the round for the whole group
             if (!confirm('ABORT this round for all pilots?')) return;
@@ -614,6 +644,14 @@ function runner(initialState) {
                                          x-text="altitudes[g.pilot_id] && altitudes[g.pilot_id][i + 1] !== undefined
                                                  ? String(altitudes[g.pilot_id][i + 1]).padStart(3, '0') + 'm' : ''"></div>
                                 </div>
+                            </div>
+                        </template>
+                        <!-- Jumped starts: noted for the CD, not scored, not numbered -->
+                        <template x-for="(j, ji) in g.jumps" :key="'j' + ji">
+                            <div class="flex items-center justify-between py-0.5 pl-2">
+                                <span class="text-xs text-red-400">⚠</span>
+                                <span class="font-mono text-red-400 font-semibold text-sm"
+                                      x-text="'JUMPED START ' + fmtMs(j.duration_ms)"></span>
                             </div>
                         </template>
                     </div>

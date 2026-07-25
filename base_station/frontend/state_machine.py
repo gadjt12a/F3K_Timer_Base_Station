@@ -21,6 +21,8 @@ class CompetitionStateMachine:
         self._task: asyncio.Task | None = None
         self._skip_to: int | None = None   # CD requested prep jump to N seconds remaining
         self._wt_remaining: int = 0        # live seconds remaining during WORKING (for reconnect)
+        self._prep_remaining: int = 0      # live seconds remaining during PREP (for reconnect)
+        self._land_remaining: int = 0      # live seconds remaining during LANDING (for reconnect)
 
     @property
     def state(self) -> str:
@@ -143,10 +145,16 @@ class CompetitionStateMachine:
         pilots_str = ",".join(f"{pid}:{name}" for pid, name in d["pilot_id_names"])
         if pilots_str:
             await send_fn(f"PILOTS {pilots_str}")
-        if self._state == "WORKING":
+        if self._state == "PREP":
+            if self._prep_remaining > 0:
+                await send_fn(f"PREP t={self._prep_remaining}")
+        elif self._state == "WORKING":
             rem = self._wt_remaining if self._wt_remaining > 0 else d["working_time_s"]
             await send_fn(f"TASK wt={rem} disc={d['discipline']}")
             await send_fn("START")
+        elif self._state == "LANDING":
+            if self._land_remaining > 0:
+                await send_fn(f"LAND t={self._land_remaining}")
 
     async def on_flight(self, pilot_id: int, dur_ms: int) -> None:
         if self._state not in ("WORKING", "LANDING") or not self._loaded:
@@ -227,6 +235,9 @@ class CompetitionStateMachine:
         # PILOTS message at PREP start resets the pilot selection on connected timers.
 
         remaining = d["prep_time_s"]
+        self._prep_remaining = remaining
+        # Timers run the prep countdown locally from this; COUNT re-syncs the last 10s
+        await self._server.broadcast(f"PREP t={remaining}")
         deadline = loop.time() + 1.0
         while remaining > 0:
             # CD may jump the countdown ahead ("everyone ready — skip to 1:00").
@@ -234,8 +245,10 @@ class CompetitionStateMachine:
                 if remaining > self._skip_to:
                     remaining = self._skip_to
                     engine.reanchor(d["prep_time_s"] - remaining)  # fast-forward audio
+                    await self._server.broadcast(f"PREP t={remaining}")  # re-sync timers
                 self._skip_to = None
                 deadline = loop.time() + 1.0  # re-anchor after skip
+            self._prep_remaining = remaining
             await self._broadcast_tick(remaining)
             if remaining <= 10:
                 await self._server.broadcast(f"COUNT {remaining}")
@@ -259,11 +272,15 @@ class CompetitionStateMachine:
 
         # ── LANDING ──────────────────────────────────────────────────
         self._state = "LANDING"
+        # Timers show the landing window countdown (STOP above precedes this on the wire)
+        await self._server.broadcast(f"LAND t={d['land_time_s']}")
 
         deadline = loop.time() + 1.0
         for remaining in range(d["land_time_s"], 0, -1):
+            self._land_remaining = remaining
             await self._broadcast_tick(remaining)
             deadline = await self._tick_sleep(deadline)
+        self._land_remaining = 0
 
         # ── Done ─────────────────────────────────────────────────────
         self._state = "IDLE"

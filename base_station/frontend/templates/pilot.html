@@ -70,9 +70,15 @@ function pilotView() {
         online: false,
         _tickAt: 0,
         _tickSec: 0,
+        _tickTid: null,
 
+        _ws: null,
         connect() {
+            // Guard against parallel reconnect loops leaving 2+ live sockets
+            if (this._ws && (this._ws.readyState === WebSocket.OPEN ||
+                             this._ws.readyState === WebSocket.CONNECTING)) return;
             const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+            this._ws = ws;
             ws.onopen = () => { this.online = true; };
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
@@ -90,13 +96,19 @@ function pilotView() {
                     if (msg.state === 'IDLE') { this._tickAt = 0; this.seconds = 0; }
                 }
             };
-            ws.onclose = () => { this.online = false; setTimeout(() => this.connect(), 3000); };
+            ws.onclose = () => {
+                this.online = false;
+                if (this._ws === ws) setTimeout(() => this.connect(), 3000);
+            };
             // Interpolate between 1 s ticks so the display runs smoothly
-            setInterval(() => {
-                if (this._tickAt) {
-                    this.seconds = Math.max(0, this._tickSec - (Date.now() - this._tickAt) / 1000);
-                }
-            }, 200);
+            // (started once — reconnects must not stack additional intervals)
+            if (!this._tickTid) {
+                this._tickTid = setInterval(() => {
+                    if (this._tickAt) {
+                        this.seconds = Math.max(0, this._tickSec - (Date.now() - this._tickAt) / 1000);
+                    }
+                }, 200);
+            }
         },
 
         stateLabel() {

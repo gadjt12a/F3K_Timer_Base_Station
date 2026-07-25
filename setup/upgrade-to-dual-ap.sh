@@ -51,6 +51,7 @@ wpa=2
 wpa_passphrase=f3ktimer
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
+ap_max_inactivity=1800
 EOF
 echo "[OK] /etc/hostapd/hostapd.conf (F3K_BASE on wlan1)"
 
@@ -67,6 +68,7 @@ wpa=2
 wpa_passphrase=f3kmanage
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
+ap_max_inactivity=1800
 EOF
 echo "[OK] /etc/hostapd/hostapd-ops.conf (F3K_OPS on wlan0)"
 

@@ -109,6 +109,27 @@ class TimerClient:
                 # ACK regardless of dup — timer dequeues on ACK receipt.
                 await self.send(f"ACK {line}")
 
+        elif cmd == "JUMPED":
+            # Pilot launched before the start horn — CD gets a note in the run
+            # page flight log only. Never recorded in the DB (invalid flight).
+            params = parse_params(parts[1:])
+            pilot_id = int(params.get("pilot", 0))
+            dur_ms = int(params.get("dur", 0))
+            if pilot_id > 0:
+                row = self.server.db.execute(
+                    "SELECT name FROM pilots WHERE id = ?", (pilot_id,)
+                ).fetchone()
+                pilot_name = row["name"] if row else f"Pilot {pilot_id}"
+                log.warning(f"Jumped start: pilot={pilot_id} ({pilot_name}) {dur_ms / 1000:.2f}s")
+                from frontend.app import manager
+                asyncio.create_task(manager.broadcast({
+                    "type": "jumped",
+                    "pilot_id": pilot_id,
+                    "pilot_name": pilot_name,
+                    "duration_ms": dur_ms,
+                }))
+            await self.send(f"ACK {line}")
+
         elif cmd == "ALTITUDE":
             params = parse_params(parts[1:])
             pilot_id = int(params.get("pilot", 0))

@@ -118,8 +118,13 @@
     // Live refresh: reload when flights/altitudes/rounds change (same WS feed as the Run page)
     (function () {
         let pending = null;
+        let sock = null;
         function connect() {
+            // Guard against parallel reconnect loops leaving 2+ live sockets
+            if (sock && (sock.readyState === WebSocket.OPEN ||
+                         sock.readyState === WebSocket.CONNECTING)) return;
             const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+            sock = ws;
             ws.onmessage = (ev) => {
                 try {
                     const msg = JSON.parse(ev.data);
@@ -128,7 +133,7 @@
                     }
                 } catch (e) { /* ignore */ }
             };
-            ws.onclose = () => setTimeout(connect, 5000);
+            ws.onclose = () => { if (sock === ws) setTimeout(connect, 5000); };
         }
         connect();
     })();
