@@ -76,6 +76,7 @@ class TimerClient:
             self.server.remove(self)
             self.server.log_event("disconnect", self.mac, self.timer_id, str(self.addr))
             log.info(f"Disconnected: {self.addr} (id={self.timer_id})")
+            asyncio.create_task(self.server.broadcast_timers())
 
     async def _dispatch(self, line: str):
         log.info(f"<< [id={self.timer_id or '?'}] {line}")
@@ -99,6 +100,7 @@ class TimerClient:
                      f"MAC={self.mac} id={self.timer_id} pilot={self.last_pilot_id}")
             await self.send(f"ASSIGN id={self.timer_id}")
             asyncio.create_task(self.server.state_machine.send_catchup(self.send))
+            asyncio.create_task(self.server.broadcast_timers())
 
         elif cmd == "FLIGHT":
             params = parse_params(parts[1:])
@@ -358,6 +360,11 @@ class F3KServer:
             (alt_m, pilot_id, group_id),
         )
         self.db.commit()
+
+    async def broadcast_timers(self):
+        """Push current timer list to all web clients so the run page stays in sync."""
+        from frontend.app import manager
+        await manager.broadcast({"type": "timers_update", "timers": self.timers_info()})
 
     async def broadcast(self, msg: str):
         """Send a message to all connected timers (TASK, START, STOP, PILOTS)."""

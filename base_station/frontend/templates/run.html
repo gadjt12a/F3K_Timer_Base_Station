@@ -165,6 +165,8 @@ function runner(initialState) {
                     } else {
                         this.loadTimers();
                     }
+                } else if (msg.type === 'timers_update') {
+                    this.timers = msg.timers || [];
                 }
             };
             // Only the current socket may schedule a reconnect — a stale socket's
