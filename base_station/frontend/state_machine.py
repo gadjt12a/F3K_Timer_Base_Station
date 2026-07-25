@@ -223,9 +223,8 @@ class CompetitionStateMachine:
         # ── PREP ─────────────────────────────────────────────────────
         self._state = "PREP"
         self._skip_to = None
-        pilots_str = ",".join(f"{pid}:{name}" for pid, name in d["pilot_id_names"])
-        if pilots_str:
-            await self._server.broadcast(f"PILOTS {pilots_str}")
+        # PILOTS already broadcast in load_heat(); don't re-send here — a second
+        # PILOTS message at PREP start resets the pilot selection on connected timers.
 
         remaining = d["prep_time_s"]
         deadline = loop.time() + 1.0

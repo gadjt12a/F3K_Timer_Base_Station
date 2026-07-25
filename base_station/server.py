@@ -70,7 +70,7 @@ class TimerClient:
                 line = raw.decode().strip()
                 if line:
                     await self._dispatch(line)
-        except (asyncio.IncompleteReadError, ConnectionResetError):
+        except (asyncio.IncompleteReadError, ConnectionResetError, OSError):
             pass
         finally:
             self.server.remove(self)
