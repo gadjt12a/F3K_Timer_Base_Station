@@ -13,9 +13,12 @@ A single asyncio process runs two servers in one event loop:
 - **TCP timer server** (`server.py`, port 8765) — handheld timers connect with a
   JOIN/ASSIGN handshake, PING/PONG keepalive (base sends PONG every 15s; a successful
   send resets the ping clock so freshly reconnected timers aren't evicted before their
-  first 30s PING), and the round protocol (TASK / START / STOP / PILOTS / COUNT / FLIGHT / ALTITUDE).
-  FLIGHT, ALTITUDE, and SELECT are acknowledged (`ACK <line>`) so the timer can
-  retransmit unACKed messages on reconnect; see `docs/PROTOCOL_ACK.md`.
+  first 30s PING), and the round protocol (PREP / TASK / START / STOP / LAND / PILOTS /
+  COUNT / FLIGHT / JUMPED / ALTITUDE). Timers run the prep and landing countdowns locally
+  from `PREP t=` / `LAND t=`; COUNT re-syncs the last 10s of prep. JUMPED (launch before
+  the start horn) is surfaced to the CD only — never recorded. FLIGHT, JUMPED, ALTITUDE,
+  and SELECT are acknowledged (`ACK <line>`) so the timer can retransmit unACKed messages
+  on reconnect; see `docs/PROTOCOL_ACK.md`.
 - **Web app** (`frontend/app.py`, FastAPI + uvicorn, port 8080) — operator UI plus a
   WebSocket stream of live timing and flight events.
 
@@ -61,7 +64,7 @@ tools/
 |-------|---------|
 | `/setup` | Two-column: collapsible competition cards (newest expanded; name/discipline/date/location header) + sticky pilot registry (right) with checkbox selection bound to a competition dropdown (Add to comp); Archive/Unarchive with archived comps viewable in a collapsed section; MIXED (F3K+F5K) competitions supported; per-comp scoring config; bulk pilot CSV import; GS Locked comps read-only; **pilot rename** (inline pencil icon per row, fetch-based, no page reload) |
 | `/rounds` | Round builder — collapsible competition cards (chevron header, round count badge); rounds displayed in a responsive 3-column grid; tasks (A–N), working time, groups with pilot draw + TBD slots; **Draw Wizard**: semi-automated multi-round draw (round count, groups/round, task selection cycled across rounds, avoid back-to-back option) with preview → Accept / Re-shuffle / Cancel, pair-coverage + timekeeper stats, and mid-competition redraw of remaining rounds (completed rounds kept and seeded); add/delete controls hidden for GS Locked competitions; **Round edit**: inline pencil icon on each round card edits task and working time (blocked if round has flights recorded or GS-locked); **Custom Tasks**: clone any catalogue task and adjust its rule settings (flights that count, per-flight cap, targets, ladder start/step, max launches, window) — custom tasks appear in all task dropdowns and score natively; **Custom task edit**: edit button on each custom task row pre-populates the form for in-place editing (code/discipline immutable) |
-| `/run` | Operator screen — load/start/abort heats, live M:SS.T countdown (tenths, 20fps), flight log with altitude, CD skip, competition filter chips (show all, or up to two competitions in side-by-side queue columns), dual F3K/F5K discipline columns otherwise, mark heats done/undone, auto-advance 3s toast, readiness check warning, timer connection status strip (T1/T2 pills), pilot status strip (○ unbound → ✓+T#), CD override form to manually log a flight for any pilot |
+| `/run` | Operator screen — load/start/abort heats (start warns if any pilot has no timer registered), live M:SS.T countdown (tenths, 20fps), flight log with altitude and jumped-start notes, CD skip, competition filter chips (show all, or up to two competitions in side-by-side queue columns), dual F3K/F5K discipline columns otherwise, mark heats done/undone, auto-advance 3s toast, readiness check warning, timer connection status strip (T1/T2 pills), pilot status strip (○ unbound → ✓+T#), CD override form to manually log a flight for any pilot |
 | `/results` | **Competition filter chips** (All + per-comp, filters via `?comp_id=`); collapsible per-competition blocks (newest open; date + location in title); per-heat flight tables — pilots × flights, times in M:SS.hh; F5K altitudes in fuchsia; computed Raw / Score (0–1000) / Rank columns per heat with non-counting flights dimmed and F5K bonus shown per flight; per-heat Edit mode: delete flights, manually add flights (pilot, flight #, split M:SS.HH input, altitude) |
 | `/leaderboard` | Live cumulative standings — rank, per-round normalised scores, drop rounds struck out, total; discipline filter for MIXED comps; auto-reloads on flight events; public JSON at `/api/results/{comp_id}/public`; **kiosk mode** (`?kiosk=1`): hides nav, larger fonts, shows comp name/date/location header — suitable for projector or big screen; "⛶ Kiosk" button on normal view opens in new tab |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
