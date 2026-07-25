@@ -86,10 +86,17 @@ class TimerClient:
             params = parse_params(parts[1:])
             self.mac = params.get("mac", "unknown")
             self.last_ping_at = time.monotonic()
-            self.server.evict_mac(self.mac)   # close any stale connection with same MAC
-            self.timer_id = self.server.next_id()
+            self.server.evict_mac(self.mac)   # saves pilot binding, closes stale socket
+            is_reconnect = self.mac in self.server._mac_to_id
+            self.timer_id = self.server.assign_id(self.mac)  # same ID on reconnect
+            self.last_pilot_id = self.server._mac_to_pilot.get(self.mac)  # restore pilot
             self.server.add(self)
-            self.server.log_event("connect", self.mac, self.timer_id, str(self.addr))
+            self.server.log_event(
+                "reconnect" if is_reconnect else "connect",
+                self.mac, self.timer_id, str(self.addr)
+            )
+            log.info(f"{'Reconnect' if is_reconnect else 'New'} timer: "
+                     f"MAC={self.mac} id={self.timer_id} pilot={self.last_pilot_id}")
             await self.send(f"ASSIGN id={self.timer_id}")
             asyncio.create_task(self.server.state_machine.send_catchup(self.send))
 
@@ -178,16 +185,20 @@ class F3KServer:
     def __init__(self):
         self._clients: dict[int, TimerClient] = {}
         self._id_counter = 1
+        self._mac_to_id: dict[str, int] = {}      # MAC → sticky timer ID (survives reconnect)
+        self._mac_to_pilot: dict[str, int] = {}   # MAC → last pilot_id (restored on reconnect)
         self.events = collections.deque(maxlen=100)  # connection diagnostics ring buffer
         self.db = init_db(DB_PATH)
         web_app.state.server = self
         self.state_machine = CompetitionStateMachine(self)
         web_app.state.state_machine = self.state_machine
 
-    def next_id(self) -> int:
-        tid = self._id_counter
-        self._id_counter += 1
-        return tid
+    def assign_id(self, mac: str) -> int:
+        """Return the persistent timer ID for this MAC, allocating one if unseen."""
+        if mac not in self._mac_to_id:
+            self._mac_to_id[mac] = self._id_counter
+            self._id_counter += 1
+        return self._mac_to_id[mac]
 
     def add(self, client: TimerClient):
         if client.timer_id is not None:
@@ -198,9 +209,12 @@ class F3KServer:
             del self._clients[client.timer_id]
 
     def evict_mac(self, mac: str):
-        """Close any existing connection from the same MAC (handles timer reboot)."""
+        """Close any existing connection from the same MAC (handles timer reboot).
+        Saves the pilot binding so it can be restored when the timer reconnects."""
         stale = [c for c in self._clients.values() if c.mac == mac]
         for c in stale:
+            if c.last_pilot_id:
+                self._mac_to_pilot[mac] = c.last_pilot_id
             log.info(f"Evicting stale connection from MAC {mac} (id={c.timer_id})")
             self.log_event("evicted", mac, c.timer_id, "reconnect from same MAC")
             self.remove(c)
