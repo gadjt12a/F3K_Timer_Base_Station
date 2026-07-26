@@ -51,7 +51,10 @@ base_station/
         └── gliderscore_audio_library.json    # 233-row announcement library
 setup/
 ├── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
-└── upgrade-to-dual-ap.sh     # Source of truth for the Pi's AP config: hostapd (both SSIDs), dnsmasq, nftables captive portal, wlan0/wlan1 setup services, hostapd watchdog. Rewrites these files wholesale — fix things here, not just over SSH, or the next run reverts them
+├── upgrade-to-dual-ap.sh     # One-time dual-AP bootstrap: hostapd (both SSIDs), dnsmasq, nftables captive portal, wlan0/wlan1 setup services. Rewrites those files wholesale and resets eth0 — run in person, not unattended
+└── apply-system-config.sh    # Idempotent OS config applied on every update: mt76 USB fix, hostapd ctrl_interface, dnsmasq bind-dynamic, wlan1 poll loop, hostapd watchdog. `--check` = read-only drift report. Bump CONFIG_VERSION when changing what it applies
+.githooks/
+└── pre-commit                # Blocks a commit that changes apply-system-config.sh without bumping CONFIG_VERSION; warns on live Pi drift. Enable with `git config core.hooksPath .githooks`
 docs/
 └── PROTOCOL_ACK.md           # ACK extension spec (session 47): FLIGHT/ALTITUDE/SELECT reply pattern, dedup rules, timer-side pending-queue contract
 tools/
@@ -70,7 +73,7 @@ tools/
 | `/leaderboard` | Live cumulative standings — rank, per-round normalised scores, drop rounds struck out, total; discipline filter for MIXED comps; auto-reloads on flight events; public JSON at `/api/results/{comp_id}/public`; **kiosk mode** (`?kiosk=1`): hides nav, larger fonts, shows comp name/date/location header — suitable for projector or big screen; "⛶ Kiosk" button on normal view opens in new tab |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV per competition; download F3KSync.exe (Direct Sync tool) |
-| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore, **Software Update** (git pull base station code + sync timer OTA firmware files; shows `build.N` version number + cached firmware version; smart health-poll reload — waits for server restart before navigating) |
+| `/settings` | Audio volume + lead compensation, Bluetooth speaker, timer diagnostics, competition DB backup/restore, **Software Update** (git pull base station code + Pi OS config + sync timer OTA firmware files; shows `build.N` version number + cached firmware version; smart health-poll reload — waits for server restart before navigating. A failed OS-config apply rolls itself back and reports why instead of reloading) |
 | `/reports/flight_cards/{id}` | Printable pilot flight cards (A4 landscape, 2×2 per page) — one card per pilot per discipline for the full comp; pre-filled from draw with Rd.Grp, full task name, and blank flight columns; F5K cards include paired Alt columns (blue tint); MIXED comps produce separate F3K and F5K cards per pilot; "🖨 Cards" button on Rounds page |
 | `/pilot` | Mobile read-only pilot view — state, live countdown, current heat + pilots, leaderboard link; captive-portal landing page for phones on F3K_OPS |
 | `/health` | JSON status (timers connected) |
