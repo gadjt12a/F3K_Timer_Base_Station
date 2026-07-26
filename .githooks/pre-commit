@@ -1,0 +1,80 @@
+#!/bin/sh
+# pre-commit — stop Pi OS-level config from being lost between the Pi and the repo.
+#
+# Companion to the /pi-config-check skill; see
+# .claude/skills/pi-config-check/SKILL.md for the full rationale.
+#
+# Install (once per clone — .git/hooks is not versioned, so the repo points git
+# at this directory instead):
+#
+#     git config core.hooksPath .githooks
+#
+# Two checks, deliberately with different severity:
+#
+#   CONFIG_VERSION guard — BLOCKS. Local, instant, deterministic, and always a
+#   real error: deployed Pis skip the applier when their recorded version already
+#   matches, so changing what gets applied without bumping the version ships a
+#   change that reaches no unit in the field while sitting in the repo looking
+#   applied.
+#
+#   Live Pi drift — WARNS ONLY. It depends on a machine that may be off, on
+#   another network, or legitimately behind the repo. A hook that blocks on
+#   remote state, or hangs waiting for it, is a hook everyone learns to bypass
+#   with --no-verify — and then the guard above stops running too. Hence the
+#   short connect timeout and the advisory tone.
+#
+# Skip everything: git commit --no-verify   (or F3K_SKIP_PI_CHECK=1 git commit)
+
+[ -n "$F3K_SKIP_PI_CHECK" ] && exit 0
+
+APPLIER=setup/apply-system-config.sh
+PI_HOST=${F3K_PI_HOST:-100.115.187.90}
+PI_KEY=${F3K_PI_KEY:-$HOME/.ssh/f3k_pi}
+
+staged=$(git diff --cached --name-only)
+
+# Nothing Pi-related in this commit — get out of the way.
+echo "$staged" | grep -q '^setup/' || exit 0
+
+fail=0
+
+# ── 1. CONFIG_VERSION guard ───────────────────────────────────────────────
+if echo "$staged" | grep -qx "$APPLIER"; then
+    old=$(git show "HEAD:$APPLIER" 2>/dev/null | sed -n 's/^CONFIG_VERSION=//p' | head -1)
+    new=$(git show ":$APPLIER"    2>/dev/null | sed -n 's/^CONFIG_VERSION=//p' | head -1)
+
+    if [ -z "$old" ]; then
+        :   # new file, nothing to compare against
+    elif [ "$old" = "$new" ]; then
+        echo "pre-commit: $APPLIER changed but CONFIG_VERSION is still $old." >&2
+        echo "  Pis already at v$old skip the applier, so this change would reach none of them." >&2
+        echo "  Bump CONFIG_VERSION, or re-run with --no-verify if this is comments only." >&2
+        fail=1
+    else
+        echo "pre-commit: CONFIG_VERSION $old -> $new"
+    fi
+fi
+
+# ── 2. Live Pi drift (advisory) ───────────────────────────────────────────
+# Feed the about-to-be-committed script to the Pi over stdin rather than running
+# the Pi's own copy, so the check reflects this commit and not whatever that box
+# last pulled. sed strips CR in case the working copy picked up CRLF.
+if [ -f "$APPLIER" ] && [ -r "$PI_KEY" ]; then
+    out=$(sed 's/\r$//' "$APPLIER" | ssh -i "$PI_KEY" \
+            -o ConnectTimeout=4 -o BatchMode=yes -o StrictHostKeyChecking=no \
+            "pi@$PI_HOST" 'sudo bash -s -- --check' 2>/dev/null)
+    rc=$?
+    if [ $rc -eq 255 ] || [ -z "$out" ]; then
+        echo "pre-commit: Pi unreachable — live drift check skipped (CONFIG_VERSION guard still ran)."
+    elif [ $rc -ne 0 ]; then
+        echo "pre-commit: Pi config differs from this commit —"
+        echo "$out" | grep -E '^\s*\[(WOULD CHANGE|UNMANAGED)\]' | sed 's/^/  /'
+        echo "  [UNMANAGED] means config exists on the Pi that no script owns; if any of it"
+        echo "  is ours it belongs in $APPLIER (and needs a CONFIG_VERSION bump)."
+        echo "  Advisory only — commit continues. Run /pi-config-check for the full report."
+    else
+        echo "pre-commit: Pi in sync with this commit."
+    fi
+fi
+
+exit $fail
