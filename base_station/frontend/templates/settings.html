@@ -245,12 +245,31 @@ function settings() {
         } else {
           this.updateOk = true;
           const otaPart = r.ota?.version ? ` · firmware ${r.ota.version}` : (r.ota?.error ? ' · firmware sync failed (no internet?)' : '');
+          const cfg = r.system_config || {};
+
+          // A failed system-config apply rolls itself back, so the Pi is still
+          // serving — but the operator needs to read why. Stop here rather than
+          // auto-reloading, which would wipe the output off the screen.
+          if (cfg.ran && cfg.ok === false) {
+            this.updateOk = false;
+            this.updateMsg = 'Code updated, but system config FAILED — it was rolled back. Read the output, then reload manually.';
+            this.updateOutput = cfg.output || cfg.error || '';
+            this.updateBusy = false;
+            return;
+          }
+
+          // System config is applied on every update, so it can change even when
+          // the repo did not — report it independently of r.changed.
+          const cfgChanged = cfg.ran && cfg.output && !cfg.output.includes('no changes');
+          const cfgPart = cfgChanged ? ' · system config updated' : '';
+          if (cfgChanged) this.updateOutput = cfg.output;
+
           if (!r.changed) {
-            this.updateMsg = 'Already up to date' + otaPart + '.';
+            this.updateMsg = 'Already up to date' + otaPart + cfgPart + '.';
             if (r.ota?.version) await this.loadSysInfo();
           } else {
-            this.updateOutput = r.output;
-            this.updateMsg = 'Updated' + otaPart + ' — restarting…';
+            this.updateOutput = cfgChanged ? cfg.output + '\n\n' + r.output : r.output;
+            this.updateMsg = 'Updated' + otaPart + cfgPart + ' — restarting…';
             await this._waitForRestart();
           }
         }

@@ -33,6 +33,12 @@ This takes about 2 minutes (mostly downloading packages). When it prints **"Migr
 **After migration, future updates are one click:**
 Open the web UI → **Settings** → scroll to **Software Update** → click **Update from GitHub**. The page reloads automatically when the new code is running.
 
+That button updates the app *and* the Pi's own system settings (WiFi access point
+config, DHCP, and the access-point watchdog) — so a Pi in the field stays identical
+to the development one without anyone having to SSH in. If a system setting can't be
+applied it is automatically put back the way it was and the reason is shown on screen,
+so an update can't leave the Pi off the air.
+
 ---
 
 ## Step 3: Check the timer WiFi is broadcasting
@@ -61,9 +67,10 @@ When you have the **MT7612U USB WiFi adapter**:
    ```
    Password: `f3ksystem`
 
-4. Run the upgrade script:
+4. Run the upgrade script **from the repo** (not the copy in your home folder — that
+   one is a snapshot from when the Pi was shipped and is missing later fixes):
    ```
-   sudo bash ~/upgrade-to-dual-ap.sh
+   sudo bash ~/f3k_repo/setup/upgrade-to-dual-ap.sh
    ```
 
 5. The script will automatically:

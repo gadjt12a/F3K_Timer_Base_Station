@@ -1597,6 +1597,76 @@ async def _load_custom_task_rules():
         pass  # table exists after init_db; never block startup
 
 
+SYSTEM_CONFIG_VERSION_FILE = Path("/var/lib/f3k/system-config.version")
+
+
+def _system_config_versions():
+    """(target, applied) system-config versions, or (None, None) if unavailable."""
+    root = _git_root()
+    if root is None:
+        return None, None
+    script = root / "setup" / "apply-system-config.sh"
+    if not script.is_file():
+        return None, None
+    target = None
+    try:
+        for line in script.read_text().splitlines():
+            if line.startswith("CONFIG_VERSION="):
+                target = line.split("=", 1)[1].strip()
+                break
+    except Exception:
+        return None, None
+    try:
+        applied = SYSTEM_CONFIG_VERSION_FILE.read_text().strip()
+    except Exception:
+        applied = None
+    return target, applied
+
+
+@app.on_event("startup")
+async def _apply_system_config_if_stale():
+    """Apply OS-level config when the version on disk is behind the repo.
+
+    This is what makes a single "Update from GitHub" click enough. The running
+    server is the process that performs the git pull, so config applied only
+    from the update endpoint would always be one release behind — the operator
+    would have to click Update twice, and the second click is exactly the one a
+    remote tester would never think to make. Checking here covers that, plus
+    reboots and restored images.
+
+    Skipped entirely when already at the target version, so a healthy Pi does no
+    work and restarts nothing on boot.
+    """
+    import asyncio
+    import subprocess
+
+    target, applied = _system_config_versions()
+    if target is None or target == applied:
+        return
+
+    root = _git_root()
+    script = root / "setup" / "apply-system-config.sh"
+
+    def _run():
+        try:
+            proc = subprocess.run(
+                ["sudo", "-n", "bash", str(script)],
+                capture_output=True, text=True, timeout=180,
+            )
+            status = "ok" if proc.returncode == 0 else "FAILED (rolled back)"
+            print(f"[startup] system config v{applied or 'none'} -> v{target}: {status}",
+                  flush=True)
+            if proc.returncode != 0:
+                print((proc.stdout or proc.stderr or "").strip()[-2000:], flush=True)
+        except Exception as exc:
+            print(f"[startup] system config apply error: {exc}", flush=True)
+
+    # Off the event loop: subprocess.run blocks, and this must never delay the
+    # server becoming reachable — losing the web UI is how a remote Pi becomes
+    # unrecoverable.
+    asyncio.get_running_loop().run_in_executor(None, _run)
+
+
 # ---------------------------------------------------------------------------
 # Draw Wizard — multi-round roster draw with preview / accept
 # ---------------------------------------------------------------------------
@@ -1892,6 +1962,32 @@ async def api_system_update(background_tasks: BackgroundTasks):
         for py in (root / "base_station").rglob("*.py"):
             py.touch()
 
+    # Bring the Pi's OS-level config (hostapd, dnsmasq, watchdog, modprobe) up to
+    # spec. Without this an update only ever ships app code, and every Pi-side fix
+    # has to be applied by hand over SSH to each unit — which is how the fleet
+    # drifted apart in the first place.
+    #
+    # Runs on every update rather than only when the repo moved: the script is
+    # idempotent and a no-op on a box already at spec, so it also self-heals a Pi
+    # that drifted for any other reason. Non-fatal — the app code is already
+    # updated, and a failed apply rolls its own config back, so report it rather
+    # than failing the whole update.
+    sys_cfg = {"ran": False, "ok": None, "output": "", "error": None}
+    applier = root / "setup" / "apply-system-config.sh"
+    if applier.is_file():
+        try:
+            proc = subprocess.run(
+                ["sudo", "-n", "bash", str(applier)],
+                capture_output=True, text=True, timeout=180,
+            )
+            sys_cfg["ran"] = True
+            sys_cfg["ok"] = proc.returncode == 0
+            sys_cfg["output"] = (proc.stdout or "").strip()[-4000:]
+            if proc.returncode != 0:
+                sys_cfg["error"] = (proc.stderr or proc.stdout or "").strip()[-1000:]
+        except Exception as exc:
+            sys_cfg["error"] = str(exc)
+
     # Sync timer OTA firmware files (non-fatal if no internet at the field)
     ota_version = None
     ota_error = None
@@ -1915,6 +2011,7 @@ async def api_system_update(background_tasks: BackgroundTasks):
     return {
         "ok": True, "changed": changed, "output": reset.stdout.strip(),
         "ota": {"version": ota_version, "error": ota_error},
+        "system_config": sys_cfg,
     }
 
 

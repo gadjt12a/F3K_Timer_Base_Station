@@ -173,56 +173,18 @@ EOF
 rm -f /etc/NetworkManager/conf.d/99-unmanaged-wlan0.conf
 echo "[OK] NetworkManager — wlan0 and wlan1 both unmanaged"
 
-# ── 12. hostapd watchdog — recover a wedged MT7612U ───────────────────────
-# The MT7612U can stop beaconing while hostapd still looks healthy to systemd,
-# so poll the control interface and restart only on a genuine failure.
-#
-# Two things this script gets deliberately right, both learned the hard way:
-#   * /usr/sbin/hostapd_cli by absolute path. cron's built-in PATH is
-#     /usr/bin:/bin, so a bare "hostapd_cli" is not found. Paired with a
-#     2>/dev/null that hid the error, "cannot run the probe" was
-#     indistinguishable from "AP is down" and this restarted a perfectly
-#     healthy AP every 2 minutes, dropping every timer off the air.
-#   * A probe that cannot run is not a failed probe — if the binary is missing
-#     we log and exit rather than restarting. A broken watchdog must never take
-#     down a working AP.
-# It also needs ctrl_interface= in both hostapd configs (steps 3 and 4) —
-# without it no control socket is created and the probe can never succeed.
-cat > /usr/local/bin/hostapd-watchdog.sh << 'EOF'
-#!/bin/bash
-# Restart hostapd only if wlan1 has genuinely stopped serving. See
-# upgrade-to-dual-ap.sh step 12 for why the absolute path matters.
-HOSTAPD_CLI=/usr/sbin/hostapd_cli
-
-if [ ! -x "$HOSTAPD_CLI" ]; then
-    logger "hostapd-watchdog: $HOSTAPD_CLI missing or not executable -- cannot probe, not restarting"
-    exit 1
+# ── 12. OS-level config (watchdog, mt76 fix, ctrl_interface, bind mode) ───
+# Delegated to apply-system-config.sh so there is exactly one definition of the
+# hostapd watchdog and friends. Duplicating them here is what let this script
+# silently revert hand-applied fixes on every run. That script is idempotent, so
+# it simply confirms what the heredocs above already wrote and fills in the rest
+# (notably the mt76 USB scatter-gather fix, which this script never carried).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/apply-system-config.sh" ]; then
+    bash "$SCRIPT_DIR/apply-system-config.sh" || echo "[WARN] system config apply reported a problem — see output above"
+else
+    echo "[SKIP] apply-system-config.sh not found next to this script"
 fi
-
-# Probe three times before acting: hostapd_cli also fails for a second or two
-# right after a legitimate restart, and one failed probe used to be enough to
-# trigger another one.
-for i in 1 2 3; do
-    err=$("$HOSTAPD_CLI" -i wlan1 status 2>&1 >/tmp/.hostapd-wd-status)
-    if grep -q "^state=ENABLED" /tmp/.hostapd-wd-status; then
-        rm -f /tmp/.hostapd-wd-status
-        exit 0
-    fi
-    sleep 5
-done
-rm -f /tmp/.hostapd-wd-status
-
-# Log the underlying error so a broken probe is distinguishable from a downed
-# AP in the journal, rather than looking like flapping hardware.
-logger "hostapd-watchdog: wlan1 AP not enabled after 3 probes (last error: ${err:-none}), restarting hostapd"
-systemctl restart hostapd
-EOF
-chmod 755 /usr/local/bin/hostapd-watchdog.sh
-cat > /etc/cron.d/hostapd-watchdog << 'EOF'
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-*/2 * * * * root /usr/local/bin/hostapd-watchdog.sh
-EOF
-echo "[OK] hostapd watchdog (every 2 min via /etc/cron.d/hostapd-watchdog)"
 
 # ── 13. Reload systemd and NetworkManager ─────────────────────────────────
 echo ""
