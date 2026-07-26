@@ -1950,6 +1950,27 @@ async def ota_firmware_bin():
 # All named routes above take priority; only truly unknown GET paths reach this.
 # ---------------------------------------------------------------------------
 
+@app.get("/ws")
+async def ws_http_probe(request: Request):
+    # A websocket handshake only lands here as plain HTTP when something between the
+    # browser and uvicorn dropped the Upgrade header — in practice a reverse proxy
+    # without websocket support. Without this route it falls through to the captive
+    # portal catch-all and the browser sees a meaningless 302 to /pilot.
+    import logging
+    logging.getLogger("uvicorn.error").warning(
+        "[WS] handshake arrived as plain HTTP (Upgrade stripped) from host=%s via=%s "
+        "— reverse proxy needs websocket support",
+        request.headers.get("host"), request.headers.get("x-forwarded-for"))
+    return Response(status_code=426)
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    # Without this the browser's favicon probe falls through to the captive-portal
+    # catch-all and gets redirected to /pilot on every page load — pure log noise.
+    return Response(status_code=204)
+
+
 @app.get("/{path:path}")
 async def captive_portal_catchall(path: str, request: Request):
     # OPS WiFi captive portal: redirect OS probes to the pilot page via the AP's

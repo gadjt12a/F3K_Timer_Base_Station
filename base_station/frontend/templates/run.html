@@ -51,6 +51,7 @@ function runner(initialState) {
         altitudes: {},
         timers: [],
         ws: null,
+        wsOk: false,
         loadedGroupId: (initialState.loaded && initialState.loaded.group_id) || null,
         doneGroups: DONE_INIT,
         autoAdvanceNext: null,
@@ -63,10 +64,19 @@ function runner(initialState) {
         cdError: '',
 
         init() {
-            this.connect();
+            // Timer polling must not depend on the websocket. connect() used to run
+            // first, so anything it threw (blocked/failed WebSocket construction)
+            // aborted the rest of init() — no polling, no clock, and the timer strip
+            // stayed permanently empty even though /api/timers was healthy.
             this.loadTimers();
             setInterval(() => this.loadTimers(), 3000);
             setInterval(() => this._tickLocal(), 50);
+            this.connectSafe();
+        },
+
+        connectSafe() {
+            try { this.connect(); }
+            catch (e) { this.wsOk = false; console.error('[run] websocket connect failed', e); }
         },
 
         _tickLocal() {
@@ -102,8 +112,11 @@ function runner(initialState) {
             // the flight log while the DB (correctly) had one row.
             if (this.ws && (this.ws.readyState === WebSocket.OPEN ||
                             this.ws.readyState === WebSocket.CONNECTING)) return;
-            const ws = new WebSocket(`ws://${location.host}/ws`);
+            const ws = new WebSocket(
+                (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
             this.ws = ws;
+            ws.onopen  = () => { if (this.ws === ws) this.wsOk = true; };
+            ws.onerror = () => { if (this.ws === ws) this.wsOk = false; };
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'tick') {
@@ -171,7 +184,11 @@ function runner(initialState) {
             };
             // Only the current socket may schedule a reconnect — a stale socket's
             // close event must not spawn a parallel reconnect loop
-            ws.onclose = () => { if (this.ws === ws) setTimeout(() => this.connect(), 2000); };
+            ws.onclose = () => {
+                if (this.ws !== ws) return;
+                this.wsOk = false;
+                setTimeout(() => this.connectSafe(), 2000);
+            };
         },
 
         // Big countdown shows tenths — hundredths are noise at a glance
@@ -582,6 +599,9 @@ function runner(initialState) {
                 <template x-if="timers.length === 0">
                     <span class="text-xs text-red-400 font-medium">⚠ No timers connected</span>
                 </template>
+                <!-- A dead websocket used to fail silently: the page looked fine but
+                     never received flights, ticks or timer updates -->
+                <span x-show="!wsOk" class="text-xs text-red-400 font-medium">⚠ Live link down</span>
                 <template x-for="t in timers" :key="t.id">
                     <div class="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono"
                          :class="t.last_ping_age_s < 45 ? 'bg-green-900/60 text-green-300' : 'bg-amber-900/60 text-amber-300'">
