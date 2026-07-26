@@ -26,14 +26,48 @@
 #
 # Idempotent: a Pi already at this spec makes no changes and restarts nothing.
 
+#
+# --check runs as a read-only dry run: reports what *would* change, plus any
+# F3K-looking config on the box that no script manages, and exits 1 if it finds
+# either. The /pi-config-check skill uses it before a commit so a fix applied by
+# hand over SSH cannot quietly fail to make it into the repo — which is how the
+# watchdog, disable_usb_sg and bind-dynamic all went missing.
+
 set -uo pipefail   # deliberately NOT -e: failures are handled with rollback
 
-CONFIG_VERSION=1
+CONFIG_VERSION=2
 STATE_FILE=/var/lib/f3k/system-config.version
 BACKUP_DIR=/var/backups/f3k-system-config
 
 HOSTAPD_CONFS=(/etc/hostapd/hostapd.conf /etc/hostapd/hostapd-ops.conf)
 DNSMASQ_CONFS=(/etc/dnsmasq.d/f3k-timer.conf /etc/dnsmasq.d/f3k-ops.conf)
+
+DRY_RUN=0
+[ "${1:-}" = "--check" ] && DRY_RUN=1
+
+# Every OS path this project owns, across both this script and
+# upgrade-to-dual-ap.sh. Anything F3K-shaped outside this list is unmanaged and
+# will be reported by --check.
+MANAGED_PATHS=(
+    /etc/modprobe.d/mt76_usb.conf
+    /etc/hostapd/hostapd.conf
+    /etc/hostapd/hostapd-ops.conf
+    /etc/dnsmasq.d/f3k-timer.conf
+    /etc/dnsmasq.d/f3k-ops.conf
+    /etc/systemd/system/wlan0-setup.service
+    /etc/systemd/system/wlan1-setup.service
+    /etc/systemd/system/hostapd.service.d/override.conf
+    /etc/nftables.d/f3k-captive.conf
+    /etc/NetworkManager/conf.d/99-unmanaged-wlan.conf
+    /usr/local/bin/hostapd-watchdog.sh
+    /etc/cron.d/hostapd-watchdog
+    /etc/systemd/system/f3k-server.service   # written by migrate-to-git.sh
+    /etc/hostapd/ifupdown.sh                 # shipped by the hostapd package
+)
+WATCH_DIRS=(
+    /etc/hostapd /etc/dnsmasq.d /etc/nftables.d /etc/NetworkManager/conf.d
+    /etc/modprobe.d /etc/cron.d /usr/local/bin /etc/systemd/system
+)
 
 CHANGES=()
 hostapd_dirty=0
@@ -45,9 +79,14 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-mkdir -p "$BACKUP_DIR" "$(dirname "$STATE_FILE")"
+if [ "$DRY_RUN" -eq 0 ]; then
+    mkdir -p "$BACKUP_DIR" "$(dirname "$STATE_FILE")"
+fi
 
-note()  { CHANGES+=("$1"); echo "  [CHANGED] $1"; }
+note() {
+    CHANGES+=("$1")
+    if [ "$DRY_RUN" -eq 1 ]; then echo "  [WOULD CHANGE] $1"; else echo "  [CHANGED] $1"; fi
+}
 skip()  { echo "  [ok]      $1"; }
 
 # Back up a file once per run, outside its own config directory.
@@ -68,8 +107,10 @@ ensure_line() {
     if grep -qE "$key" "$file"; then
         skip "$file: $line"
     else
-        backup "$file"
-        printf '%s\n' "$line" >> "$file"
+        if [ "$DRY_RUN" -eq 0 ]; then
+            backup "$file"
+            printf '%s\n' "$line" >> "$file"
+        fi
         note "$file: added $line"
         return 1
     fi
@@ -82,8 +123,10 @@ replace_line() {
     if grep -qxF "$to" "$file"; then
         skip "$file: $to"
     elif grep -qxF "$from" "$file"; then
-        backup "$file"
-        sed -i "s|^${from}\$|${to}|" "$file"
+        if [ "$DRY_RUN" -eq 0 ]; then
+            backup "$file"
+            sed -i "s|^${from}\$|${to}|" "$file"
+        fi
         note "$file: $from -> $to"
         return 1
     fi
@@ -99,9 +142,11 @@ write_file() {
         skip "$path"
         return 0
     fi
-    [ -f "$path" ] && backup "$path"
-    printf '%s' "$content" > "$path"
-    chmod "$mode" "$path"
+    if [ "$DRY_RUN" -eq 0 ]; then
+        [ -f "$path" ] && backup "$path"
+        printf '%s' "$content" > "$path"
+        chmod "$mode" "$path"
+    fi
     note "$path"
     return 1
 }
@@ -146,6 +191,8 @@ echo "4. wlan1-setup service"
 if [ -f /etc/systemd/system/wlan1-setup.service ]; then
     if grep -q "seq 1 30" /etc/systemd/system/wlan1-setup.service; then
         skip "/etc/systemd/system/wlan1-setup.service"
+    elif [ "$DRY_RUN" -eq 1 ]; then
+        note "/etc/systemd/system/wlan1-setup.service (poll loop)"
     else
         backup /etc/systemd/system/wlan1-setup.service
         cat > /etc/systemd/system/wlan1-setup.service << 'UNITEOF'
@@ -221,7 +268,7 @@ write_file /etc/cron.d/hostapd-watchdog 644 'PATH=/usr/local/sbin:/usr/local/bin
 */2 * * * * root /usr/local/bin/hostapd-watchdog.sh
 '
 
-# ── 6. Restart only what changed, and verify it came back ─────────────────
+# ── Restart/verify helpers (used by step 7) ───────────────────────────────
 
 # Poll for health rather than checking once after a fixed sleep. hostapd
 # restarting *from a failed state* takes noticeably longer than the ~2 s of a
@@ -263,11 +310,35 @@ rollback() {
     return 1
 }
 
+# ── 6. NetworkManager single-AP leftover ──────────────────────────────────
+# 99-unmanaged-wlan0.conf is the correct file on a single-AP Pi, and dead weight
+# once 99-unmanaged-wlan.conf supersedes it with both interfaces. Only remove it
+# when the replacement is actually present, so this can never un-manage wlan0 on
+# a Pi that still serves F3K_BASE from the onboard radio.
+echo "6. NetworkManager leftovers"
+NM_OLD=/etc/NetworkManager/conf.d/99-unmanaged-wlan0.conf
+NM_NEW=/etc/NetworkManager/conf.d/99-unmanaged-wlan.conf
+if [ -f "$NM_OLD" ] && [ -f "$NM_NEW" ]; then
+    if [ "$DRY_RUN" -eq 0 ]; then
+        backup "$NM_OLD"
+        rm -f "$NM_OLD"
+    fi
+    note "$NM_OLD (superseded by 99-unmanaged-wlan.conf — removed)"
+elif [ -f "$NM_OLD" ]; then
+    skip "$NM_OLD (single-AP Pi — correct, keeping)"
+else
+    skip "no NetworkManager leftovers"
+fi
+
 echo
-echo "6. Service restarts"
+echo "7. Service restarts"
 apply_failed=0
 
-if [ "$hostapd_dirty" -eq 1 ]; then
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo "  (dry run — nothing restarted)"
+fi
+
+if [ "$DRY_RUN" -eq 0 ] && [ "$hostapd_dirty" -eq 1 ]; then
     echo "  restarting hostapd..."
     systemctl restart hostapd
     iface=$(grep -m1 '^interface=' /etc/hostapd/hostapd.conf 2>/dev/null | cut -d= -f2)
@@ -276,11 +347,11 @@ if [ "$hostapd_dirty" -eq 1 ]; then
     else
         rollback hostapd "${HOSTAPD_CONFS[@]}" || apply_failed=1
     fi
-else
+elif [ "$DRY_RUN" -eq 0 ]; then
     echo "  hostapd unchanged — not restarting"
 fi
 
-if [ "$dnsmasq_dirty" -eq 1 ]; then
+if [ "$DRY_RUN" -eq 0 ] && [ "$dnsmasq_dirty" -eq 1 ]; then
     echo "  restarting dnsmasq..."
     systemctl restart dnsmasq
     if wait_for 15 dnsmasq_healthy; then
@@ -288,15 +359,86 @@ if [ "$dnsmasq_dirty" -eq 1 ]; then
     else
         rollback dnsmasq "${DNSMASQ_CONFS[@]}" || apply_failed=1
     fi
-else
+elif [ "$DRY_RUN" -eq 0 ]; then
     echo "  dnsmasq unchanged — not restarting"
 fi
 
-# ── 7. Report ─────────────────────────────────────────────────────────────
+# ── 8. Unmanaged config scan (check mode only) ────────────────────────────
+# Finds F3K-shaped config on the box that no script in the repo owns. This is
+# the check that would have caught disable_usb_sg and the hostapd watchdog: both
+# were applied by hand over SSH, worked, and were never written down — so the
+# next person to run a setup script silently lost them.
+UNMANAGED=()
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo
+    echo "8. Unmanaged config scan"
+    is_managed() {
+        local p=$1 m
+        for m in "${MANAGED_PATHS[@]}"; do [ "$p" = "$m" ] && return 0; done
+        return 1
+    }
+    for dir in "${WATCH_DIRS[@]}"; do
+        [ -d "$dir" ] || continue
+        while IFS= read -r f; do
+            is_managed "$f" && continue
+            # Backup leftovers. Severity depends on whether the daemon actually
+            # reads the whole directory:
+            #   dnsmasq  — CONFIG_DIR=/etc/dnsmasq.d excludes only .dpkg-*, so a
+            #              .bak there IS live config and will fight the real file
+            #              (this took DHCP down on both networks once).
+            #   hostapd  — given explicit file paths in ExecStart, never scans the
+            #              directory, so a .bak is inert clutter.
+            case "$f" in
+                *.bak|*.bak[0-9]|*.save|*.orig|*~)
+                    if [ "$dir" = /etc/dnsmasq.d ]; then
+                        UNMANAGED+=("$f  (STRAY BACKUP — dnsmasq reads this as LIVE CONFIG)")
+                    else
+                        UNMANAGED+=("$f  (leftover backup — harmless, but delete it)")
+                    fi
+                    continue ;;
+            esac
+            # Otherwise only flag things that look like ours, or the conf dirs we
+            # own outright, so OS defaults do not drown the signal.
+            if grep -qiE 'f3k|wlan[01]|hostapd|dnsmasq|mt76|192\.168\.(10|20)\.' "$f" 2>/dev/null \
+               || [ "$dir" = /etc/dnsmasq.d ] || [ "$dir" = /etc/hostapd ] || [ "$dir" = /etc/nftables.d ]; then
+                case "$f" in */README|*/README.*) continue ;; esac
+                UNMANAGED+=("$f")
+            fi
+        done < <(find "$dir" -maxdepth 1 -type f 2>/dev/null)
+    done
+    if [ ${#UNMANAGED[@]} -eq 0 ]; then
+        echo "  [ok]      nothing unmanaged found"
+    else
+        for u in "${UNMANAGED[@]}"; do echo "  [UNMANAGED] $u"; done
+    fi
+fi
+
+# ── 9. Report ─────────────────────────────────────────────────────────────
 echo
 echo "=========================================="
 if [ "$apply_failed" -eq 1 ]; then
     echo " FAILED — config rolled back. Version not recorded."
+    echo "=========================================="
+    exit 1
+fi
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    if [ ${#CHANGES[@]} -eq 0 ] && [ ${#UNMANAGED[@]} -eq 0 ]; then
+        echo " IN SYNC — Pi matches the repo at version $CONFIG_VERSION."
+        echo "=========================================="
+        exit 0
+    fi
+    [ ${#CHANGES[@]} -gt 0 ] && {
+        echo " ${#CHANGES[@]} managed item(s) would change:"
+        for c in "${CHANGES[@]}"; do echo "   - $c"; done
+        echo "   -> the Pi is behind the repo; run without --check to apply."
+    }
+    [ ${#UNMANAGED[@]} -gt 0 ] && {
+        echo " ${#UNMANAGED[@]} unmanaged item(s) on the Pi:"
+        for u in "${UNMANAGED[@]}"; do echo "   - $u"; done
+        echo "   -> if any of these are ours, fold them into apply-system-config.sh"
+        echo "      and bump CONFIG_VERSION, or they will be lost on the next Pi."
+    }
     echo "=========================================="
     exit 1
 fi
