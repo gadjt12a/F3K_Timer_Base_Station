@@ -50,7 +50,8 @@ base_station/
         ├── gliderscore_timer_profiles.json   # 18 timer/audio cue profiles
         └── gliderscore_audio_library.json    # 233-row announcement library
 setup/
-└── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
+├── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
+└── upgrade-to-dual-ap.sh     # Source of truth for the Pi's AP config: hostapd (both SSIDs), dnsmasq, nftables captive portal, wlan0/wlan1 setup services, hostapd watchdog. Rewrites these files wholesale — fix things here, not just over SSH, or the next run reverts them
 docs/
 └── PROTOCOL_ACK.md           # ACK extension spec (session 47): FLIGHT/ALTITUDE/SELECT reply pattern, dedup rules, timer-side pending-queue contract
 tools/
@@ -146,6 +147,11 @@ behind two on-board Wi-Fi APs (`hostapd` + `dnsmasq`):
 
 - **F3K_BASE** (timer network, 192.168.10.0/24, wlan1 — MT7612U USB with external antenna) — handheld timers connect here
 - **F3K_OPS** (operator network, 192.168.20.0/24, wlan0 — built-in) — operator devices connect here; captive portal auto-opens `/run` on connect (dnsmasq resolves all DNS to 192.168.20.1, nftables redirects port 80 → 8080, FastAPI catch-all completes the redirect)
+
+A cron watchdog (`/usr/local/bin/hostapd-watchdog.sh`, every 2 min) probes the hostapd
+control interface and restarts hostapd if the MT7612U wedges while still looking healthy
+to systemd. Both APs set `ctrl_interface=` so the probe has a socket to talk to. Run
+`setup/upgrade-to-dual-ap.sh` to install the whole arrangement on a fresh image.
 
 ## Disciplines
 
