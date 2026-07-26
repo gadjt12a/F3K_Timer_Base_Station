@@ -52,6 +52,8 @@ wpa_passphrase=f3ktimer
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 ap_max_inactivity=1800
+ctrl_interface=/var/run/hostapd
+ctrl_interface_group=0
 EOF
 echo "[OK] /etc/hostapd/hostapd.conf (F3K_BASE on wlan1)"
 
@@ -69,6 +71,8 @@ wpa_passphrase=f3kmanage
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 ap_max_inactivity=1800
+ctrl_interface=/var/run/hostapd
+ctrl_interface_group=0
 EOF
 echo "[OK] /etc/hostapd/hostapd-ops.conf (F3K_OPS on wlan0)"
 
@@ -83,9 +87,12 @@ EOF
 echo "[OK] hostapd override — loading both configs"
 
 # ── 6. dnsmasq — timer network (wlan1) ────────────────────────────────────
+# bind-dynamic, not bind-interfaces: with bind-interfaces a missing wlan1 at
+# startup (USB adapter not yet enumerated) aborts dnsmasq completely, taking
+# DHCP down on the OPS network too. bind-dynamic binds interfaces as they appear.
 cat > /etc/dnsmasq.d/f3k-timer.conf << 'EOF'
 interface=wlan1
-bind-interfaces
+bind-dynamic
 dhcp-range=192.168.10.10,192.168.10.50,255.255.255.0,24h
 dhcp-option=3,192.168.10.1
 EOF
@@ -94,7 +101,7 @@ echo "[OK] /etc/dnsmasq.d/f3k-timer.conf (wlan1)"
 # ── 7. dnsmasq — OPS network (wlan0) ──────────────────────────────────────
 cat > /etc/dnsmasq.d/f3k-ops.conf << 'EOF'
 interface=wlan0
-bind-interfaces
+bind-dynamic
 dhcp-range=192.168.20.10,192.168.20.50,255.255.255.0,24h
 dhcp-option=3,192.168.20.1
 address=/#/192.168.20.1
@@ -136,21 +143,21 @@ EOF
 echo "[OK] wlan0-setup.service (OPS — 192.168.20.1)"
 
 # ── 10. wlan1-setup.service — timer network (192.168.10.1) ───────────────
-# Requires= ensures systemd waits for the MT7612U to enumerate before running
-# the ip commands. Without this, the service fires before the USB adapter is
-# ready on boot and fails with "Cannot find device wlan1".
+# Poll for the interface rather than using Requires=sys-subsystem-net-devices-wlan1.device.
+# The MT7612U is a USB adapter and can take tens of seconds to enumerate; the
+# device unit approach raced it and the service failed outright with "Cannot
+# find device wlan1", leaving hostapd and dnsmasq with no interface to bind.
+# Waiting up to 60s costs boot time but is reliable.
 cat > /etc/systemd/system/wlan1-setup.service << 'EOF'
 [Unit]
 Description=F3K timer network interface setup (wlan1 - MT7612U)
-Requires=sys-subsystem-net-devices-wlan1.device
 Before=hostapd.service dnsmasq.service
-After=sys-subsystem-net-devices-wlan1.device network.target
+After=network.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/sbin/ip link set wlan1 up
-ExecStart=/bin/sh -c '/sbin/ip addr show dev wlan1 | grep -q 192.168.10.1 || /sbin/ip addr add 192.168.10.1/24 dev wlan1'
+ExecStart=/bin/bash -c 'for i in $(seq 1 30); do ip link show wlan1 >/dev/null 2>&1 && break; echo "wlan1-setup: waiting for wlan1 ($i/30)..."; sleep 2; done; ip link set wlan1 up; ip addr show dev wlan1 | grep -q 192.168.10.1 || ip addr add 192.168.10.1/24 dev wlan1; echo "wlan1-setup: wlan1 ready at 192.168.10.1"'
 
 [Install]
 WantedBy=multi-user.target
@@ -166,13 +173,64 @@ EOF
 rm -f /etc/NetworkManager/conf.d/99-unmanaged-wlan0.conf
 echo "[OK] NetworkManager — wlan0 and wlan1 both unmanaged"
 
-# ── 12. Reload systemd and NetworkManager ─────────────────────────────────
+# ── 12. hostapd watchdog — recover a wedged MT7612U ───────────────────────
+# The MT7612U can stop beaconing while hostapd still looks healthy to systemd,
+# so poll the control interface and restart only on a genuine failure.
+#
+# Two things this script gets deliberately right, both learned the hard way:
+#   * /usr/sbin/hostapd_cli by absolute path. cron's built-in PATH is
+#     /usr/bin:/bin, so a bare "hostapd_cli" is not found. Paired with a
+#     2>/dev/null that hid the error, "cannot run the probe" was
+#     indistinguishable from "AP is down" and this restarted a perfectly
+#     healthy AP every 2 minutes, dropping every timer off the air.
+#   * A probe that cannot run is not a failed probe — if the binary is missing
+#     we log and exit rather than restarting. A broken watchdog must never take
+#     down a working AP.
+# It also needs ctrl_interface= in both hostapd configs (steps 3 and 4) —
+# without it no control socket is created and the probe can never succeed.
+cat > /usr/local/bin/hostapd-watchdog.sh << 'EOF'
+#!/bin/bash
+# Restart hostapd only if wlan1 has genuinely stopped serving. See
+# upgrade-to-dual-ap.sh step 12 for why the absolute path matters.
+HOSTAPD_CLI=/usr/sbin/hostapd_cli
+
+if [ ! -x "$HOSTAPD_CLI" ]; then
+    logger "hostapd-watchdog: $HOSTAPD_CLI missing or not executable -- cannot probe, not restarting"
+    exit 1
+fi
+
+# Probe three times before acting: hostapd_cli also fails for a second or two
+# right after a legitimate restart, and one failed probe used to be enough to
+# trigger another one.
+for i in 1 2 3; do
+    err=$("$HOSTAPD_CLI" -i wlan1 status 2>&1 >/tmp/.hostapd-wd-status)
+    if grep -q "^state=ENABLED" /tmp/.hostapd-wd-status; then
+        rm -f /tmp/.hostapd-wd-status
+        exit 0
+    fi
+    sleep 5
+done
+rm -f /tmp/.hostapd-wd-status
+
+# Log the underlying error so a broken probe is distinguishable from a downed
+# AP in the journal, rather than looking like flapping hardware.
+logger "hostapd-watchdog: wlan1 AP not enabled after 3 probes (last error: ${err:-none}), restarting hostapd"
+systemctl restart hostapd
+EOF
+chmod 755 /usr/local/bin/hostapd-watchdog.sh
+cat > /etc/cron.d/hostapd-watchdog << 'EOF'
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/2 * * * * root /usr/local/bin/hostapd-watchdog.sh
+EOF
+echo "[OK] hostapd watchdog (every 2 min via /etc/cron.d/hostapd-watchdog)"
+
+# ── 13. Reload systemd and NetworkManager ─────────────────────────────────
 echo ""
 echo "Reloading systemd and restarting services..."
 systemctl daemon-reload
 systemctl reload NetworkManager
 
-# ── 12a. Reset eth0 to DHCP ───────────────────────────────────────────────
+# ── 13a. Reset eth0 to DHCP ───────────────────────────────────────────────
 ETH_CON=$(nmcli -t -f NAME,DEVICE con show 2>/dev/null | grep ':eth0$' | cut -d: -f1 | head -1)
 if [ -n "$ETH_CON" ]; then
     nmcli con mod "$ETH_CON" ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns "" 2>/dev/null || true
@@ -191,7 +249,7 @@ systemctl restart f3k-server
 
 sleep 3
 
-# ── 13. Status report ─────────────────────────────────────────────────────
+# ── 14. Status report ─────────────────────────────────────────────────────
 echo ""
 echo "=========================================="
 echo " Status"
@@ -209,6 +267,18 @@ echo ""
 echo "Interface addresses:"
 ip -brief addr show wlan0 2>/dev/null || echo "  wlan0: not found"
 ip -brief addr show wlan1 2>/dev/null || echo "  wlan1: not found"
+
+echo ""
+echo "hostapd control interface (what the watchdog probes):"
+# env -i replicates cron's bare environment deliberately — probing from this
+# interactive shell would pass even with the PATH bug that caused the restart loop.
+for IFACE in wlan0 wlan1; do
+    if env -i PATH=/usr/bin:/bin /usr/sbin/hostapd_cli -i "$IFACE" status 2>/dev/null | grep -q "^state=ENABLED"; then
+        echo "  [OK]   $IFACE — state=ENABLED"
+    else
+        echo "  [FAIL] $IFACE — probe failed; watchdog would restart hostapd every 2 min"
+    fi
+done
 
 echo ""
 echo "Health check:"
