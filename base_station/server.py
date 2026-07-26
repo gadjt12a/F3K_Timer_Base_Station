@@ -207,7 +207,12 @@ class F3KServer:
             self._clients[client.timer_id] = client
 
     def remove(self, client: TimerClient):
-        if client.timer_id in self._clients:
+        # Identity check, not just key match: with MAC-sticky IDs a reconnecting
+        # timer reuses the same timer_id, so a freshly-added client can occupy the
+        # slot before the OLD socket's run() loop unwinds. Only delete if the stored
+        # client is still this exact client — otherwise the late-firing cleanup of
+        # the dead socket would evict the live replacement.
+        if self._clients.get(client.timer_id) is client:
             del self._clients[client.timer_id]
 
     def evict_mac(self, mac: str):
