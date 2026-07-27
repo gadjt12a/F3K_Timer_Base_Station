@@ -142,7 +142,7 @@ Task catalogues and digital-timer audio cue schedules are extracted verbatim fro
 GliderScore's own database; the reference data lives in `frontend/data/`.
 
 **Self-contained scoring engine** (making GliderScore optional, not removing it) is
-**implemented** — see `SCORING_ENGINE_PROJECT.md` for scope and status. Existing GliderScore
+**complete** — all phases including printable flight cards. Existing GliderScore
 paths — CSV export, direct DB sync via `F3KSync.exe`, and `.mdb` import — are all retained.
 `frontend/scoring.py` provides native task scoring rules (all F3K tasks A–N/U10/U15 incl.
 variants, all F5K tasks A–E), group normalisation (best = 1000, truncated to 0.1), cumulative
@@ -151,8 +151,11 @@ standings with configurable drop scores and FAI tie-breaking, and the F5K altitu
 reverse-standings snake seeding) via a Draw button on the Rounds page. Scores are computed
 on demand from raw flight data — nothing is persisted, so edits/deletes are always reflected.
 The engine is a discipline-dispatched rule table so future disciplines (F3J, F5J, F3B) can be
-added as plugins. Unit + integration tests in `base_station/tests/` — 82 tests, run with
-`python -m unittest discover -s tests -t .` from `base_station/`.
+added as plugins. Unit + integration tests in `base_station/tests/` — 83 tests, run with
+`python -m unittest discover -s tests -t .` from `base_station/`. The validation suite
+needs `httpx2` — kept in `requirements-dev.txt`, not `requirements.txt`, since the server
+does not need it. `install.sh` installs it non-fatally; without it that suite skips
+cleanly (64 tests) rather than failing the run.
 
 ## Audio
 

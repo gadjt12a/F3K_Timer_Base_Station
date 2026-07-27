@@ -63,6 +63,13 @@ echo "[3/6] Building the virtualenv..."
 "$APP_DIR/venv/bin/pip" install -q --upgrade pip
 "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt"
 
+# Test-only deps, kept out of requirements.txt so that stays an honest answer to
+# "what does the server need?". Non-fatal: without httpx2 the validation suite
+# skips cleanly rather than failing, so a Pi that cannot fetch it is degraded,
+# not broken — and a working install must never fail over a test dependency.
+"$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements-dev.txt" 2>/dev/null \
+    || echo "      (test deps unavailable — the validation suite will skip)"
+
 # ── 4. Carry over an older install ───────────────────────────────────
 # Pre-git deployments kept everything in ~/f3k_base. server.py migrates the DB
 # itself on first start; the rest is moved here so nothing is silently lost.

@@ -1,0 +1,7 @@
+# Test-only dependencies. Deliberately separate from requirements.txt so the
+# runtime dependency list stays an honest answer to "what does the server need?"
+#
+# httpx2 backs fastapi.testclient. Without it tests/test_validation.py skips
+# cleanly (64 tests, OK) rather than failing the discover run — so a Pi that
+# cannot install this is degraded, not broken.
+httpx2
