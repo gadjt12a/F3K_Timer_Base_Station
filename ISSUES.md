@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status: all closed (session 56, 2026-07-27)
 
-21 fixed, 1 WONTFIX ([I-18], which was misfiled — see its entry). [I-22] was
+21 fixed, 1 WONTFIX, 1 open ([I-18], which was misfiled — see its entry). [I-22] was
 reported by the user during the same session and is registered here too. Each fix
 carries its issue ID in a comment at the site, so the reason survives the next
 reader.
@@ -273,6 +273,36 @@ network. Harmless in practice, but it's a surface that need not be there.
 Fixed with `docs_url=None, redoc_url=None, openapi_url=None`. Note the paths still
 answer **200** — the captive-portal catch-all claims every unrouted path — so a
 status check would look like this never landed. The test asserts on the body.
+
+---
+
+### I-23 · Three announcement wavs are missing from GliderScore's set · OPEN
+`base_station/frontend/data/audio/`
+
+Found during the session-57 repo review, while vendoring the audio. Six wavs are
+referenced by `gliderscore_timer_profiles.json` but exist nowhere — not in the repo,
+not in the legacy `~/f3k_base` set they were copied from. Three are in profiles we
+actually run:
+
+| wav | profiles | matters? |
+|---|---|---|
+| `10.wav` | `F5K-5m10m15s`, `F5K-5m4m15s`, `F5K-5m7m15s`, `F5K-15s4m15s` | **yes** — the main F5K profiles |
+| `ToLand.wav` | `F3K-1m3m30s` | **yes** — short-task F3K |
+| `FlyingNotAllowed.wav` | `F3K-1m3m30s` | **yes** — short-task F3K |
+| `5MinsToStart.wav` | `F3B-Duration`, `F3JTimer-5m15m`, `F5JTimer-7m15m` | no — disciplines we don't run |
+| `WorkingTimeIn-5secs.wav` | `F3B-Speed` | no |
+| `1001 Count down with bells.wav` | `GliderTimerSpecial` | no |
+
+`10.wav` is probably harmless in practice: `audio.py` substitutes an 880 Hz beep for
+the per-second voice files in the last 10 s of prep, so the cue likely never reaches
+playback as a wav. `ToLand`/`FlyingNotAllowed` have no such substitution.
+
+A missing wav is **silent, not an error** — it logs `[AUDIO] missing wav: …` and
+skips. That is exactly how the whole audio set went missing unnoticed for eight
+sessions, so this is recorded rather than left to be rediscovered at a competition.
+
+**Fix:** source the three from a GliderScore install (they are in its audio library)
+and drop them into `frontend/data/audio/`. Nothing in the code needs to change.
 
 ---
 
