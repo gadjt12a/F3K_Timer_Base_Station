@@ -21,12 +21,14 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ---
 
-## Status: all closed (session 56, 2026-07-27)
+## Status (session 57, 2026-07-27)
 
-21 fixed, 1 WONTFIX, 1 open ([I-18], which was misfiled — see its entry). [I-22] was
-reported by the user during the same session and is registered here too. Each fix
-carries its issue ID in a comment at the site, so the reason survives the next
-reader.
+**21 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 1 open ([I-23]).**
+
+Everything the session-55 audit raised is closed. [I-22] was reported by the user
+and [I-23] found during the session-57 repo review; both are registered here rather
+than tracked separately. Each fix carries its issue ID in a comment at the site, so
+the reason survives the next reader.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
