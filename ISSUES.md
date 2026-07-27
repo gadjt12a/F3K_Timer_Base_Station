@@ -99,24 +99,19 @@ duration against `rounds.working_time_s`.
 Fixed by rejecting, not warning (`_duration_fits_round`); a warning on the Run page
 during a live round is a warning nobody reads.
 
-**Rule-checked (session 56) against FAI Sporting Code 4 Vol. F3, 5.7.7:** "The
-flight time is measured from the moment the model glider leaves the hands of the
-competitor ... until a landing of the model glider as defined in 5.7.6. **or the
-working time expires**." Whichever comes first — so the working time is the correct
-ceiling and a recorded time above it is always a mis-key.
+Rule-checked (session 56) against FAI SC4 Vol. F3 **5.7.7** — timing stops at a
+landing *or the expiry of working time*, whichever comes first. Working time is the
+correct ceiling; the implementation was already right.
 
-⚠ **Do not add the landing window to this ceiling.** It looks like you should: a
-glider is plainly still flying after the horn. But 5.7.9.3 is about *validity*, not
-duration — a glider still airborne when working time ends has 30 s to land or the
-flight scores **0**. The clock stopped at working-time expiry; the landing window
-does not extend the timed flight. This was raised as a likely bug and checked
-against the primary source; the implementation was correct.
+⚠ **Do not add the landing window to this ceiling.** 5.7.9.3 is about *validity*,
+not duration. This is an inviting mistake — see the code comment on
+`_duration_fits_round`.
 
-Two caveats: the check gates **manual CD entry only** — the timer's own
-`record_flight()` is not subject to it, so signal latency at the STOP boundary can
-still land a few ms over without being refused. And the clause above is from
-Volume F3, which does not cover **F5K**; F5K is treated identically here on the
-GliderScore model, but that half is not primary-source confirmed.
+Caveats: the check gates **manual CD entry only**, and Volume F3 has no F5K section,
+so the F5K half is not primary-source confirmed.
+
+Clause text and the fetchable rules mirror are in the local research notes
+(`Spec_Sheet_URLS.md` in the timer repo), not here.
 
 ---
 

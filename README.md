@@ -84,11 +84,6 @@ Two conventions came out of that pass and are worth keeping:
   refuses to submit a form whose invalid control it cannot focus — no request, no
   error ([I-22]). Bind both from one predicate so they can't drift.
 
-Flight-time ceilings follow FAI Sporting Code 4 Vol. F3 **5.7.7**: timing stops at a
-landing *or the expiry of working time*, whichever comes first. The 30 s landing
-window (5.7.9.3) governs whether a flight counts at all, not how long it can be —
-don't add it to a duration ceiling.
-
 ## Web UI
 
 | Route | Purpose |

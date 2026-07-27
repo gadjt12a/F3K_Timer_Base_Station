@@ -178,18 +178,14 @@ def _working_time_ms(db, group_id: int) -> int | None:
 def _duration_fits_round(db, group_id: int, dur_ms: int) -> str | None:
     """Error message if the flight is longer than its round's working time. [I-04]
 
-    The ceiling is the working time itself, per FAI Sporting Code 4 Vol. F3,
-    **5.7.7**: "The flight time is measured from the moment the model glider
-    leaves the hands of the competitor ... until a landing of the model glider as
-    defined in 5.7.6. *or the working time expires*." Whichever comes first — so
-    a recorded flight time can never legitimately exceed the window.
+    The ceiling is the working time itself: FAI SC4 Vol. F3 5.7.7 stops the clock
+    at a landing *or the expiry of working time*, whichever comes first.
 
-    DO NOT add the landing window to this ceiling. 5.7.9.3 is a separate rule
-    about validity, not duration: a glider still airborne when the window closes
-    has 30 s to land or the flight scores **0**. The clock has already stopped at
-    working-time expiry; the landing window does not extend the timed flight.
-    (Applies to manual CD entry only — the timer's own `record_flight()` path is
-    not gated on this.)
+    DO NOT add the landing window to this ceiling. It looks like you should — a
+    glider is plainly still flying after the horn — but 5.7.9.3 is a validity
+    rule, not a duration one: land later than the 30 s window and the flight
+    scores 0. The clock already stopped. (Manual CD entry only; the timer's own
+    record_flight() is not gated on this.)
     """
     wt_ms = _working_time_ms(db, group_id)
     if wt_ms and dur_ms > wt_ms:
