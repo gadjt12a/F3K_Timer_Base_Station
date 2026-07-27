@@ -17,8 +17,10 @@ A single asyncio process runs two servers in one event loop:
   COUNT / FLIGHT / JUMPED / ALTITUDE). Timers run the prep and landing countdowns locally
   from `PREP t=` / `LAND t=`; COUNT re-syncs the last 10s of prep. JUMPED (launch before
   the start horn) is surfaced to the CD only — never recorded. FLIGHT, JUMPED, ALTITUDE,
-  and SELECT are acknowledged (`ACK <line>`) so the timer can retransmit unACKed messages
-  on reconnect; see `docs/PROTOCOL_ACK.md`.
+  and SELECT are acknowledged (`ACK <line>`) — **always**, including duplicates and
+  messages the base deliberately discards. The timer holds each one until ACKed, so a
+  withheld ACK is an unbreakable retry loop rather than a lost message: `ACK` means
+  "received and decided", not "stored". See `docs/PROTOCOL_ACK.md`.
 - **Web app** (`frontend/app.py`, FastAPI + uvicorn, port 8080) — operator UI plus a
   WebSocket stream of live timing and flight events.
 
@@ -59,18 +61,18 @@ setup/
 .githooks/
 └── pre-commit                # Blocks a commit that changes apply-system-config.sh without bumping CONFIG_VERSION; warns on live Pi drift. Enable with `git config core.hooksPath .githooks`
 docs/
-└── PROTOCOL_ACK.md           # ACK extension spec (session 47): FLIGHT/ALTITUDE/SELECT reply pattern, dedup rules, timer-side pending-queue contract
+└── PROTOCOL_ACK.md           # ACK extension spec: unconditional-ACK rule, dedup, and the timer's ACK-gated pending queue (implemented fw-v16)
 tools/
 ├── gs_sync.py                # Windows bridge: GUI + CLI; fetches JSON from base station → writes scored results direct to GliderScore .mdb (ACE OLEDB via 32-bit PS)
 └── build_exe.ps1             # PyInstaller build script → dist/F3KSync.exe (deploy to Pi for CD download)
 ISSUES.md                     # Known-defects register: stable IDs (I-01…), priority, file:line, status. Cite the ID in the commit that fixes it
 base_station/tests/
-└── test_validation.py        # Locks down the ISSUES.md register: input validation + run-control state guards, driven through TestClient
+├── test_validation.py        # Locks down the ISSUES.md register: input validation + run-control state guards, driven through TestClient
+└── test_protocol.py          # The ACK contract the timer's retry depends on — verbatim echo, all four retried types, no-pilot and duplicate messages
 ```
 
-Known defects live in `ISSUES.md`. The session-55 audit raised 21; all are closed
-as of session 56 (20 fixed, 1 WONTFIX), each fix carrying its issue ID in a comment
-at the site. The register also records what was *checked and found sound*, so the
+Known defects live in `ISSUES.md`: **22 fixed, 1 WONTFIX, 0 open**, each fix carrying
+its issue ID in a comment at the site. The register also records what was *checked and found sound*, so the
 same ground isn't re-covered, and what the audit did **not** touch (anything visual,
 audio timing, the timer protocol, real hardware) — none of which is cleared.
 
@@ -151,7 +153,7 @@ standings with configurable drop scores and FAI tie-breaking, and the F5K altitu
 reverse-standings snake seeding) via a Draw button on the Rounds page. Scores are computed
 on demand from raw flight data — nothing is persisted, so edits/deletes are always reflected.
 The engine is a discipline-dispatched rule table so future disciplines (F3J, F5J, F3B) can be
-added as plugins. Unit + integration tests in `base_station/tests/` — 83 tests, run with
+added as plugins. Unit + integration tests in `base_station/tests/` — 88 tests, run with
 `python -m unittest discover -s tests -t .` from `base_station/`. The validation suite
 needs `httpx2` — kept in `requirements-dev.txt`, not `requirements.txt`, since the server
 does not need it. `install.sh` installs it non-fatally; without it that suite skips
