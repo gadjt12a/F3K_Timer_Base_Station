@@ -60,7 +60,13 @@ docs/
 tools/
 ├── gs_sync.py                # Windows bridge: GUI + CLI; fetches JSON from base station → writes scored results direct to GliderScore .mdb (ACE OLEDB via 32-bit PS)
 └── build_exe.ps1             # PyInstaller build script → dist/F3KSync.exe (deploy to Pi for CD download)
+ISSUES.md                     # Known-defects register: stable IDs (I-01…), priority, file:line, status. Cite the ID in the commit that fixes it
 ```
+
+Known defects live in `ISSUES.md`, worked through over time rather than in one pass.
+It also records what was *checked and found sound*, so the same ground isn't
+re-covered, and what the audit did **not** touch (anything visual, audio timing,
+the timer protocol, real hardware) — none of which is cleared.
 
 ## Web UI
 
