@@ -45,7 +45,10 @@ class CompetitionStateMachine:
             } if d else None,
         }
 
-    async def load_heat(self, round_id: int, group_id: int) -> None:
+    async def load_heat(self, round_id: int, group_id: int) -> bool:
+        """Load a heat ready to run. Returns False (and changes nothing) if the
+        heat doesn't exist. Callers must refuse to call this outside IDLE — see
+        the state guard in ``/api/run/load``. [I-01]"""
         db = self._server.db
         rnd = db.execute(
             """SELECT r.*, c.name AS comp_name,
@@ -57,12 +60,12 @@ class CompetitionStateMachine:
         ).fetchone()
         if not rnd:
             log.warning("load_heat: round_id=%d not found", round_id)
-            return
+            return False
 
         grp = db.execute("SELECT * FROM groups WHERE id = ?", (group_id,)).fetchone()
         if not grp:
             log.warning("load_heat: group_id=%d not found", group_id)
-            return
+            return False
 
         real_pilots = db.execute(
             """SELECT p.id, p.name FROM pilots p
@@ -102,15 +105,19 @@ class CompetitionStateMachine:
             "Heat loaded: round=%d heat=%s pilots=%s",
             rnd["round_no"], heat_letter, pilot_names,
         )
+        return True
 
-    async def start(self) -> None:
+    async def start(self) -> tuple[bool, str]:
+        """Begin the prep→working→landing sequence. Returns (ok, reason) so the
+        API can report a refusal instead of always claiming success. [I-10]"""
         if self._state != "IDLE":
             log.warning("start() called but state=%s (expected IDLE)", self._state)
-            return
+            return False, f"A heat is already running ({self._state})"
         if not self._loaded:
             log.warning("start() called but no heat loaded")
-            return
+            return False, "No heat loaded"
         self._task = asyncio.create_task(self._run_sequence_safe())
+        return True, ""
 
     def skip_prep_to(self, seconds: int) -> bool:
         """CD control: during PREP, jump the countdown to ``seconds`` remaining

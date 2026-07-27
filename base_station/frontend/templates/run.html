@@ -71,7 +71,23 @@ function runner(initialState) {
             this.loadTimers();
             setInterval(() => this.loadTimers(), 3000);
             setInterval(() => this._tickLocal(), 50);
+            // `state` must never be solely websocket-derived. When the socket is
+            // down it froze at whatever it last saw — usually IDLE — which left
+            // ABORT permanently disabled with a round actually running. [I-13]
+            setInterval(() => this.pollState(), 3000);
             this.connectSafe();
+        },
+
+        async pollState() {
+            // Only while the live link is down: the tick stream is authoritative
+            // and far finer-grained, so polling over the top of it would fight it.
+            if (this.wsOk) return;
+            try {
+                const s = await (await fetch('/api/run/state')).json();
+                this.state = s.state;
+                this.loaded = s.loaded;
+                this.loadedGroupId = (s.loaded && s.loaded.group_id) || null;
+            } catch (e) {}
         },
 
         connectSafe() {
@@ -246,6 +262,14 @@ function runner(initialState) {
             const r = await fetch(`/api/run/load?round_id=${roundId}&group_id=${groupId}`,
                                   {method:'POST'});
             const data = await r.json();
+            // The server refuses to swap heats mid-round (409). Take its word for
+            // the state rather than the local flag — this path is reached exactly
+            // when the local flag was wrong. [I-01]
+            if (!data.ok) {
+                if (data.status) { this.state = data.status.state; this.loaded = data.status.loaded; }
+                alert(data.error || 'Could not load that heat');
+                return;
+            }
             this.loaded = data.status.loaded;
             this.loadedGroupId = groupId;
             this.secondsRemaining = 0;
@@ -322,7 +346,8 @@ function runner(initialState) {
             if (missing.length &&
                 !confirm('No timer registered for:\n  • ' + missing.join('\n  • ') +
                          '\n\nStart the heat anyway?')) return;
-            await fetch('/api/run/start', {method:'POST'});
+            const r = await (await fetch('/api/run/start', {method:'POST'})).json();
+            if (!r.ok) alert(r.error || 'Could not start the heat');   // [I-10]
         },
         async abortHeat() {
             // One misclick here would kill the round for the whole group

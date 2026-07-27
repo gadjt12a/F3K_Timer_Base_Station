@@ -4,6 +4,10 @@ __pycache__/
 *.pyd
 *.db
 *.db-journal
+# Written into base_station/ by /import/upload. A real GliderScore upload holds
+# competitor data and is easy to commit by accident. [I-20]
+gs_upload.mdb
+*.mdb
 venv/
 .venv/
 *.egg-info/

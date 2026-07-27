@@ -96,29 +96,34 @@
                            class="w-full bg-gray-600 rounded px-2 py-1 text-sm text-white">
                 </div>
                 <div class="w-full text-xs text-gray-500 -mb-1" x-text="'Rule: ' + form.kind"></div>
-                <div x-show="['last_n','best_n','first_n','poker'].includes(form.kind)">
+                <div x-show="shows('n')">
                     <label class="block text-xs text-gray-400 mb-1">Flights that count (N)</label>
                     <input name="n" type="number" min="1" max="10" x-model.number="form.n"
+                           :disabled="!shows('n')"
                            class="w-16 bg-gray-600 rounded px-2 py-1 text-sm text-white">
                 </div>
-                <div x-show="!['poker','targets','sequence'].includes(form.kind)">
+                <div x-show="shows('cap_s')">
                     <label class="block text-xs text-gray-400 mb-1" title="M:SS (or plain seconds); empty = no cap">Per-flight cap (M:SS)</label>
                     <input name="cap_s" x-model="form.cap_s" placeholder="3:00"
+                           :disabled="!shows('cap_s')"
                            class="w-16 bg-gray-600 rounded px-2 py-1 text-sm text-white font-mono">
                 </div>
-                <div x-show="['targets','sequence'].includes(form.kind)" class="min-w-[12rem]">
+                <div x-show="shows('targets')" class="min-w-[12rem]">
                     <label class="block text-xs text-gray-400 mb-1" title="Comma-separated M:SS (or plain seconds)">Targets (M:SS)</label>
                     <input name="targets" x-model="form.targets" placeholder="1:00, 2:00, 3:00"
+                           :disabled="!shows('targets')"
                            class="w-full bg-gray-600 rounded px-2 py-1 text-sm text-white font-mono">
                 </div>
-                <div x-show="form.kind === 'ladder'">
+                <div x-show="shows('ladder')">
                     <label class="block text-xs text-gray-400 mb-1">First target</label>
                     <input name="start_s" x-model="form.start_s" placeholder="0:30"
+                           :disabled="!shows('ladder')"
                            class="w-16 bg-gray-600 rounded px-2 py-1 text-sm text-white font-mono">
                 </div>
-                <div x-show="form.kind === 'ladder'">
+                <div x-show="shows('ladder')">
                     <label class="block text-xs text-gray-400 mb-1">Step when reached</label>
                     <input name="step_s" x-model="form.step_s" placeholder="0:15"
+                           :disabled="!shows('ladder')"
                            class="w-16 bg-gray-600 rounded px-2 py-1 text-sm text-white font-mono">
                 </div>
                 <div>
@@ -288,19 +293,56 @@
                         </label>
                     </div>
 
-                    <!-- Task selection (cycled across rounds; editable per round in preview) -->
+                    <!-- Task selection. Order is explicit and editable below; still
+                         adjustable per round in the preview. -->
                     <div class="mb-3">
-                        <label class="block text-xs text-gray-400 mb-1">Tasks to use (cycled in order; adjust per round after preview)</label>
+                        <label class="block text-xs text-gray-400 mb-1">Tasks to use — click to add, then set the order below</label>
                         <div class="flex flex-wrap gap-1.5">
                             <template x-for="t in taskChoices()" :key="t.key">
                                 <label class="flex items-center gap-1 rounded px-2 py-0.5 text-xs cursor-pointer"
                                        :class="selTasks.includes(t.key) ? 'bg-yellow-700/60 text-yellow-100' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'">
                                     <input type="checkbox" class="hidden" :value="t.key"
                                            @change="toggleTask(t.key)">
+                                    <span x-show="taskIndex(t.key) >= 0"
+                                          class="font-mono font-bold text-yellow-300"
+                                          x-text="taskIndex(t.key) + 1"></span>
                                     <span x-text="t.label"></span>
                                 </label>
                             </template>
                         </div>
+
+                        <template x-if="selTasks.length">
+                            <div class="mt-2.5">
+                                <div class="flex items-center gap-4 mb-1.5">
+                                    <span class="text-xs text-gray-400">Round order</span>
+                                    <label class="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                                        <input type="radio" value="sequence" x-model="taskOrder" class="accent-yellow-400">
+                                        In the order below
+                                    </label>
+                                    <label class="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                                        <input type="radio" value="random" x-model="taskOrder" class="accent-yellow-400">
+                                        Random
+                                    </label>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <template x-for="(key, i) in selTasks" :key="key">
+                                        <div class="flex items-center gap-1.5 bg-gray-700 rounded px-2 py-0.5 text-xs">
+                                            <span class="font-mono text-gray-500" x-text="(i + 1) + '.'"></span>
+                                            <span class="text-gray-200" x-text="taskLabel(key)"></span>
+                                            <button type="button" @click="moveTask(i, -1)" :disabled="i === 0"
+                                                    class="text-gray-400 hover:text-yellow-400 disabled:opacity-25 disabled:hover:text-gray-400"
+                                                    title="Move earlier">↑</button>
+                                            <button type="button" @click="moveTask(i, 1)" :disabled="i === selTasks.length - 1"
+                                                    class="text-gray-400 hover:text-yellow-400 disabled:opacity-25 disabled:hover:text-gray-400"
+                                                    title="Move later">↓</button>
+                                            <button type="button" @click="toggleTask(key)"
+                                                    class="text-red-400 hover:text-red-300" title="Remove">✕</button>
+                                        </div>
+                                    </template>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1.5" x-text="orderHint()"></p>
+                            </div>
+                        </template>
                     </div>
 
                     <div class="flex gap-2 mb-3">
@@ -581,6 +623,25 @@ function customTasks() {
 
         baseTasks() { return Object.keys(DRAW_TASKS[this.disc] || {}); },
 
+        // Which fields apply to the current rule kind. Bound to BOTH x-show and
+        // :disabled — hiding alone was a silent trap. `n` carries min="1", and
+        // ladder/targets/sequence tasks (F3K D, H, K, M; F5K A, D) clone with
+        // n=0, so the browser refused to submit a form whose only invalid control
+        // was display:none and therefore unfocusable. Save did nothing at all: no
+        // request, no message, just a console warning nobody was looking at.
+        // A disabled control is skipped by validation and by submission, and the
+        // server's Form() defaults cover the fields that don't apply.
+        shows(field) {
+            const k = this.form ? this.form.kind : '';
+            switch (field) {
+                case 'n':       return ['last_n', 'best_n', 'first_n', 'poker'].includes(k);
+                case 'cap_s':   return !['poker', 'targets', 'sequence'].includes(k);
+                case 'targets': return ['targets', 'sequence'].includes(k);
+                case 'ladder':  return k === 'ladder';
+                default:        return true;
+            }
+        },
+
         // Seconds -> "M:SS" for the form (the server accepts M:SS or seconds)
         fmtS(s) {
             if (!s) return '';
@@ -638,6 +699,7 @@ function drawWizard(compId, discipline) {
         startRound: 1,
         avoidB2B: true,
         selTasks: [],
+        taskOrder: 'sequence',   // 'sequence' = use the list order, 'random' = shuffle
         plan: null,
         stats: null,
         busy: false,
@@ -673,14 +735,71 @@ function drawWizard(compId, discipline) {
             if (i >= 0) this.selTasks.splice(i, 1); else this.selTasks.push(key);
         },
 
+        // selTasks is an ordered list, not a set — position drives which round gets
+        // which task, so it has to be visible and editable rather than an accident
+        // of the order the CD happened to click the chips.
+        taskIndex(key) { return this.selTasks.indexOf(key); },
+
+        moveTask(i, dir) {
+            const j = i + dir;
+            if (j < 0 || j >= this.selTasks.length) return;
+            const s = this.selTasks;
+            [s[i], s[j]] = [s[j], s[i]];
+            this.selTasks = [...s];          // reassign so Alpine sees the change
+        },
+
+        taskLabel(key) {
+            const t = this.taskChoices().find(c => c.key === key);
+            return t ? t.label : key;
+        },
+
         firstTask(d) { return Object.keys(DRAW_TASKS[d] || {})[0] || 'A'; },
 
-        taskForRound(i) {
-            // Cycle the selected tasks in order; sensible default if none picked
+        // The task for each round, as a list of {discipline, task} of length n.
+        buildTaskSequence(n) {
             const defDisc = discipline === 'MIXED' ? 'F3K' : discipline;
-            if (!this.selTasks.length) return { discipline: defDisc, task: this.firstTask(defDisc) };
-            const [d, t] = this.selTasks[i % this.selTasks.length].split(':');
-            return { discipline: d, task: t };
+            const parse = (k) => { const [d, t] = k.split(':'); return { discipline: d, task: t }; };
+            if (!this.selTasks.length) {
+                return Array.from({ length: n },
+                                  () => ({ discipline: defDisc, task: this.firstTask(defDisc) }));
+            }
+            // Cycle first even in random mode, so each selected task is used a
+            // near-equal number of times. Picking independently at random per round
+            // can hand out the same task four rounds running and skip another
+            // entirely — which is not what anyone means by "randomise the tasks".
+            const seq = Array.from({ length: n },
+                                   (_, i) => this.selTasks[i % this.selTasks.length]);
+            if (this.taskOrder === 'random') {
+                const shuffle = (a) => {
+                    for (let i = a.length - 1; i > 0; i--) {        // Fisher–Yates
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [a[i], a[j]] = [a[j], a[i]];
+                    }
+                    return a;
+                };
+                const clean = (a) => a.every((v, i) => i === 0 || v !== a[i - 1]);
+                // Reject-and-retry rather than shuffle-then-patch. Patching up
+                // adjacent repeats after the fact biases the result and still left
+                // ~6% of them in; re-rolling keeps the draw uniform over the
+                // arrangements that have none. Some selections have no valid
+                // arrangement at all (one task, or 4×A and 1×B over 5 rounds), so
+                // the cap matters — fall back to the last shuffle rather than spin.
+                let best = shuffle(seq.slice());
+                for (let n = 0; n < 200 && !clean(best); n++) best = shuffle(seq.slice());
+                return best.map(parse);
+            }
+            return seq.map(parse);
+        },
+
+        orderHint() {
+            if (this.taskOrder === 'random') {
+                return 'Tasks are shuffled across the rounds — each used about equally, '
+                     + 'avoiding the same task twice running where the selection allows. '
+                     + 'Re-shuffle re-rolls them.';
+            }
+            const seq = this.buildTaskSequence(this.numRounds);
+            return 'Rounds ' + this.startRound + '–' + (this.startRound + this.numRounds - 1)
+                 + ': ' + seq.map(t => t.task).join(', ');
         },
 
         async generate() {
@@ -700,11 +819,16 @@ function drawWizard(compId, discipline) {
                 })).json();
                 if (!r.ok) { this.error = r.error; this.plan = null; return; }
                 this.stats = r.stats;
-                const keepTasks = this.plan && this.plan.length === r.rounds.length;
+                // In sequence mode a re-shuffle is about the pilot groups, so any
+                // per-round task edits the CD made are preserved. In random mode
+                // "Re-shuffle" is taken at its word and the tasks re-roll too —
+                // otherwise the first roll would be the only one you ever get.
+                const keepTasks = this.taskOrder === 'sequence'
+                               && this.plan && this.plan.length === r.rounds.length;
+                const seq = this.buildTaskSequence(r.rounds.length);
                 this.plan = r.rounds.map((groups, i) => {
-                    // Re-shuffle keeps any per-round task edits; fresh preview cycles the selection
                     const prev = keepTasks ? this.plan[i] : null;
-                    const t = prev ? { discipline: prev.discipline, task: prev.task } : this.taskForRound(i);
+                    const t = prev ? { discipline: prev.discipline, task: prev.task } : seq[i];
                     const info = (DRAW_TASKS[t.discipline] || {})[t.task] || {};
                     const wt = prev ? prev.wt_min : (info.wt_min || 10);
                     return { discipline: t.discipline, task: t.task, wt_min: wt, groups };

@@ -15,6 +15,14 @@ from frontend.app import app as web_app
 from frontend.db import init_db
 from frontend.state_machine import CompetitionStateMachine
 
+# The Pi's console is UTF-8, but a Windows console defaults to cp1252 and every
+# arrow, bullet and em dash in our startup output and log lines then raises
+# UnicodeEncodeError — the server dies before it binds. Force UTF-8 so the same
+# code runs on a dev box as on the field unit. [I-14]
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "f3k.db")
 _LEGACY_DB = os.path.expanduser("~/f3k_base/f3k.db")
 if not os.path.exists(DB_PATH) and os.path.exists(_LEGACY_DB):

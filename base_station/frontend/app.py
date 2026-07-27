@@ -2,6 +2,7 @@ import csv
 import datetime
 import io
 import json
+import logging
 import os
 import re
 import tempfile
@@ -9,7 +10,8 @@ import urllib.parse
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -41,10 +43,39 @@ class ConnectionManager:
             self.disconnect(ws)
 
 
+log = logging.getLogger("f3k")
+
 manager = ConnectionManager()
 
-app = FastAPI(title="Glide Base")
+# Interactive API docs are off: this app is served on the public OPS AP that every
+# pilot at the field joins, and /docs is a ready-made console for POSTing to the
+# run-control endpoints mid-competition. Nothing here consumes the schema. [I-21]
+app = FastAPI(title="Glide Base", docs_url=None, redoc_url=None, openapi_url=None)
 app.state.ws_manager = manager
+
+
+@app.exception_handler(RequestValidationError)
+async def _on_validation_error(request: Request, exc: RequestValidationError):
+    """Missing/invalid form fields must not dump raw JSON at the CD. [I-12]
+
+    Clicking Assign with no pilots ticked used to render
+    `{"detail":[{"type":"missing"...}]}` as a bare page. Browser form posts go
+    back where they came from with a readable message; fetch() callers still get
+    JSON, since that's what their error paths already expect.
+    """
+    fields = ", ".join(
+        str(err["loc"][-1]) for err in exc.errors() if err.get("loc")) or "input"
+    msg = f"Missing or invalid: {fields}"
+    accepts_html = "text/html" in request.headers.get("accept", "")
+    if request.method == "POST" and accepts_html:
+        base = (request.headers.get("referer") or "/").split("?")[0]
+        # Pages surface their banner under different names — /setup reads `msg`,
+        # /rounds and /results read `error`. Sending both means one handler works
+        # for every form on the site without a per-page lookup table.
+        q = urllib.parse.urlencode({"error": msg, "msg": msg})
+        return RedirectResponse(f"{base}?{q}", status_code=303)
+    return JSONResponse({"ok": False, "error": msg, "detail": exc.errors()},
+                        status_code=422)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # Tailwind + Alpine are vendored — the field networks have no internet, so CDN
 # scripts would leave every page unstyled and dead on an uncached device.
@@ -55,9 +86,12 @@ def _fmt_date(value: str) -> str:
     """YYYY-MM-DD → 22 Jul 2026; passes through anything that doesn't parse."""
     try:
         d = datetime.date.fromisoformat(str(value))
-        return d.strftime("%-d %b %Y")
-    except Exception:
+    except (TypeError, ValueError):
         return str(value) if value else ""
+    # Built by hand rather than with strftime("%-d") — that flag is glibc-only, so
+    # on Windows it raises and the bare except used to hide it, silently returning
+    # raw ISO dates instead of failing loudly. [I-15]
+    return f"{d.day} {d.strftime('%b %Y')}"
 
 
 templates.env.filters["fmt_date"] = _fmt_date
@@ -78,6 +112,16 @@ def _gs_time(ms: int) -> str:
     return f"{total_s // 60}{total_s % 60:02d}.{millis:03d}"
 
 
+# A flight is a hand-launched glider in a working window that is never longer than
+# 30 minutes, and motor-cut heights are tens of metres. These ceilings exist to turn
+# a CD's typo into an error rather than into plausible-looking data. [I-02] [I-03]
+MAX_DURATION_MS = 60 * 60 * 1000     # 1 hour — well past any real working window
+MAX_ALTITUDE_M = 1000.0              # F5K motor-cut heights are 30–100 m
+
+DURATION_HELP = "Invalid time — use M:SS or M:SS.HH (e.g. 3:00 or 3:00.55)"
+ALTITUDE_HELP = f"Invalid altitude — enter metres between 0 and {MAX_ALTITUDE_M:.0f}"
+
+
 def _parse_duration(s: str) -> int:
     """Parse 'M:SS' or 'M:SS.HH' to milliseconds. Raises ValueError on bad input."""
     s = s.strip()
@@ -89,10 +133,70 @@ def _parse_duration(s: str) -> int:
         centis = frac.ljust(2, '0')[:2]
     else:
         sec, centis = rest, '00'
-    total_ms = (int(m) * 60 + int(sec)) * 1000 + int(centis) * 10
+    mins, secs, cs = int(m), int(sec), int(centis)
+    # Without this, '1:99' parses as 2:39 — a wrong time that looks entirely
+    # plausible on the results page and is never questioned again. [I-02]
+    if not 0 <= secs < 60:
+        raise ValueError("Seconds must be 0–59")
+    if mins < 0 or cs < 0:
+        raise ValueError("Duration must be positive")
+    total_ms = (mins * 60 + secs) * 1000 + cs * 10
     if total_ms <= 0:
         raise ValueError("Duration must be positive")
+    if total_ms > MAX_DURATION_MS:
+        raise ValueError("Duration is longer than any working window")
     return total_ms
+
+
+def _parse_altitude(s) -> float | None:
+    """Parse an altitude field to metres, or None if blank. Raises ValueError.
+
+    Guards the whole float domain, not just non-numeric text: 'inf' and '1e400'
+    store as inf and poison F5K bonus scoring, and 'nan' is coerced to NULL by
+    SQLite, silently discarding the entry. [I-03]
+    """
+    if s is None or not str(s).strip():
+        return None
+    alt = float(str(s).strip())          # ValueError on anything non-numeric
+    if alt != alt or alt in (float("inf"), float("-inf")):
+        raise ValueError("Altitude must be a finite number")
+    if not 0 <= alt <= MAX_ALTITUDE_M:
+        raise ValueError(f"Altitude must be between 0 and {MAX_ALTITUDE_M:.0f} m")
+    return alt
+
+
+def _working_time_ms(db, group_id: int) -> int | None:
+    """The working window of the round this group belongs to, in ms."""
+    row = db.execute(
+        "SELECT r.working_time_s FROM groups g JOIN rounds r ON r.id = g.round_id"
+        " WHERE g.id = ?", (group_id,)).fetchone()
+    if row is None or row["working_time_s"] is None:
+        return None
+    return int(row["working_time_s"]) * 1000
+
+
+def _duration_fits_round(db, group_id: int, dur_ms: int) -> str | None:
+    """Error message if the flight is longer than its round's working time. [I-04]
+
+    The ceiling is the working time itself, per FAI Sporting Code 4 Vol. F3,
+    **5.7.7**: "The flight time is measured from the moment the model glider
+    leaves the hands of the competitor ... until a landing of the model glider as
+    defined in 5.7.6. *or the working time expires*." Whichever comes first — so
+    a recorded flight time can never legitimately exceed the window.
+
+    DO NOT add the landing window to this ceiling. 5.7.9.3 is a separate rule
+    about validity, not duration: a glider still airborne when the window closes
+    has 30 s to land or the flight scores **0**. The clock has already stopped at
+    working-time expiry; the landing window does not extend the timed flight.
+    (Applies to manual CD entry only — the timer's own `record_flight()` path is
+    not gated on this.)
+    """
+    wt_ms = _working_time_ms(db, group_id)
+    if wt_ms and dur_ms > wt_ms:
+        return (f"Flight time {_fmt_ms(dur_ms)} is longer than the round's "
+                f"working time ({_fmt_ms(wt_ms)}) — timing stops at the end of "
+                f"working time (FAI 5.7.7)")
+    return None
 
 
 templates.env.filters["fmt_ms"] = _fmt_ms
@@ -166,6 +270,9 @@ async def setup_get(request: Request, msg: str = None):
     })
 
 
+DISCIPLINES = ("F3K", "F5K", "MIXED")   # must match the CHECK constraint in db.py
+
+
 @app.post("/setup/competition/new")
 async def competition_new(
     name: str = Form(...),
@@ -181,7 +288,22 @@ async def competition_new(
     count_last_s: int = Form(15),
 ):
     db = _db()
-    comp_no = int(gliderscore_comp_no) if gliderscore_comp_no.strip() else None
+    # The DB has a CHECK on discipline, so anything else arrived as a raw
+    # "CHECK constraint failed" 500 rather than a message. [I-08]
+    if discipline not in DISCIPLINES:
+        return RedirectResponse(
+            f"/setup?msg={urllib.parse.quote('Discipline must be F3K, F5K or MIXED')}",
+            status_code=303)
+    if not name.strip():
+        return RedirectResponse(
+            f"/setup?msg={urllib.parse.quote('Competition name cannot be empty')}",
+            status_code=303)
+    try:
+        comp_no = int(gliderscore_comp_no) if gliderscore_comp_no.strip() else None
+    except (ValueError, TypeError):
+        return RedirectResponse(
+            f"/setup?msg={urllib.parse.quote('GliderScore comp number must be a whole number')}",
+            status_code=303)
     db.execute(
         """INSERT INTO competitions
            (name, discipline, date, location, gliderscore_comp_no,
@@ -228,6 +350,16 @@ async def competition_pilot_add(comp_id: int, pilot_id: int = Form(...)):
     db = _db()
     if _gs_locked(db, comp_id):
         return RedirectResponse(f"/setup?msg={_GS_LOCK_MSG}", status_code=303)
+    # A stale tab can post against a competition or pilot that has since been
+    # deleted; INSERT OR IGNORE doesn't cover an FK violation. [I-08]
+    if db.execute("SELECT 1 FROM competitions WHERE id = ?", (comp_id,)).fetchone() is None:
+        return RedirectResponse(
+            f"/setup?msg={urllib.parse.quote('That competition no longer exists')}",
+            status_code=303)
+    if db.execute("SELECT 1 FROM pilots WHERE id = ?", (pilot_id,)).fetchone() is None:
+        return RedirectResponse(
+            f"/setup?msg={urllib.parse.quote('That pilot no longer exists')}",
+            status_code=303)
     db.execute(
         "INSERT OR IGNORE INTO competition_pilots (competition_id, pilot_id) VALUES (?, ?)",
         (comp_id, pilot_id),
@@ -407,6 +539,25 @@ async def rounds_get(request: Request, error: str = None):
     })
 
 
+MAX_WORKING_TIME_M = 60
+
+
+def _validate_round(db, task: str, working_time_m: int, comp_discipline: str) -> str | None:
+    """Error message if a round's task or working time is nonsense. [I-17]
+
+    A zero-minute working time made a round that ends the instant it starts, and
+    an unknown task letter scored as nothing at all — both accepted silently.
+    """
+    if not 1 <= working_time_m <= MAX_WORKING_TIME_M:
+        return f"Working time must be between 1 and {MAX_WORKING_TIME_M} minutes"
+    discipline, letter = (task.split(":", 1) if ":" in task else (comp_discipline, task))
+    if discipline not in ("F3K", "F5K"):
+        return "Round discipline must be F3K or F5K"
+    if letter not in merged_tasks(db).get(discipline, {}):
+        return f"Unknown {discipline} task '{letter}'"
+    return None
+
+
 @app.post("/rounds/{comp_id}/add")
 async def round_add(comp_id: int, task: str = Form(...), working_time_m: int = Form(10)):
     db = _db()
@@ -415,6 +566,9 @@ async def round_add(comp_id: int, task: str = Form(...), working_time_m: int = F
     comp = db.execute("SELECT discipline FROM competitions WHERE id = ?", (comp_id,)).fetchone()
     if not comp:
         return RedirectResponse("/rounds", status_code=303)
+    err = _validate_round(db, task, working_time_m, comp["discipline"])
+    if err:
+        return RedirectResponse(f"/rounds?error={urllib.parse.quote(err)}", status_code=303)
     max_no = db.execute(
         "SELECT MAX(round_no) FROM rounds WHERE competition_id = ?", (comp_id,)
     ).fetchone()[0]
@@ -454,6 +608,9 @@ async def round_edit(round_id: int, task: str = Form(...), working_time_m: int =
     rnd = db.execute("SELECT discipline FROM rounds WHERE id = ?", (round_id,)).fetchone()
     if not rnd:
         return RedirectResponse("/rounds", status_code=303)
+    err = _validate_round(db, task, working_time_m, rnd["discipline"])   # [I-17]
+    if err:
+        return RedirectResponse(f"/rounds?error={urllib.parse.quote(err)}", status_code=303)
     discipline = rnd["discipline"]
     if ":" in task:
         discipline, task = task.split(":", 1)
@@ -695,16 +852,36 @@ async def results_flight_add(
     altitude_m: str = Form(""),
     flight_no: str = Form(""),
 ):
+    def bad(msg: str):
+        return RedirectResponse(f"/results?error={urllib.parse.quote(msg)}", status_code=303)
+
     try:
         dur_ms = _parse_duration(duration)
     except (ValueError, TypeError):
-        return RedirectResponse(
-            f"/results?error={urllib.parse.quote('Invalid time — use M:SS or M:SS.HH (e.g. 3:00 or 3:00.55)')}",
-            status_code=303,
-        )
-    alt = float(altitude_m) if altitude_m.strip() else None
-    fno = int(flight_no) if flight_no.strip() else None
+        return bad(DURATION_HELP)
+    # Altitude and flight number were parsed outside the guard above, so one stray
+    # letter in either box was a 500 rather than a message. [I-05] [I-06]
+    try:
+        alt = _parse_altitude(altitude_m)
+    except (ValueError, TypeError):
+        return bad(ALTITUDE_HELP)
+    try:
+        fno = int(flight_no) if flight_no.strip() else None
+    except (ValueError, TypeError):
+        return bad("Invalid flight number")
+    if fno is not None and not 1 <= fno <= 50:
+        return bad("Flight number must be between 1 and 50")
+
     db = _db()
+    # An unknown pilot or group reaches SQLite as a FOREIGN KEY violation, i.e. a
+    # 500 with no explanation. Check first and say which one is missing. [I-08]
+    if db.execute("SELECT 1 FROM groups WHERE id = ?", (group_id,)).fetchone() is None:
+        return bad("That heat no longer exists")
+    if db.execute("SELECT 1 FROM pilots WHERE id = ?", (pilot_id,)).fetchone() is None:
+        return bad("That pilot no longer exists")
+    err = _duration_fits_round(db, group_id, dur_ms)
+    if err:
+        return bad(err)
     db.execute(
         "INSERT INTO flights (pilot_id, duration_ms, group_id, altitude_m, flight_no, altitude_source)"
         " VALUES (?, ?, ?, ?, ?, ?)",
@@ -1027,16 +1204,32 @@ async def run_get(request: Request, comps: str = None):
 
 
 @app.post("/api/run/load")
-async def api_run_load(round_id: int, group_id: int):
+async def api_run_load(round_id: int, group_id: int, response: Response):
+    """Load a heat. Refuses (409) unless the state machine is IDLE.
+
+    The client gate is `:disabled="state !== 'IDLE'"` on websocket-derived state,
+    so a tab whose socket dropped sees a permanent IDLE and the lock never
+    engages. Loading a different heat mid-run swapped `_loaded` out from under the
+    running sequence, so the round finished under the wrong pilots. The server has
+    to be the one that refuses. [I-01]
+    """
     sm = app.state.state_machine
-    await sm.load_heat(round_id, group_id)
+    if sm.state != "IDLE":
+        response.status_code = 409
+        return {"ok": False, "error": f"A heat is running ({sm.state}) — abort it first",
+                "status": sm.get_status()}
+    if not await sm.load_heat(round_id, group_id):
+        response.status_code = 404
+        return {"ok": False, "error": "Heat not found", "status": sm.get_status()}
     return {"ok": True, "status": sm.get_status()}
 
 
 @app.post("/api/run/start")
-async def api_run_start():
-    await app.state.state_machine.start()
-    return {"ok": True}
+async def api_run_start(response: Response):
+    ok, reason = await app.state.state_machine.start()
+    if not ok:
+        response.status_code = 409
+    return {"ok": ok, "error": reason}
 
 
 @app.post("/api/run/abort")
@@ -1052,20 +1245,32 @@ async def api_run_skip(to: int = 60):
     return {"ok": ok}
 
 
-@app.post("/api/run/complete")
-async def api_run_complete(group_id: int):
+async def _set_completed(group_id: int, completed: int, response: Response) -> dict:
+    """Mark a heat done/not-done, and tell the leaderboard.
+
+    The leaderboard has always listened for a 'complete' message that nothing
+    broadcast, so marking a heat done left every scoreboard permanently stale
+    until someone reloaded it by hand. [I-11]
+    """
     db = _db()
-    db.execute("UPDATE groups SET completed = 1 WHERE id = ?", (group_id,))
+    cur = db.execute("UPDATE groups SET completed = ? WHERE id = ?", (completed, group_id))
     db.commit()
+    if not cur.rowcount:                                   # [I-10]
+        response.status_code = 404
+        return {"ok": False, "error": "That heat no longer exists"}
+    await manager.broadcast({"type": "complete", "group_id": group_id,
+                             "completed": bool(completed)})
     return {"ok": True}
+
+
+@app.post("/api/run/complete")
+async def api_run_complete(group_id: int, response: Response):
+    return await _set_completed(group_id, 1, response)
 
 
 @app.post("/api/run/uncomplete")
-async def api_run_uncomplete(group_id: int):
-    db = _db()
-    db.execute("UPDATE groups SET completed = 0 WHERE id = ?", (group_id,))
-    db.commit()
-    return {"ok": True}
+async def api_run_uncomplete(group_id: int, response: Response):
+    return await _set_completed(group_id, 0, response)
 
 
 @app.get("/api/run/state")
@@ -1086,17 +1291,23 @@ async def api_run_flight_add(
         dur_ms = _parse_duration(duration)
     except (ValueError, TypeError):
         return {"ok": False, "error": "Invalid time — use M:SS or M:SS.HH"}
+    try:
+        alt = _parse_altitude(altitude_m)          # was unguarded → 500 [I-05]
+    except (ValueError, TypeError):
+        return {"ok": False, "error": ALTITUDE_HELP}
     d = sm._loaded
     valid_ids = [pid for pid, _ in d["pilot_id_names"]]
     if pilot_id not in valid_ids:
         return {"ok": False, "error": "Pilot not in this heat"}
     db = _db()
     group_id = d["group_id"]
+    err = _duration_fits_round(db, group_id, dur_ms)   # [I-04]
+    if err:
+        return {"ok": False, "error": err}
     next_no = db.execute(
         "SELECT COALESCE(MAX(flight_no), 0) + 1 FROM flights WHERE pilot_id = ? AND group_id IS ?",
         (pilot_id, group_id),
     ).fetchone()[0]
-    alt = float(altitude_m) if altitude_m.strip() else None
     db.execute(
         "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no, altitude_m, altitude_source)"
         " VALUES (?, ?, ?, ?, ?, ?)",
@@ -1132,11 +1343,21 @@ async def settings_get(request: Request):
 
 @app.get("/api/audio/status")
 async def api_audio_status():
-    status = await audio_control.bt_status()
-    status["volume"] = await audio_control.get_volume()
-    status["saved_volume"] = audio_control.load_config().get("volume")
-    status["lead_s"] = audio_control.get_lead()
-    return status
+    # The whole settings audio panel is driven off this. If the bluetooth stack is
+    # missing or wedged it should degrade to "unknown", not 500 the panel away —
+    # the volume slider is how the CD fixes a silent field. [I-16]
+    try:
+        status = await audio_control.bt_status()
+        status["volume"] = await audio_control.get_volume()
+        status["saved_volume"] = audio_control.load_config().get("volume")
+        status["lead_s"] = audio_control.get_lead()
+        status["ok"] = True
+        return status
+    except Exception as exc:
+        log.exception("audio status failed")
+        return {"ok": False, "error": str(exc), "connected": False,
+                "device": None, "volume": None, "saved_volume": None,
+                "lead_s": audio_control.get_lead()}   # reads the config file, can't fail
 
 
 @app.post("/api/audio/volume")
@@ -1394,7 +1615,12 @@ async def api_run_altitudes(group_id: int = None):
 async def api_run_altitude_set(flight_id: int = Form(...), altitude_m: str = Form("")):
     """CD altitude entry/correction (B1/E1) — tagged 'cd_entry' for the audit trail."""
     db = _db()
-    alt = float(altitude_m) if str(altitude_m).strip() else None
+    try:
+        alt = _parse_altitude(altitude_m)          # was unguarded → 500 [I-05]
+    except (ValueError, TypeError):
+        return {"ok": False, "error": ALTITUDE_HELP}
+    if db.execute("SELECT 1 FROM flights WHERE id = ?", (flight_id,)).fetchone() is None:
+        return {"ok": False, "error": "That flight no longer exists"}
     if alt is None:
         db.execute("UPDATE flights SET altitude_m = NULL, altitude_source = NULL WHERE id = ?",
                    (flight_id,))
@@ -1720,14 +1946,19 @@ async def api_draw_preview(request: Request):
     groups_per_round, avoid_back_to_back}. Rounds before start_round are kept
     and seed the pair-meeting matrix; the round immediately before feeds the
     back-to-back check."""
-    body = await request.json()
-    db = _db()
-    comp_id = int(body["comp_id"])
-    start_round = int(body.get("start_round", 1))
-    num_rounds = int(body["num_rounds"])
-    groups_n = int(body["groups_per_round"])
-    avoid = bool(body.get("avoid_back_to_back", True))
+    try:
+        body = await request.json()
+        comp_id = int(body["comp_id"])
+        start_round = int(body.get("start_round", 1))
+        num_rounds = int(body["num_rounds"])
+        groups_n = int(body["groups_per_round"])
+        avoid = bool(body.get("avoid_back_to_back", True))
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"Bad draw request: {exc}"}   # [I-07]
+    if num_rounds < 1 or groups_n < 1 or start_round < 1:
+        return {"ok": False, "error": "Rounds, groups and start round must be 1 or more"}
 
+    db = _db()
     pilots = [r["id"] for r in _comp_pilots(db, comp_id)]
     if len(pilots) < groups_n:
         return {"ok": False, "error": "More groups than pilots"}
@@ -1756,17 +1987,38 @@ async def api_draw_accept(request: Request):
     """Write an accepted draw. Body: {comp_id, start_round, rounds: [{task,
     discipline, wt_min, groups: [[pilot_id, ...], ...]}, ...]}. Replaces all
     rounds from start_round onward; refuses if any of those have flights."""
-    body = await request.json()
+    try:
+        body = await request.json()
+        comp_id = int(body["comp_id"])
+        start_round = int(body["start_round"])
+        new_rounds = body["rounds"]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return {"ok": False, "error": f"Bad draw request: {exc}"}   # [I-07]
+    if start_round < 1:
+        return {"ok": False, "error": "Start round must be 1 or more"}
+    if not isinstance(new_rounds, list) or not new_rounds:
+        return {"ok": False, "error": "No rounds in the accepted draw"}
+
     db = _db()
-    comp_id = int(body["comp_id"])
-    start_round = int(body["start_round"])
-    new_rounds = body["rounds"]
     comp = db.execute("SELECT * FROM competitions WHERE id = ?", (comp_id,)).fetchone()
     if comp is None or _gs_locked(db, comp_id):
         return {"ok": False, "error": "Competition locked or not found"}
     for rd in new_rounds:
-        if rd["discipline"] not in ("F3K", "F5K") or not str(rd.get("task", "")).strip():
+        if not isinstance(rd, dict) or rd.get("discipline") not in ("F3K", "F5K") \
+                or not str(rd.get("task", "")).strip():
             return {"ok": False, "error": "Each round needs a discipline and task"}
+        if not isinstance(rd.get("groups"), list) or not rd["groups"]:
+            return {"ok": False, "error": "Each round needs at least one group"}
+        try:
+            wt_min = int(rd.get("wt_min", 10))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Working time must be a whole number of minutes"}
+        if not 1 <= wt_min <= 60:
+            return {"ok": False, "error": "Working time must be between 1 and 60 minutes"}
+        try:
+            [int(pid) for grp in rd["groups"] for pid in grp]
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Group pilot IDs must be numeric"}
 
     n_flights = db.execute(
         """SELECT COUNT(*) FROM flights f
@@ -1834,7 +2086,14 @@ async def setup_pilots_import(file: UploadFile = File(...)):
     columns (standard entry-form export). Skips duplicates by FAI number when
     present, otherwise by exact name.
     """
-    content = (await file.read()).decode("utf-8-sig", errors="replace")
+    raw = await file.read()
+    # An .xlsx picked by mistake is binary: NUL bytes make csv.reader raise, so
+    # the CD got a 500 instead of "that's not a CSV". [I-09]
+    if b"\x00" in raw[:4096]:
+        return RedirectResponse(
+            f"/setup?msg={urllib.parse.quote('That file is not a CSV — export the roster as CSV and try again')}",
+            status_code=303)
+    content = raw.decode("utf-8-sig", errors="replace")
     db = _db()
     existing_names = {r["name"].strip().lower()
                       for r in db.execute("SELECT name FROM pilots").fetchall()}

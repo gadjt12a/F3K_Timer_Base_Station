@@ -61,12 +61,33 @@ tools/
 ├── gs_sync.py                # Windows bridge: GUI + CLI; fetches JSON from base station → writes scored results direct to GliderScore .mdb (ACE OLEDB via 32-bit PS)
 └── build_exe.ps1             # PyInstaller build script → dist/F3KSync.exe (deploy to Pi for CD download)
 ISSUES.md                     # Known-defects register: stable IDs (I-01…), priority, file:line, status. Cite the ID in the commit that fixes it
+base_station/tests/
+└── test_validation.py        # Locks down the ISSUES.md register: input validation + run-control state guards, driven through TestClient
 ```
 
-Known defects live in `ISSUES.md`, worked through over time rather than in one pass.
-It also records what was *checked and found sound*, so the same ground isn't
-re-covered, and what the audit did **not** touch (anything visual, audio timing,
-the timer protocol, real hardware) — none of which is cleared.
+Known defects live in `ISSUES.md`. The session-55 audit raised 21; all are closed
+as of session 56 (20 fixed, 1 WONTFIX), each fix carrying its issue ID in a comment
+at the site. The register also records what was *checked and found sound*, so the
+same ground isn't re-covered, and what the audit did **not** touch (anything visual,
+audio timing, the timer protocol, real hardware) — none of which is cleared.
+
+Two conventions came out of that pass and are worth keeping:
+
+- **Never call bare `float()`/`int()` on a submitted field.** Use `_parse_duration`
+  and `_parse_altitude` in `frontend/app.py` — they reject `1:99`, infinity, NaN and
+  out-of-range values that otherwise store as plausible-looking wrong data.
+- **The server refuses; the client reports.** Run-control endpoints return 409 with
+  a reason rather than an unconditional `{"ok": true}`, because every client gate is
+  websocket-derived and a dropped socket makes it read `IDLE` forever.
+- **Hiding a form control does not exempt it from validation.** A conditionally
+  shown field must be `:disabled` as well as `x-show`n, or the browser silently
+  refuses to submit a form whose invalid control it cannot focus — no request, no
+  error ([I-22]). Bind both from one predicate so they can't drift.
+
+Flight-time ceilings follow FAI Sporting Code 4 Vol. F3 **5.7.7**: timing stops at a
+landing *or the expiry of working time*, whichever comes first. The 30 s landing
+window (5.7.9.3) governs whether a flight counts at all, not how long it can be —
+don't add it to a duration ceiling.
 
 ## Web UI
 
@@ -132,7 +153,8 @@ standings with configurable drop scores and FAI tie-breaking, and the F5K altitu
 reverse-standings snake seeding) via a Draw button on the Rounds page. Scores are computed
 on demand from raw flight data — nothing is persisted, so edits/deletes are always reflected.
 The engine is a discipline-dispatched rule table so future disciplines (F3J, F5J, F3B) can be
-added as plugins. Unit + integration tests in `base_station/tests/`.
+added as plugins. Unit + integration tests in `base_station/tests/` — 82 tests, run with
+`python -m unittest discover -s tests -t .` from `base_station/`.
 
 ## Audio
 

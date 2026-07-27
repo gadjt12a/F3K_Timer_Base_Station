@@ -128,7 +128,11 @@
             ws.onmessage = (ev) => {
                 try {
                     const msg = JSON.parse(ev.data);
-                    if (['flight', 'altitude', 'complete', 'round'].includes(msg.type) && !pending) {
+                    // 'complete' now really is broadcast (see _set_completed) — it
+                    // used to be a dead type, so a heat being marked done left this
+                    // board stale until someone reloaded it. 'round' was also dead
+                    // and nothing broadcasts it, so it's gone. [I-11]
+                    if (['flight', 'altitude', 'complete'].includes(msg.type) && !pending) {
                         pending = setTimeout(() => location.reload(), 1500);
                     }
                 } catch (e) { /* ignore */ }
