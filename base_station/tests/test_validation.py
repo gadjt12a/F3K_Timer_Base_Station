@@ -12,7 +12,15 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from fastapi.testclient import TestClient  # noqa: E402
+# TestClient needs an HTTP client library that the server itself does not, so it is
+# absent from the Pi venv. Skip rather than error: an ImportError here fails the
+# whole discover run, and a red suite on the Pi reads as "the deploy broke
+# something" when the production code is fine. Install with `pip install httpx2`
+# in base_station/venv to get this coverage on the Pi too.
+try:
+    from fastapi.testclient import TestClient
+except (ImportError, RuntimeError) as exc:  # RuntimeError: starlette's own guard
+    raise unittest.SkipTest(f"TestClient unavailable: {exc}") from None
 
 from frontend import app as app_mod  # noqa: E402
 from frontend.app import (  # noqa: E402
