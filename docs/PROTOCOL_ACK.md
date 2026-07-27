@@ -62,7 +62,7 @@ Three of the four handlers originally ACKed inside an `if pilot_id > 0` branch. 
 harmless while the timer ignored ACKs, and would have become an infinite retry the moment
 the timer side shipped. Locked down by `base_station/tests/test_protocol.py`.
 
-## Timer side (implemented, fw-v16)
+## Timer side (implemented — committed, not yet released or flashed)
 
 `TimerComms`:
 1. **Queues every** `FLIGHT`/`JUMPED`/`ALTITUDE`/`SELECT` before sending — including on a
@@ -76,6 +76,6 @@ from the middle, which a head/tail ring cannot express. When it fills, the **new
 message is dropped with a loud log — the older entries have already been attempted and are
 closer to confirmation. That is still data loss, so it is logged, not counted silently.
 
-Backward compatibility: a base older than session 47 never ACKs, so a fw-v16 timer would
-retry every message every 5 s and eventually fill its buffer. All deployed bases are
-session 47+; if that ever stops being true, the retry needs a cap.
+Backward compatibility: a base older than session 47 never ACKs, so a retry-capable timer
+would resend every message every 5 s and eventually fill its buffer. All deployed bases
+are session 47+; if that ever stops being true, the retry needs a cap.
