@@ -2141,6 +2141,43 @@ async def pilot_get(request: Request):
 # ---------------------------------------------------------------------------
 
 OTA_DIR = Path.home() / "f3k_timer_ota"
+FW_REPO = "gadjt12a/F3K_Timer"     # firmware lives in its own repo, not this one
+
+
+def _github_head_sha(repo: str, branch: str = "main") -> str:
+    """Current commit of `branch`, resolved through the API rather than raw.
+
+    Fetching `raw.githubusercontent.com/<repo>/main/...` is what this used to do,
+    and it is served through a CDN that holds a stale copy for several minutes
+    after a push. Clicking "Update from GitHub" straight after a firmware release
+    therefore downloaded the **previous** firmware and reported success — an
+    entirely silent wrong-version install. Observed on 2026-07-27: raw still
+    served fw-v15 while the API already had fw-v16.
+
+    Commit-pinned raw URLs are immutable, so they are never stale. The API call
+    that resolves the sha is not CDN-cached.
+
+    Falls back to the branch name so a rate-limited or unreachable API degrades
+    to the old behaviour rather than blocking the update entirely.
+    """
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/commits/{branch}",
+            headers={"Accept": "application/vnd.github.sha",
+                     "User-Agent": "f3k-base-station"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            sha = resp.read().decode().strip()
+        # Accept only something that actually looks like a sha — an error body
+        # pinned into a URL would fail confusingly much later.
+        if len(sha) == 40 and all(c in "0123456789abcdef" for c in sha):
+            return sha
+        log.warning("[OTA] unexpected sha response for %s: %.60s", repo, sha)
+    except Exception as exc:
+        log.warning("[OTA] could not resolve %s@%s via API (%s) — "
+                    "falling back to the branch, which may be CDN-stale", repo, branch, exc)
+    return branch
 
 
 def _git_root():
@@ -2246,16 +2283,25 @@ async def api_system_update(background_tasks: BackgroundTasks):
     # Sync timer OTA firmware files (non-fatal if no internet at the field)
     ota_version = None
     ota_error = None
+    ota_ref = None
     try:
         OTA_DIR.mkdir(exist_ok=True)
+        ota_ref = _github_head_sha(FW_REPO, "main")
         for fname in ("firmware.bin", "version.json"):
+            # Download beside the target, then rename. wget -O writes straight to
+            # the destination, so a transfer that died halfway used to leave a
+            # truncated firmware.bin in place — which a timer would then happily
+            # flash. rename(2) within one directory is atomic.
+            tmp = OTA_DIR / f"{fname}.new"
             r = subprocess.run(
-                ["wget", "-q", "-O", str(OTA_DIR / fname),
-                 f"https://raw.githubusercontent.com/gadjt12a/F3K_Timer/main/firmware/ota/{fname}"],
-                capture_output=True, timeout=60,
+                ["wget", "-q", "-O", str(tmp),
+                 f"https://raw.githubusercontent.com/{FW_REPO}/{ota_ref}/firmware/ota/{fname}"],
+                capture_output=True, timeout=120,
             )
-            if r.returncode != 0:
-                raise RuntimeError(f"wget {fname} failed (no internet?)")
+            if r.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+                tmp.unlink(missing_ok=True)
+                raise RuntimeError(f"download of {fname} failed (no internet?)")
+            tmp.replace(OTA_DIR / fname)
         ota_version = _ota_version()
     except Exception as exc:
         ota_error = str(exc)
@@ -2265,7 +2311,7 @@ async def api_system_update(background_tasks: BackgroundTasks):
 
     return {
         "ok": True, "changed": changed, "output": reset.stdout.strip(),
-        "ota": {"version": ota_version, "error": ota_error},
+        "ota": {"version": ota_version, "error": ota_error, "ref": ota_ref},
         "system_config": sys_cfg,
     }
 
