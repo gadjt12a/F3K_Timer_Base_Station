@@ -1,0 +1,14 @@
+[Unit]
+Description=F3K Base Station TCP Server
+After=network.target hostapd.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/f3k_repo/base_station
+ExecStart=/home/pi/f3k_repo/base_station/venv/bin/python3 /home/pi/f3k_repo/base_station/server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

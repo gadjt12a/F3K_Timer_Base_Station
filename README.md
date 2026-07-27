@@ -48,8 +48,11 @@ base_station/
     │   └── settings.html
     └── data/                 # GliderScore-derived reference data
         ├── gliderscore_timer_profiles.json   # 18 timer/audio cue profiles
-        └── gliderscore_audio_library.json    # 233-row announcement library
+        ├── gliderscore_audio_library.json    # 233-row announcement library
+        └── audio/            # 147 announcement wavs (~25 MB) — vendored, see Audio
 setup/
+├── install.sh                # From-scratch install on a fresh Pi OS image: OS packages, clone, venv, systemd unit. Idempotent. Does the app half only — run upgrade-to-dual-ap.sh after it for the field networks
+├── f3k-server.service        # systemd unit, installed by install.sh (paths rewritten for the actual user/home)
 ├── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
 ├── upgrade-to-dual-ap.sh     # One-time dual-AP bootstrap: hostapd (both SSIDs), dnsmasq, nftables captive portal, wlan0/wlan1 setup services. Rewrites those files wholesale and resets eth0 — run in person, not unattended
 └── apply-system-config.sh    # Idempotent OS config applied on every update: mt76 USB fix, hostapd ctrl_interface, dnsmasq bind-dynamic, wlan1 poll loop, hostapd watchdog. `--check` = read-only drift report. Bump CONFIG_VERSION when changing what it applies
@@ -159,9 +162,33 @@ by discipline and working time, and fires announcement `.wav` files + synthesise
 through the Bluetooth speaker (`bluez-alsa` / `aplay`). A lead-compensation scheduler
 fires each cue slightly early to offset output latency; the lead is tunable in Settings.
 
+**The announcement wavs are vendored** in `frontend/data/audio/` (147 files, ~25 MB) —
+the same reason Tailwind and Alpine are vendored: the field networks have no internet,
+and a missing wav is not an error, it is silence. A missing file logs
+`[AUDIO] missing wav: …` and the cue is skipped, so this fails quietly at a
+competition rather than loudly at setup. Check the log if cues go missing.
+
+That set is the *fixed vocabulary* — countdowns, horns, `Round1`–`Round30`,
+`Group1`–`Group20`, task announcements, `NextGroupToReadyBox`. **Pilot-name clips
+(`ZZ*.wav`) are gitignored and never committed**: one per pilot per competition, so the
+set grows without bound, and they are recordings of real people's names. An install
+carries them over from a previous deployment if there is one; otherwise they are
+sourced from GliderScore's audio library.
+
 ## Running
 
-On the Pi (Python venv, PEP 668):
+**A fresh Pi, from a clean Raspberry Pi OS image:**
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/gadjt12a/F3K_Timer_Base_Station/main/setup/install.sh)
+```
+
+That installs the OS packages (`alsa-utils`, `mdbtools`, `avahi-daemon`, optionally
+`bluez`/`bluez-alsa-utils`), clones the repo, builds the venv, installs the systemd unit
+and starts it. It is idempotent, and it never touches eth0 or NetworkManager — that is
+the admin lifeline. Follow it with `setup/upgrade-to-dual-ap.sh` for the field networks.
+
+To run it by hand instead (venv is required — PEP 668):
 
 ```bash
 python3 -m venv venv && ./venv/bin/pip install -r base_station/requirements.txt
