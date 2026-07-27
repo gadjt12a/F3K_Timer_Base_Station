@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 57, 2026-07-27)
 
-**21 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 1 open ([I-23]).**
+**22 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 Everything the session-55 audit raised is closed. [I-22] was reported by the user
 and [I-23] found during the session-57 repo review; both are registered here rather
@@ -278,33 +278,32 @@ status check would look like this never landed. The test asserts on the body.
 
 ---
 
-### I-23 · Three announcement wavs are missing from GliderScore's set · OPEN
-`base_station/frontend/data/audio/`
+### I-23 · Profiles name wavs that GliderScore itself does not ship · FIXED (session 57)
+`base_station/frontend/audio.py` (`_WAV_ALIASES`, `_WAV_SUPPRESS`)
 
-Found during the session-57 repo review, while vendoring the audio. Six wavs are
-referenced by `gliderscore_timer_profiles.json` but exist nowhere — not in the repo,
-not in the legacy `~/f3k_base` set they were copied from. Three are in profiles we
-actually run:
+Found while vendoring the audio: six wavs are named by
+`gliderscore_timer_profiles.json` but exist nowhere.
 
-| wav | profiles | matters? |
-|---|---|---|
-| `10.wav` | `F5K-5m10m15s`, `F5K-5m4m15s`, `F5K-5m7m15s`, `F5K-15s4m15s` | **yes** — the main F5K profiles |
-| `ToLand.wav` | `F3K-1m3m30s` | **yes** — short-task F3K |
-| `FlyingNotAllowed.wav` | `F3K-1m3m30s` | **yes** — short-task F3K |
-| `5MinsToStart.wav` | `F3B-Duration`, `F3JTimer-5m15m`, `F5JTimer-7m15m` | no — disciplines we don't run |
-| `WorkingTimeIn-5secs.wav` | `F3B-Speed` | no |
-| `1001 Count down with bells.wav` | `GliderTimerSpecial` | no |
+**There was nothing to fetch.** Checked against `C:\GliderScore6` — its `Audio`
+folder is *identical* to what we vendored (211 files; zero present there and absent
+here), and `GliderScoreData.mdb` `TimerSettings` genuinely names all six. So these
+are dangling references in **GliderScore's own data**, not gaps in our extraction.
+GliderScore ships correctly-named equivalents that other profiles use.
 
-`10.wav` is probably harmless in practice: `audio.py` substitutes an 880 Hz beep for
-the per-second voice files in the last 10 s of prep, so the cue likely never reaches
-playback as a wav. `ToLand`/`FlyingNotAllowed` have no such substitution.
+The profiles JSON is a verbatim `.mdb` extract, so corrections live in `audio.py`
+rather than falsifying the extract:
 
-A missing wav is **silent, not an error** — it logs `[AUDIO] missing wav: …` and
-skips. That is exactly how the whole audio set went missing unnoticed for eight
-sessions, so this is recorded rather than left to be rediscovered at a competition.
+| wav | resolution |
+|---|---|
+| `FlyingNotAllowed.wav` | → `NoFlyingAllowed.wav`. Identical announcement; every other profile names the working file. The one real gap — a standalone safety call with 25 s clear air, so nothing masked it. |
+| `10.wav` | → `10Secs.wav`. Belt-and-braces: the last-10s beep substitution already catches it, but that window is computed from the *unshifted* cue time while LT cues are re-anchored to the competition's landing length. |
+| `ToLand.wav` | **Suppressed.** Fires 1 s before the landing countdown beeps — exactly the clash-and-clip case voice calls were pulled for. `PilotsMustLand.wav` already makes the call 17 s earlier and the timer shows the landing clock. |
+| `5MinsToStart.wav`, `WorkingTimeIn-5secs.wav`, `1001 Count down with bells.wav` | Left alone — `F3B-*`, `F3JTimer-*`, `F5JTimer-*`, `GliderTimerSpecial`. Unreachable while we only select F3K/F5K profiles, and no equivalent file exists to alias to. Revisit if those disciplines are added. |
 
-**Fix:** source the three from a GliderScore install (they are in its audio library)
-and drop them into `frontend/data/audio/`. Nothing in the code needs to change.
+Suppression is listed explicitly rather than left to fail through the missing-wav
+path, because **a missing wav is silent, not an error** — it logs
+`[AUDIO] missing wav: …` and skips. A warning that fires every round is one nobody
+reads, which is precisely how the entire audio set went missing for eight sessions.
 
 ---
 

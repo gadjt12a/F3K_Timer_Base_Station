@@ -39,6 +39,35 @@ log = logging.getLogger("f3k")
 
 _DATA_DIR = Path(__file__).parent / "data"
 _WAV_DIR = _DATA_DIR / "audio"
+
+# GliderScore's own TimerSettings table names three wavs that do not exist in its
+# Audio folder — dangling references in *its* data, not gaps in our extraction
+# (verified against GliderScoreData.mdb; our vendored set is byte-identical to
+# GliderScore's). gliderscore_timer_profiles.json is a verbatim extract, so the
+# corrections live here rather than falsifying the extract. [I-23]
+_WAV_ALIASES = {
+    # "No flying allowed before the start." Timer 4 is the odd one out — every
+    # other profile names NoFlyingAllowed.wav for the identical announcement, and
+    # that file exists. 25 s of clear air either side, so nothing to clash with.
+    "FlyingNotAllowed.wav": "NoFlyingAllowed.wav",
+    # "10 seconds" opening the F5K landing countdown. In practice the last-10s
+    # beep substitution catches this before playback, so it is belt-and-braces —
+    # but that window is computed from the *unshifted* cue time while LT cues get
+    # re-anchored to the competition's own landing length, so it is not worth
+    # relying on. Costs nothing, and turns a silent gap into the right word.
+    "10.wav": "10Secs.wav",
+}
+
+# Cues we deliberately drop. Silence here is a decision, not an accident, so they
+# are listed rather than left to fail through the missing-wav warning — a warning
+# that fires every round is one nobody reads, which is how the whole audio set
+# went missing unnoticed for eight sessions.
+_WAV_SUPPRESS = {
+    # "to land", fired 1 s before the landing countdown beeps begin: the
+    # clash-and-clip case that voice calls were pulled for. PilotsMustLand.wav
+    # already makes the call 17 s earlier, and the timer shows the landing clock.
+    "ToLand.wav",
+}
 _PROFILES_FILE = _DATA_DIR / "gliderscore_timer_profiles.json"
 
 # GliderScore TimerState phase codes
@@ -429,6 +458,9 @@ class AudioEngine:
     async def _play(self, cue: dict) -> None:
         wav = cue.get("wav")
         if wav:
+            if wav in _WAV_SUPPRESS:
+                return
+            wav = _WAV_ALIASES.get(wav, wav)
             pre = cue.get("pre_silence_ms", 0)
             if not pre and audio_control.load_config().get("bt_mac"):
                 if time.monotonic() - self._last_play_at > _TRANSPORT_IDLE_S:
