@@ -123,8 +123,11 @@ class TimerClient:
                 if self.server.record_flight(pilot_id, dur_ms):
                     asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
                     log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
-                # ACK regardless of dup — timer dequeues on ACK receipt.
-                await self.send(f"ACK {line}")
+            # ACK unconditionally — including the discarded no-pilot case and dups.
+            # ACK means "received and decided", not "stored": the timer retries until
+            # ACKed, so withholding one from a message we deliberately drop would put
+            # the timer in a retry loop it can never escape.
+            await self.send(f"ACK {line}")
 
         elif cmd == "JUMPED":
             # Pilot launched before the start horn — CD gets a note in the run
@@ -162,7 +165,7 @@ class TimerClient:
                     "flight_no": flight_no,
                     "altitude_m": alt_m,
                 }))
-                await self.send(f"ACK {line}")
+            await self.send(f"ACK {line}")   # unconditional — see FLIGHT above
 
         elif cmd == "SELECT":
             params = parse_params(parts[1:])
@@ -181,7 +184,7 @@ class TimerClient:
                     "pilot_name": pilot_name,
                 }))
                 log.info(f"Timer {self.timer_id} selected pilot {pilot_id} ({pilot_name})")
-                await self.send(f"ACK {line}")
+            await self.send(f"ACK {line}")   # unconditional — see FLIGHT above
 
         elif cmd == "PING":
             self.last_ping_at = time.monotonic()
