@@ -108,6 +108,7 @@
           <th class="pb-2 w-12">ID</th>
           <th class="pb-2">MAC</th>
           <th class="pb-2">IP</th>
+          <th class="pb-2">Firmware</th>
           <th class="pb-2">Last pilot</th>
           <th class="pb-2 text-right">Last PING</th>
         </tr>
@@ -115,21 +116,28 @@
       <tbody>
         <template x-for="t in timers" :key="t.id">
           <tr class="border-b border-gray-700">
-            <td class="py-2 font-bold text-yellow-400" x-text="t.id"></td>
+            <!-- "T1", matching what the timer shows on its own idle screen and
+                 the pills on the Run page. A bare "1" made the CD translate. -->
+            <td class="py-2 font-bold text-yellow-400" x-text="'T' + t.id"></td>
             <td class="py-2 font-mono text-xs text-gray-400" x-text="t.mac"></td>
             <td class="py-2 font-mono text-xs text-gray-400" x-text="t.ip"></td>
+            <td class="py-2 font-mono text-xs" :class="fwClass(t)"
+                :title="fwTitle(t)" x-text="fwLabel(t)"></td>
             <td class="py-2" x-text="t.last_pilot_name || '—'"></td>
             <td class="py-2 text-right font-mono" :class="pingClass(t.last_ping_age_s)"
                 x-text="t.last_ping_age_s + 's ago'"></td>
           </tr>
         </template>
         <tr x-show="timers.length === 0">
-          <td colspan="5" class="py-3 text-gray-500">No timers connected.</td>
+          <td colspan="6" class="py-3 text-gray-500">No timers connected.</td>
         </tr>
       </tbody>
     </table>
     <p class="text-xs text-gray-500 mt-2">
-      "Last pilot" is the pilot on this timer's most recent recorded flight. Updates live.</p>
+      "Last pilot" is the pilot on this timer's most recent recorded flight. Updates live.
+      Firmware is <span class="text-green-400">green</span> when it matches the cached timer
+      firmware above, <span class="text-orange-400">orange</span> when the timer is behind and
+      should be updated from its settings screen.</p>
   </section>
 
   <!-- ── Connection log ── -->
@@ -345,6 +353,45 @@ function settings() {
     },
     fmtTime(epoch) { return new Date(epoch * 1000).toLocaleTimeString(); },
     pingClass(age) { return age > 60 ? 'text-red-400' : age > 35 ? 'text-yellow-400' : 'text-green-400'; },
+
+    // ── Timer firmware vs the cached OTA build ──────────────────────────────
+    // Versions are "fw-vN", so compare the number rather than the string:
+    // "fw-v9" > "fw-v16" lexically, which would show an out-of-date timer green.
+    _fwNum(v) {
+      const m = /^fw-v(\d+)$/.exec(v || '');
+      return m ? parseInt(m[1], 10) : null;
+    },
+    fwState(t) {
+      const cached = this._fwNum(this.sysInfo.ota_version);
+      const timer  = this._fwNum(t.fw);
+      // A timer that reports nothing predates the field entirely, so it is
+      // necessarily behind — that is knowledge, not an unknown.
+      if (timer === null) return 'old';
+      if (cached === null) return 'unknown';   // nothing cached to compare against
+      if (timer === cached) return 'current';
+      return timer < cached ? 'old' : 'ahead';
+    },
+    fwLabel(t) {
+      if (t.fw) return t.fw;
+      return this.fwState(t) === 'old' ? 'pre-v17' : '—';
+    },
+    fwClass(t) {
+      return {
+        current: 'text-green-400',
+        old:     'text-orange-400',
+        ahead:   'text-gray-400',
+        unknown: 'text-gray-500',
+      }[this.fwState(t)];
+    },
+    fwTitle(t) {
+      const cached = this.sysInfo.ota_version || 'none cached';
+      return {
+        current: `Up to date (${cached})`,
+        old:     `Behind ${cached} — update from the timer's settings screen (page 3)`,
+        ahead:   `Newer than the cached ${cached} — run Update from GitHub on the base station`,
+        unknown: 'No timer firmware cached on the base station to compare against',
+      }[this.fwState(t)];
+    },
     eventClass(kind) {
       return {
         connect: 'bg-green-900 text-green-300',

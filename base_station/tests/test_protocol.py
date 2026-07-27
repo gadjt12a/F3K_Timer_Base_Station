@@ -145,6 +145,26 @@ class AckContractTests(unittest.TestCase):
         self._assert_acked(line)
         self._assert_acked(line)
 
+    def test_join_reports_firmware_version(self):
+        """fw-v17+ appends `fw=` to JOIN so the CD can spot stale timers."""
+        self._dispatch("JOIN mac=aa:bb:cc:dd:ee:ff fw=fw-v17")
+        self.assertEqual(self.client.fw, "fw-v17")
+
+    def test_join_without_firmware_is_none_not_a_guess(self):
+        """fw-v16 and earlier send no `fw=`.
+
+        None must survive to the UI as "older than the field", rather than being
+        defaulted to some version the timer never claimed.
+        """
+        self._dispatch("JOIN mac=aa:bb:cc:dd:ee:ff")
+        self.assertIsNone(self.client.fw)
+
+    def test_unknown_join_params_are_ignored(self):
+        """Old bases must tolerate new JOIN fields, and vice versa."""
+        self._dispatch("JOIN mac=aa:bb:cc:dd:ee:ff fw=fw-v17 somethingnew=1")
+        self.assertEqual(self.client.fw, "fw-v17")
+        self.assertEqual(self.client.mac, "aa:bb:cc:dd:ee:ff")
+
     def test_ping_is_not_acked(self):
         """PING keeps its PONG reply — an ACK here would be a protocol change."""
         out = self._dispatch("PING")

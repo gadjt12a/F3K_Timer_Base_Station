@@ -60,6 +60,7 @@ class TimerClient:
         self.last_ping_at = time.monotonic()
         self.connected_at = time.time()
         self.last_pilot_id = None   # pilot of the most recent FLIGHT from this timer
+        self.fw = None              # firmware version reported in JOIN (fw-v17+)
 
     async def send(self, msg: str):
         self.writer.write((msg + "\n").encode())
@@ -94,6 +95,10 @@ class TimerClient:
         if cmd == "JOIN":
             params = parse_params(parts[1:])
             self.mac = params.get("mac", "unknown")
+            # Absent on fw-v16 and earlier, which predate the field. None is the
+            # honest value: "we don't know", which the UI reports as older rather
+            # than pretending to a version.
+            self.fw = params.get("fw")
             self.last_ping_at = time.monotonic()
             self.server.evict_mac(self.mac)   # saves pilot binding, closes stale socket
             is_reconnect = self.mac in self.server._mac_to_id
@@ -263,6 +268,7 @@ class F3KServer:
                 "connected_at": c.connected_at,
                 "last_pilot_id": c.last_pilot_id,
                 "last_pilot_name": pilot_name,
+                "fw": c.fw,
             })
         return sorted(out, key=lambda t: (t["id"] is None, t["id"]))
 

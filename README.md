@@ -11,7 +11,8 @@ Companion handheld-timer firmware lives in a separate repo (`F3K_Timer_1`).
 A single asyncio process runs two servers in one event loop:
 
 - **TCP timer server** (`server.py`, port 8765) — handheld timers connect with a
-  JOIN/ASSIGN handshake, PING/PONG keepalive (base sends PONG every 15s; a successful
+  JOIN/ASSIGN handshake (`JOIN mac=… fw=…`; the `fw` field is fw-v17+, and its absence
+  is reported as "behind" rather than guessed at), PING/PONG keepalive (base sends PONG every 15s; a successful
   send resets the ping clock so freshly reconnected timers aren't evicted before their
   first 30s PING), and the round protocol (PREP / TASK / START / STOP / LAND / PILOTS /
   COUNT / FLIGHT / JUMPED / ALTITUDE). Timers run the prep and landing countdowns locally
