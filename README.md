@@ -15,7 +15,7 @@ A single asyncio process runs two servers in one event loop:
   is reported as "behind" rather than guessed at), PING/PONG keepalive (base sends PONG every 15s; a successful
   send resets the ping clock so freshly reconnected timers aren't evicted before their
   first 30s PING), and the round protocol (PREP / TASK / START / STOP / LAND / PILOTS /
-  COUNT / FLIGHT / JUMPED / ALTITUDE). Timers run the prep and landing countdowns locally
+  COUNT / SCREEN / FLIGHT / JUMPED / ALTITUDE). Timers run the prep and landing countdowns locally
   from `PREP t=` / `LAND t=`; COUNT re-syncs the last 10s of prep. JUMPED (launch before
   the start horn) is surfaced to the CD only — never recorded. FLIGHT, JUMPED, ALTITUDE,
   and SELECT are acknowledged (`ACK <line>`) — **always**, including duplicates and
@@ -58,7 +58,9 @@ setup/
 ├── f3k-server.service        # systemd unit, installed by install.sh (paths rewritten for the actual user/home)
 ├── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
 ├── upgrade-to-dual-ap.sh     # One-time dual-AP bootstrap: hostapd (both SSIDs), dnsmasq, nftables captive portal, wlan0/wlan1 setup services. Rewrites those files wholesale and resets eth0 — run in person, not unattended
-└── apply-system-config.sh    # Idempotent OS config applied on every update: mt76 USB fix, hostapd ctrl_interface, dnsmasq bind-dynamic, wlan1 poll loop, hostapd watchdog. `--check` = read-only drift report. Bump CONFIG_VERSION when changing what it applies
+├── apply-system-config.sh    # Idempotent OS config applied on every update: mt76 USB fix, hostapd ctrl_interface, dnsmasq bind-dynamic, wlan1 poll loop, hostapd watchdog. `--check` = read-only drift report. Bump CONFIG_VERSION when changing what it applies
+├── timer-serial-logger.py    # Captures a USB-cabled timer's serial to ~/f3k_timer_serial.log. Holds the port open (opening it resets the ESP32) and reopens when the device re-enumerates on a flash — turns the base station into a remote lab. Dev aid; not enabled by install.sh
+└── f3k-timer-serial.service  # systemd unit for the logger: `sudo systemctl enable --now f3k-timer-serial`
 .githooks/
 └── pre-commit                # Blocks a commit that changes apply-system-config.sh without bumping CONFIG_VERSION; warns on live Pi drift. Enable with `git config core.hooksPath .githooks`
 docs/
@@ -101,7 +103,7 @@ Two conventions came out of that pass and are worth keeping:
 | `/leaderboard` | Live cumulative standings — rank, per-round normalised scores, drop rounds struck out, total; discipline filter for MIXED comps; auto-reloads on flight events; public JSON at `/api/results/{comp_id}/public`; **kiosk mode** (`?kiosk=1`): hides nav, larger fonts, shows comp name/date/location header — suitable for projector or big screen; "⛶ Kiosk" button on normal view opens in new tab |
 | `/import` | Upload GliderScore `.mdb`, pick competition, import pilots/rounds/draw |
 | `/export` | Download GliderScore-compatible 15-field CSV per competition; download F3KSync.exe (Direct Sync tool) |
-| `/settings` | Audio volume + lead compensation, Bluetooth speaker, **Connected Timers** (T-prefixed IDs matching the timer's own screen; per-timer firmware version — green when it matches the cached timer firmware, orange when behind, grey when the timer is ahead and the *base* needs updating), competition DB backup/restore, **Software Update** (git pull base station code + Pi OS config + sync timer OTA firmware files; shows `build.N` version number + cached firmware version; smart health-poll reload — waits for server restart before navigating. A failed OS-config apply rolls itself back and reports why instead of reloading) |
+| `/settings` | Audio volume + lead compensation, Bluetooth speaker, **Connected Timers** (**Renumber** button — timer numbers persist in the DB across restarts, so this is the way to free a number held by a decommissioned or test timer) (T-prefixed IDs matching the timer's own screen; per-timer firmware version — green when it matches the cached timer firmware, orange when behind, grey when the timer is ahead and the *base* needs updating), competition DB backup/restore, **Software Update** (git pull base station code + Pi OS config + sync timer OTA firmware files; shows `build.N` version number + cached firmware version; smart health-poll reload — waits for server restart before navigating. A failed OS-config apply rolls itself back and reports why instead of reloading) |
 | `/reports/flight_cards/{id}` | Printable pilot flight cards (A4 landscape, 2×2 per page) — one card per pilot per discipline for the full comp; pre-filled from draw with Rd.Grp, full task name, and blank flight columns; F5K cards include paired Alt columns (blue tint); MIXED comps produce separate F3K and F5K cards per pilot; "🖨 Cards" button on Rounds page |
 | `/pilot` | Mobile read-only pilot view — state, live countdown, current heat + pilots, leaderboard link; captive-portal landing page for phones on F3K_OPS |
 | `/health` | JSON status (timers connected) |
