@@ -1420,6 +1420,22 @@ async def api_timers():
     return {"timers": srv.timers_info(), "events": srv.recent_events()}
 
 
+@app.post("/api/timers/screen")
+async def api_timers_screen(seconds: int = 300):
+    """Force connected timers' screens on for `seconds` (0 releases).
+
+    A USB-cabled timer blanks aggressively to protect the AMOLED — including
+    during a round, since on the bench nobody is holding it. That makes checking
+    anything on the display impossible remotely, so this lifts it for a bounded
+    window. Bounded rather than a toggle on purpose: a forgotten "on" is exactly
+    the state the blanking exists to prevent.
+    """
+    if not 0 <= seconds <= 3600:
+        return {"ok": False, "error": "seconds must be between 0 and 3600"}
+    await app.state.server.broadcast(f"SCREEN t={seconds}")
+    return {"ok": True, "seconds": seconds}
+
+
 @app.post("/api/timers/renumber")
 async def api_timers_renumber():
     """Forget every timer number; they are handed out again from 1 on reconnect.
