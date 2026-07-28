@@ -101,7 +101,13 @@
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-lg font-semibold text-gray-200">Connected Timers</h2>
       <span class="text-xs text-gray-500" x-text="timers.length + ' connected'"></span>
+      <button @click="renumberTimers()" :disabled="renumberBusy"
+              class="ml-auto text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 px-2 py-1 rounded transition-colors"
+              title="Forget all timer numbers. Each timer is given a new one, from T1, when it next reconnects.">
+        <span x-text="renumberBusy ? 'Renumbering…' : 'Renumber'"></span>
+      </button>
     </div>
+    <p x-show="renumberMsg" class="text-xs text-yellow-400 mb-2" x-text="renumberMsg"></p>
     <table class="w-full text-sm">
       <thead>
         <tr class="text-gray-400 text-left border-b border-gray-700">
@@ -353,6 +359,28 @@ function settings() {
     },
     fmtTime(epoch) { return new Date(epoch * 1000).toLocaleTimeString(); },
     pingClass(age) { return age > 60 ? 'text-red-400' : age > 35 ? 'text-yellow-400' : 'text-green-400'; },
+
+    renumberBusy: false,
+    renumberMsg: '',
+    async renumberTimers() {
+      // Deliberately a confirm: numbers are printed on the timers' own screens
+      // and pilots call them out, so renumbering mid-competition is disruptive
+      // in a way that is not obvious from this button.
+      if (!confirm('Forget all timer numbers?\n\nEach timer gets a new number, from T1, '
+                 + 'when it next reconnects. Connected timers keep their current number '
+                 + 'until they do.')) return;
+      this.renumberBusy = true;
+      try {
+        const r = await (await fetch('/api/timers/renumber', { method: 'POST' })).json();
+        this.renumberMsg = r.ok
+          ? `Cleared ${r.cleared} assignment(s) — reconnect each timer to pick up its new number.`
+          : 'Renumber failed.';
+      } catch (e) {
+        this.renumberMsg = 'Renumber failed — ' + e;
+      } finally {
+        this.renumberBusy = false;
+      }
+    },
 
     // ── Timer firmware vs the cached OTA build ──────────────────────────────
     // Versions are "fw-vN", so compare the number rather than the string:

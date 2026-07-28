@@ -3,6 +3,7 @@
 
 import asyncio
 import collections
+import itertools
 import logging
 import os
 import shutil
@@ -202,8 +203,7 @@ class TimerClient:
 class F3KServer:
     def __init__(self):
         self._clients: dict[int, TimerClient] = {}
-        self._id_counter = 1
-        self._mac_to_id: dict[str, int] = {}      # MAC → sticky timer ID (survives reconnect)
+        self._mac_to_id: dict[str, int] = {}      # MAC → timer ID; cache over the timer_ids table
         self._mac_to_pilot: dict[str, int] = {}   # MAC → last pilot_id (restored on reconnect)
         self.events = collections.deque(maxlen=100)  # connection diagnostics ring buffer
         self.db = init_db(DB_PATH)
@@ -212,11 +212,66 @@ class F3KServer:
         web_app.state.state_machine = self.state_machine
 
     def assign_id(self, mac: str) -> int:
-        """Return the persistent timer ID for this MAC, allocating one if unseen."""
-        if mac not in self._mac_to_id:
-            self._mac_to_id[mac] = self._id_counter
-            self._id_counter += 1
-        return self._mac_to_id[mac]
+        """Return the persistent timer ID for this MAC, allocating one if unseen.
+
+        Backed by the `timer_ids` table, not just the in-memory map: the number is
+        printed on the timer's own screen and pilots refer to it out loud, so a
+        service restart must not renumber the field mid-competition.
+        """
+        cached = self._mac_to_id.get(mac)
+        if cached is not None:
+            self._touch_timer_id(mac)
+            return cached
+
+        row = self.db.execute(
+            "SELECT timer_id FROM timer_ids WHERE mac = ?", (mac,)).fetchone()
+        if row:
+            self._mac_to_id[mac] = row["timer_id"]
+            self._touch_timer_id(mac)
+            return row["timer_id"]
+
+        # Allocate the lowest free number rather than a running counter, so
+        # renumbering (or a removed timer) leaves no permanent gap.
+        used = {r["timer_id"] for r in
+                self.db.execute("SELECT timer_id FROM timer_ids").fetchall()}
+        used |= set(self._mac_to_id.values())
+        new_id = next(i for i in itertools.count(1) if i not in used)
+        try:
+            self.db.execute(
+                "INSERT INTO timer_ids (mac, timer_id, last_seen)"
+                " VALUES (?, ?, CURRENT_TIMESTAMP)", (mac, new_id))
+            self.db.commit()
+        except Exception:
+            # Never let a bookkeeping failure stop a timer joining mid-round —
+            # it still gets a working number for this session.
+            log.exception("could not persist timer id for %s", mac)
+        self._mac_to_id[mac] = new_id
+        return new_id
+
+    def _touch_timer_id(self, mac: str) -> None:
+        try:
+            self.db.execute(
+                "UPDATE timer_ids SET last_seen = CURRENT_TIMESTAMP WHERE mac = ?", (mac,))
+            self.db.commit()
+        except Exception:
+            log.exception("could not update last_seen for %s", mac)
+
+    def renumber_timers(self) -> int:
+        """Forget every MAC→number assignment. Numbers are handed out again, from
+        1, as timers reconnect.
+
+        Persistence means a decommissioned or mistyped timer would otherwise hold
+        its number for good, so there has to be a way back. Connected timers keep
+        the number they were given until they next reconnect — renumbering live
+        would change what the CD is looking at without the timer's own screen
+        agreeing.
+        """
+        n = self.db.execute("SELECT COUNT(*) FROM timer_ids").fetchone()[0]
+        self.db.execute("DELETE FROM timer_ids")
+        self.db.commit()
+        self._mac_to_id.clear()
+        log.info("Timer numbering reset — %d assignment(s) cleared", n)
+        return n
 
     def add(self, client: TimerClient):
         if client.timer_id is not None:

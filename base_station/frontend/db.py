@@ -92,6 +92,17 @@ def init_db(path: str) -> sqlite3.Connection:
             FOREIGN KEY (competition_id) REFERENCES competitions(id),
             FOREIGN KEY (pilot_id)       REFERENCES pilots(id)
         );
+
+        -- A timer's number is printed on its own screen and pilots say it out
+        -- loud ("I'm on T2"), so it has to survive a restart. Held in memory
+        -- only, every service restart silently renumbered every timer — a CD
+        -- who had written down "Alice on T2" was then wrong with no warning.
+        CREATE TABLE IF NOT EXISTS timer_ids (
+            mac      TEXT PRIMARY KEY,
+            timer_id INTEGER NOT NULL UNIQUE,
+            first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_seen  TEXT
+        );
     """)
     db.commit()
 

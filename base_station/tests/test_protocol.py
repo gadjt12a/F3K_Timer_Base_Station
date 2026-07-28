@@ -172,5 +172,61 @@ class AckContractTests(unittest.TestCase):
         self.assertFalse([m for m in out if m.startswith("ACK")])
 
 
+class TimerNumberingTests(unittest.TestCase):
+    """Timer numbers are printed on the timer's own screen and called out loud,
+    so they must survive a restart. They used to live only in memory."""
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _server(self):
+        """A fresh F3KServer bound to the same DB — i.e. a service restart."""
+        s = srv.F3KServer.__new__(srv.F3KServer)
+        s.db = self.db
+        s._clients = {}
+        s._mac_to_id = {}
+        s._mac_to_pilot = {}
+        return s
+
+    def test_numbers_survive_a_restart(self):
+        a = self._server()
+        self.assertEqual(a.assign_id("aa:aa"), 1)
+        self.assertEqual(a.assign_id("bb:bb"), 2)
+
+        b = self._server()          # restart: in-memory map is empty again
+        self.assertEqual(b.assign_id("bb:bb"), 2, "timer was renumbered by a restart")
+        self.assertEqual(b.assign_id("aa:aa"), 1)
+
+    def test_same_mac_is_stable_within_a_session(self):
+        s = self._server()
+        self.assertEqual(s.assign_id("aa:aa"), 1)
+        self.assertEqual(s.assign_id("aa:aa"), 1)
+        self.assertEqual(s.assign_id("bb:bb"), 2)
+
+    def test_renumber_frees_the_numbers_again(self):
+        s = self._server()
+        s.assign_id("aa:aa")
+        s.assign_id("bb:bb")
+        self.assertEqual(s.renumber_timers(), 2)
+        # A different timer now gets T1 — the point of the escape hatch
+        self.assertEqual(s.assign_id("cc:cc"), 1)
+
+    def test_lowest_free_number_is_reused(self):
+        """A running counter would leave a permanent gap after a renumber."""
+        s = self._server()
+        s.assign_id("aa:aa")            # 1
+        s.assign_id("bb:bb")            # 2
+        self.db.execute("DELETE FROM timer_ids WHERE mac = 'aa:aa'")
+        self.db.commit()
+        s._mac_to_id.pop("aa:aa")
+        self.assertEqual(s.assign_id("cc:cc"), 1, "should fill the gap, not go to 3")
+
+
 if __name__ == "__main__":
     unittest.main()

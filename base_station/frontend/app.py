@@ -1420,6 +1420,19 @@ async def api_timers():
     return {"timers": srv.timers_info(), "events": srv.recent_events()}
 
 
+@app.post("/api/timers/renumber")
+async def api_timers_renumber():
+    """Forget every timer number; they are handed out again from 1 on reconnect.
+
+    Timer numbers persist across restarts, which is what makes them trustworthy
+    mid-competition — but it also means a decommissioned timer would keep its
+    number for good, and a test connection would burn a low number permanently.
+    This is the way back.
+    """
+    cleared = app.state.server.renumber_timers()
+    return {"ok": True, "cleared": cleared}
+
+
 @app.get("/api/db/backup")
 async def api_db_backup():
     import sqlite3
