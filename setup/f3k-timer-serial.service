@@ -1,0 +1,16 @@
+[Unit]
+Description=F3K Timer serial logger (USB-attached timer, development aid)
+After=multi-user.target
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/usr/bin/python3 /home/pi/f3k_repo/setup/timer-serial-logger.py
+Restart=always
+RestartSec=5
+# The timer is often unplugged; restarting forever is the intended behaviour,
+# so don't let systemd give up after the default burst of rapid restarts.
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
