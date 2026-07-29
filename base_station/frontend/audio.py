@@ -97,16 +97,37 @@ class TimerProfile:
         span = _parse_profile_span(self.name)
         self.prep_s, self.work_s, self.land_s = span if span else (0, 0, 0)
 
-        # Window boundaries. The working window CLOSES at t == work_s (the close horn
-        # sits there), so "seconds remaining" during WT is work_s - t, not (max WT cue) - t.
-        # Prefer the name-encoded span; fall back to the schedule if the name didn't parse.
+        # Window boundaries, in the profile's own t-space. These anchor every
+        # "seconds remaining" key, so getting them wrong shifts the whole countdown.
+        #
+        # They must come from the SCHEDULE, not from the name: GliderScore's t-space
+        # does not agree with its own profile names. F3K-3m3m30s runs its working
+        # cues to t=182 and puts the end horn at t=183, so trusting the name's 180
+        # started the last-10 countdown 3 s early and left it saying "three" as the
+        # horn sounded. F3K-1m3m30s is the same, and both F5K 4m profiles are 1 s out;
+        # the other five happen to agree. The give-away is Remaining-2Mins.wav at
+        # t=63 in F3K-3m3m30s — only 183-63 puts it at a whole 2:00. [I-24]
         wt_times = [c["t"] for c in self.cues if c["state"] == WT]
         lt_times = [c["t"] for c in self.cues if c["state"] == LT]
+
+        # The working window closes on the end horn: the first StartEndHorn at t>0
+        # (t==0 is the OPEN horn). Some profiles file it under WT, some under LT.
+        end_horns = [c["t"] for c in self.cues
+                     if c.get("wav") == "StartEndHorn.wav" and c["t"] > 0]
+        if end_horns:
+            self._wt_close = min(end_horns)
+        elif lt_times:
+            self._wt_close = min(lt_times)     # landing starts where working ended
+        else:
+            self._wt_close = max(wt_times) if wt_times else self.work_s
+        # Landing ends on its last cue (the closing horn or long beep).
+        self._lt_close = max(lt_times) if lt_times else self._wt_close + self.land_s
+
+        # work_s/land_s stay NAME-derived: select_profile() matches them against the
+        # competition's configured working time, which is the nominal 180 — not 183.
         if not span:
-            self.work_s = max(wt_times) if wt_times else 0
-            self.land_s = (max(lt_times) - self.work_s) if lt_times else 0
-        self._wt_close = self.work_s               # t at which the working window closes
-        self._lt_close = self.work_s + self.land_s  # t at which landing ends
+            self.work_s = self._wt_close
+            self.land_s = self._lt_close - self._wt_close
 
         # Bucket cues by (phase-group, seconds-remaining-in-phase).
         # phase-group: "prep" (PT/TT/NF), "working" (WT), "landing" (LT).
@@ -126,6 +147,12 @@ class TimerProfile:
                 self.prep.setdefault(key, []).append(c)
             elif st == WT:
                 key = self._wt_close - t       # seconds of working time remaining
+                # Anything at or before the instant the window opens is not ours to
+                # play: the engine fires the open horn there. The 3m F3K profiles
+                # carry "1/2/3" at t=1..3 which land here once the close is anchored
+                # correctly, and they would otherwise talk over the start.
+                if key >= self.work_s:
+                    continue
                 self.working.setdefault(key, []).append(c)
             elif st == LT:
                 key = self._lt_close - t       # seconds of landing time remaining
