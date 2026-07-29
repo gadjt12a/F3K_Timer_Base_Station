@@ -23,17 +23,25 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 61, 2026-07-29)
 
-**23 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**27 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
-Everything the session-55 audit raised is closed. Three came from elsewhere and are
+Everything the session-55 audit raised is closed. Seven came from elsewhere and are
 registered here rather than tracked separately: [I-22] reported by the user, [I-23]
-found during the session-57 repo review, and [I-24] found by the session-61 audio
-verification. Each fix carries its issue ID in a comment at the site, so the reason
-survives the next reader.
+from the session-57 repo review, [I-24] from the session-61 audio verification, and
+[I-25]–[I-28] from running T1/T2 against real hardware in session 61. Each fix
+carries its issue ID in a comment at the site, so the reason survives the next
+reader.
+
+⚠ **Four of the seven were found by exercising the thing, not by reading it.** The
+audit that produced [I-01]–[I-21] read every route and every handler and did not
+see any of them. [I-25] needed a reconnect mid-round, [I-27] needed a round to
+actually end, [I-28] needed two rounds of different disciplines in sequence, and
+[I-24] needed the cue schedule dumped second by second. Static review cannot reach
+this class of defect.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 103 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 117 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -353,6 +361,100 @@ Two things this surfaced but did not change:
 - No profile exists for F3K at 240 s, or F5K at 180/900 s. Such a heat logs
   `no … profile for working_time=…` and runs **silently**. Not yet raised as an
   issue — it needs a decision about which task/time combinations are legal.
+
+---
+
+### I-25 · `pilot=0` flights were ACKed and binned · FIXED (session 61)
+`base_station/server.py` (`TimerClient._attribute`)
+
+The one hole the ACK queue can never plug, and the reason the end-of-round resend
+exists at all.
+
+A timer that reconnects mid-round loses its pilot selection, so everything it
+reports afterwards arrives as `pilot=0`. That was logged and dropped — and because
+**`ACK` means "received and decided", not "stored"** ([I-23] neighbour, see
+`docs/PROTOCOL_ACK.md`), the timer still got its ACK, cleared the entry from its
+pending queue, and believed the flight delivered. Silent loss at *both* ends.
+
+The base was never actually ignorant: the binding is saved on eviction into
+`_mac_to_pilot` and restored by MAC on JOIN. So it knows who the timer was flying
+for even when the timer has forgotten. It now falls back to that and logs loudly.
+
+With nothing to fall back to it is still dropped, at `log.error`. **Attribution is
+a fallback, not a guess** — an orphan row attributed to the wrong pilot is worse
+than a loud failure.
+
+### I-26 · Every F5K altitude in a round landed on the last flight · FIXED (session 61)
+`base_station/server.py` (`F3KServer.record_altitude`)
+
+`record_altitude` took `flight_no` and ignored it, updating
+
+```sql
+WHERE id = (SELECT id FROM flights WHERE pilot_id = ? AND group_id IS ?
+            ORDER BY id DESC LIMIT 1)
+```
+
+F5K altitudes are entered *after* the round, one flight at a time, with every
+flight already in the DB. So `ORDER BY id DESC LIMIT 1` resolved to the same
+(last) row every time: flight 1's height overwrote flight 4's, then flight 2's
+did, and flights 1–3 kept none at all.
+
+Now targets the flight the timer named, falling back to the old behaviour only
+when there is no `flight_no` match (an older timer, or a flight that never
+arrived) and saying so. Returns whether the value actually changed, so an
+unchanged resend is not misreported as a recovery.
+
+Found while building the resend — re-sending altitudes is pointless while they
+all land on the wrong row, so this had to be fixed for that feature to mean
+anything.
+
+### I-27 · The resend created the duplicates it existed to prevent · FIXED (session 61)
+`base_station/server.py` (`TimerClient._group_for`, `last_group_id`)
+
+Shipped and caught on hardware within minutes, which is the only reason it is a
+short entry rather than a corrupted competition.
+
+The timer reconciles at the results screen. That is *always* after the base has
+sent STOP and LAND and unloaded the heat, so `state_machine._loaded` is already
+`None`. `record_flight` therefore computed `group_id=None`, the dedup looked for
+the flight under `group_id IS NULL`, missed the originals sitting under the real
+group, and inserted a full set of orphan duplicates — each one then reported to
+the CD as a **RECOVERED** flight.
+
+Observed: a 3-flight round produced rows 63/64/65 under group NULL beside the
+genuine 60/61/62.
+
+Connections now remember the group of their last flight, saved on eviction and
+restored by MAC on JOIN exactly like the pilot binding, and `rc=1` copies fall
+back to it. **Only `rc=1` copies get the fallback** — a live report arriving with
+no heat loaded is a different situation and must not be back-dated into the
+previous round.
+
+⚠ The general lesson: anything the timer sends *after* a round ends cannot assume
+the heat is still loaded. Any future end-of-round message needs the same
+treatment.
+
+### I-28 · Stale NVS altitudes leaked into the next round · FIXED (session 61, fw-v21)
+`src/timer/RoundHistory.cpp` (`recordFlight`), `src/main.cpp` (`_reconcileRound`)
+
+`startRound()` memsets the in-RAM round, but `_saveSlot()` only writes keys for
+`i < count` — and `count` is 0 at that moment, so it writes **no altitude keys at
+all**. `recordFlight()` then zeroed `altitudeM[i]` in RAM while persisting only
+the flight key, never the altitude key. So the previous round's `r0aN` values
+survived in NVS and came back on the next `load(0, …)`.
+
+Caught when an **F3K** round reconciled `ALTITUDE flight=2 alt=20` and
+`flight=3 alt=30`, left over from earlier F5K testing.
+
+This was not introduced by the resend — **ROUND RECALL had been showing those
+wrong heights all along**, on a screen nobody cross-checks against the base. The
+resend merely made it visible by putting the values somewhere they could be
+compared.
+
+`recordFlight` now clears the stored altitude for the slot it fills, and
+`_reconcileRound` refuses to send altitudes unless the round is F5K. Two lines of
+defence deliberately: a bogus altitude silently corrupts F5K scoring, and the
+bonus formula is stepped, so a wrong height does not look wrong in the results.
 
 ---
 
