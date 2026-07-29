@@ -21,18 +21,19 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ---
 
-## Status (session 57, 2026-07-27)
+## Status (session 61, 2026-07-29)
 
-**22 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**23 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
-Everything the session-55 audit raised is closed. [I-22] was reported by the user
-and [I-23] found during the session-57 repo review; both are registered here rather
-than tracked separately. Each fix carries its issue ID in a comment at the site, so
-the reason survives the next reader.
+Everything the session-55 audit raised is closed. Three came from elsewhere and are
+registered here rather than tracked separately: [I-22] reported by the user, [I-23]
+found during the session-57 repo review, and [I-24] found by the session-61 audio
+verification. Each fix carries its issue ID in a comment at the site, so the reason
+survives the next reader.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 83 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 103 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -307,6 +308,54 @@ reads, which is precisely how the entire audio set went missing for eight sessio
 
 ---
 
+### I-24 · Cue countdown ran up to 3 s early · FIXED (session 61)
+`base_station/frontend/audio.py` (`TimerProfile.__init__`)
+
+Found during the T7 audio verification, by walking every profile second-by-second
+through the real engine rather than listening to one.
+
+Cue keys were anchored to the working time encoded in the **profile name**.
+GliderScore's own `t`-space does not agree with those names:
+
+| profile | name says | window actually closes | skew |
+|---|---|---|---|
+| `F3K-3m3m30s` | 180 | 183 | **+3 s** |
+| `F3K-1m3m30s` | 180 | 183 | **+3 s** |
+| `F5K-5m4m15s` | 240 | 241 | +1 s |
+| `F5K-15s4m15s` | 240 | 241 | +1 s |
+| the other five | — | — | 0 |
+
+So on the two 3-minute F3K profiles — the common ones — the last-10 countdown
+began at 0:07 and ended saying **"three"** as the horn sounded; it never reached
+"one". `Remaining-2Mins.wav` came at 1:57. Landing was shifted identically.
+
+`Remaining-2Mins.wav` sits at `t=63`: only `183-63` puts it on a whole 2:00, and
+every other cue in that profile falls on a round number the same way. That is
+what identifies 183 as the true close rather than a quirk of the countdown.
+
+Both boundaries now come from the schedule — working closes on the first
+`StartEndHorn` at `t>0`, landing ends on its last cue. `work_s`/`land_s` stay
+name-derived, because `select_profile()` matches them against the competition's
+configured working time (the nominal 180, not 183).
+
+WT cues at or before the window opening are also dropped: the 3m profiles carry
+`1/2/3` at `t=1..3`, which land there once the close is anchored correctly and
+would talk over the open horn the engine fires itself.
+
+Not audible as a fault in isolation — a countdown three seconds early still
+*sounds* like a correct countdown, which is why hearing it was never going to
+find this. `tests/test_audio_cues.py` pins the cue times per profile.
+
+Two things this surfaced but did not change:
+
+- `F3K-3m15m30s` has no 9/8/7/6 in its landing count (14…10, then 5…1). That is
+  GliderScore's data; every cue it does have is correctly anchored.
+- No profile exists for F3K at 240 s, or F5K at 180/900 s. Such a heat logs
+  `no … profile for working_time=…` and runs **silently**. Not yet raised as an
+  issue — it needs a decision about which task/time combinations are legal.
+
+---
+
 ## Not bugs — verified during the audit
 
 Recorded so they don't get re-raised:
@@ -329,7 +378,10 @@ Recorded so they don't get re-raised:
 Nothing below was tested and none of it is cleared:
 
 - Visual and layout bugs, and anything requiring a rendered browser.
-- The audio cue sequence and timing.
+- ~~The audio cue sequence and timing.~~ Covered in session 61 — cue *times* are
+  now pinned per profile by `tests/test_audio_cues.py`, and playback through the
+  A2DP transport was confirmed live. What is still uncovered is how it **sounds**:
+  overlap, clipping and whether `lead_s` is right on the competition speaker.
 - The timer TCP protocol and any real timer hardware.
 - Websocket reconnect behaviour under genuine network loss.
 
