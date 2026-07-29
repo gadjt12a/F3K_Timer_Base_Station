@@ -363,6 +363,38 @@ class ReconciliationTests(unittest.TestCase):
             "SELECT group_id FROM flights WHERE duration_ms = 5256").fetchone()
         self.assertIsNone(row["group_id"])
 
+    def test_live_altitude_after_close_still_lands(self):
+        """F5K heights are entered AFTER the round ends, so a live ALTITUDE always
+        arrives with the heat closed. Gating the group fallback on rc=1 dropped
+        every one of them and left the resend to recover each as a "loss". [I-29]
+        """
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=13770")
+        self.srv.close_heat()
+        self._dispatch(f"ALTITUDE pilot={self.pilot} flight=1 alt=25")
+        row = self.db.execute(
+            "SELECT altitude_m FROM flights WHERE flight_no = 1").fetchone()
+        self.assertEqual(row["altitude_m"], 25)
+
+    def test_altitude_resend_of_an_applied_value_is_not_a_recovery(self):
+        """Once the live report lands, the rc=1 copy is a no-op and must not raise
+        a recovery alert — a warning that fires every round is one nobody reads."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=13770")
+        self.srv.close_heat()
+        self._dispatch(f"ALTITUDE pilot={self.pilot} flight=1 alt=25")
+        self.assertFalse(
+            self.srv.record_altitude(self.pilot, 1, 25, _DedupServer.GROUP),
+            "an unchanged altitude must report changed=False")
+
+    def test_live_flight_fallback_stays_off(self):
+        """The altitude relaxation must not leak into FLIGHT: a live flight with no
+        heat loaded still must not be back-dated into the previous round."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=13770")
+        self.srv.close_heat()
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=9135")
+        row = self.db.execute(
+            "SELECT group_id FROM flights WHERE duration_ms = 9135").fetchone()
+        self.assertIsNone(row["group_id"])
+
     def test_rc_marker_does_not_change_dedup_identity(self):
         """Dedup keys on (pilot, group, duration) — the marker must not leak in."""
         self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430 rc=1")

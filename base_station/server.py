@@ -121,20 +121,28 @@ class TimerClient:
                   f"bound pilot — DROPPED. This flight is lost; enter it by hand.")
         return 0
 
-    def _group_for(self, recovered: bool) -> int | None:
+    def _group_for(self, allow_closed_heat: bool) -> int | None:
         """Which heat this report belongs to.
 
         A live report belongs to whatever is loaded, and that becomes the memory.
-        A reconciliation copy arrives after the round has closed and the heat has
-        been unloaded, so `_loaded` is None by then — fall back to the heat this
-        timer was last flying, or its flights land under group NULL where the
-        dedup cannot see the originals and duplicates itself. [I-27]
+        When nothing is loaded the report arrived after the round closed, and
+        without a fallback it lands under group NULL — where the dedup cannot see
+        the originals and duplicates itself. [I-27]
+
+        `allow_closed_heat` is true for reconciliation copies, and for **every**
+        ALTITUDE. F5K heights are entered on the timer after the round has ended,
+        so a live altitude report ALWAYS arrives with the heat closed; gating the
+        fallback on rc=1 meant every live altitude was dropped and only the resend
+        saved it — which then reported each one as a recovery. [I-29]
+
+        It stays off for a live FLIGHT: one arriving with no heat loaded is a
+        different situation and must not be back-dated into the previous round.
         """
         live = self.server.current_group_id()
         if live is not None:
             self.last_group_id = live
             return live
-        if recovered and self.last_group_id is not None:
+        if allow_closed_heat and self.last_group_id is not None:
             log.info(f"Reconciliation from timer id={self.timer_id} arrived after the "
                      f"heat closed — attributing to group {self.last_group_id}.")
             return self.last_group_id
@@ -249,9 +257,11 @@ class TimerClient:
                 pilot_id, f"ALTITUDE flight={flight_no} alt={alt_m}m")
             recovered = params.get("rc") == "1"
             if pilot_id > 0:
+                # Always allow the closed-heat fallback here — see _group_for. [I-29]
                 changed = self.server.record_altitude(
-                    pilot_id, flight_no, alt_m, self._group_for(recovered))
-                log.info(f"Altitude: pilot={pilot_id} flight={flight_no} alt={alt_m}m")
+                    pilot_id, flight_no, alt_m, self._group_for(True))
+                if changed:
+                    log.info(f"Altitude: pilot={pilot_id} flight={flight_no} alt={alt_m}m")
                 if recovered and changed:
                     log.warning(
                         f"RECOVERED altitude for pilot={pilot_id} flight={flight_no} "
