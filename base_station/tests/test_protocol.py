@@ -53,6 +53,7 @@ class _Server:
         self.db = db
         self._mac_to_id = {}
         self._mac_to_pilot = {}
+        self._mac_to_group = {}
         self.state_machine = _StateMachine()
 
     def assign_id(self, mac):
@@ -70,13 +71,17 @@ class _Server:
     async def broadcast_timers(self):
         pass
 
-    def record_flight(self, pilot_id, dur_ms):
+    def current_group_id(self):
+        loaded = self.state_machine._loaded
+        return loaded.get("group_id") if loaded else None
+
+    def record_flight(self, pilot_id, dur_ms, group_id=None):
         self.db.execute("INSERT INTO flights (pilot_id, duration_ms) VALUES (?, ?)",
                         (pilot_id, dur_ms))
         self.db.commit()
         return True
 
-    def record_altitude(self, pilot_id, flight_no, alt_m):
+    def record_altitude(self, pilot_id, flight_no, alt_m, group_id=None):
         pass
 
 
@@ -87,8 +92,24 @@ class _DedupServer(_Server):
     reconciliation test pass regardless of whether dedup works.
     """
 
-    def record_flight(self, pilot_id, dur_ms):
-        return srv.F3KServer.record_flight(self, pilot_id, dur_ms)
+    GROUP = 37
+
+    def __init__(self, db):
+        super().__init__(db)
+        self.state_machine._loaded = {"group_id": self.GROUP}
+
+    def close_heat(self):
+        """What the base does when the round ends — the state the resend meets."""
+        self.state_machine._loaded = None
+
+    def current_group_id(self):
+        return srv.F3KServer.current_group_id(self)
+
+    def record_flight(self, pilot_id, dur_ms, group_id=None):
+        return srv.F3KServer.record_flight(self, pilot_id, dur_ms, group_id)
+
+    def record_altitude(self, pilot_id, flight_no, alt_m, group_id=None):
+        return srv.F3KServer.record_altitude(self, pilot_id, flight_no, alt_m, group_id)
 
 
 class AckContractTests(unittest.TestCase):
@@ -263,7 +284,8 @@ class ReconciliationTests(unittest.TestCase):
         self.db.execute("INSERT INTO pilots (name) VALUES ('Alice')")
         self.db.commit()
         self.pilot = self.db.execute("SELECT id FROM pilots").fetchone()["id"]
-        self.client = srv.TimerClient(None, _Writer(), _DedupServer(self.db))
+        self.srv = _DedupServer(self.db)
+        self.client = srv.TimerClient(None, _Writer(), self.srv)
         self.client.timer_id = 1
         self.sent = []
 
@@ -302,6 +324,45 @@ class ReconciliationTests(unittest.TestCase):
         self._dispatch(line)
         self.assertIn(f"ACK {line}", self.sent)
 
+    def test_resend_after_the_heat_closes_does_not_duplicate(self):
+        """The case that actually happened on hardware. [I-27]
+
+        The timer reconciles at the results screen, which is always AFTER the base
+        has sent STOP/LAND and unloaded the heat. With `_loaded` gone the group was
+        None, the dedup looked under group NULL, missed the originals sitting under
+        the real group, and inserted a full set of orphan duplicates — the exact
+        outcome the resend was built to prevent.
+        """
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=19454")
+        self.srv.close_heat()
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=19454 rc=1")
+        self.assertEqual(self._count(), 1, "the resend duplicated after heat close")
+        row = self.db.execute("SELECT group_id FROM flights").fetchone()
+        self.assertEqual(row["group_id"], _DedupServer.GROUP,
+                         "the flight must not be orphaned under group NULL")
+
+    def test_resend_after_close_still_recovers_a_genuinely_lost_flight(self):
+        """The fallback must not become a blanket suppressor: a flight that never
+        arrived still has to land, and under the right heat."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=19454")
+        self.srv.close_heat()
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=5256 rc=1")
+        self.assertEqual(self._count(), 2)
+        groups = [r["group_id"] for r in
+                  self.db.execute("SELECT group_id FROM flights").fetchall()]
+        self.assertEqual(groups, [_DedupServer.GROUP, _DedupServer.GROUP])
+
+    def test_live_report_after_close_is_not_back_dated(self):
+        """Only reconciliation copies get the fallback. A live report arriving with
+        no heat loaded is a different situation and must not be filed into the
+        previous round."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=19454")
+        self.srv.close_heat()
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=5256")
+        row = self.db.execute(
+            "SELECT group_id FROM flights WHERE duration_ms = 5256").fetchone()
+        self.assertIsNone(row["group_id"])
+
     def test_rc_marker_does_not_change_dedup_identity(self):
         """Dedup keys on (pilot, group, duration) — the marker must not leak in."""
         self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430 rc=1")
@@ -328,7 +389,9 @@ class AltitudeTargetingTests(unittest.TestCase):
         class _Loaded:
             _loaded = None
 
-        self.server = types.SimpleNamespace(db=self.db, state_machine=_Loaded())
+        self.server = types.SimpleNamespace(
+            db=self.db, state_machine=_Loaded(),
+            current_group_id=lambda: None)
 
     def tearDown(self):
         self.db.close()

@@ -61,6 +61,12 @@ class TimerClient:
         self.last_ping_at = time.monotonic()
         self.connected_at = time.time()
         self.last_pilot_id = None   # pilot of the most recent FLIGHT from this timer
+        # Group of the most recent FLIGHT. The end-of-round resend lands AFTER the
+        # base has closed the heat, so `_loaded` is already None by then and the
+        # live group is gone. Without this the dedup looks under group NULL, misses
+        # the originals, and inserts orphan duplicates — the very thing the resend
+        # exists to prevent. Restored on reconnect alongside the pilot. [I-27]
+        self.last_group_id = None
         self.fw = None              # firmware version reported in JOIN (fw-v17+)
 
     async def send(self, msg: str):
@@ -115,6 +121,25 @@ class TimerClient:
                   f"bound pilot — DROPPED. This flight is lost; enter it by hand.")
         return 0
 
+    def _group_for(self, recovered: bool) -> int | None:
+        """Which heat this report belongs to.
+
+        A live report belongs to whatever is loaded, and that becomes the memory.
+        A reconciliation copy arrives after the round has closed and the heat has
+        been unloaded, so `_loaded` is None by then — fall back to the heat this
+        timer was last flying, or its flights land under group NULL where the
+        dedup cannot see the originals and duplicates itself. [I-27]
+        """
+        live = self.server.current_group_id()
+        if live is not None:
+            self.last_group_id = live
+            return live
+        if recovered and self.last_group_id is not None:
+            log.info(f"Reconciliation from timer id={self.timer_id} arrived after the "
+                     f"heat closed — attributing to group {self.last_group_id}.")
+            return self.last_group_id
+        return None
+
     async def _alert_recovered(self, kind: str, pilot_id: int, detail: str) -> None:
         """Tell the run page that data arrived late and the log has changed.
 
@@ -151,6 +176,7 @@ class TimerClient:
             is_reconnect = self.mac in self.server._mac_to_id
             self.timer_id = self.server.assign_id(self.mac)  # same ID on reconnect
             self.last_pilot_id = self.server._mac_to_pilot.get(self.mac)  # restore pilot
+            self.last_group_id = self.server._mac_to_group.get(self.mac)  # and its heat
             self.server.add(self)
             self.server.log_event(
                 "reconnect" if is_reconnect else "connect",
@@ -172,7 +198,8 @@ class TimerClient:
             pilot_id = self._attribute(pilot_id, f"FLIGHT dur={dur_ms}ms")
             if pilot_id > 0:
                 self.last_pilot_id = pilot_id
-                if self.server.record_flight(pilot_id, dur_ms):
+                group_id = self._group_for(recovered)
+                if self.server.record_flight(pilot_id, dur_ms, group_id):
                     asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
                     log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
                     if recovered:
@@ -222,7 +249,8 @@ class TimerClient:
                 pilot_id, f"ALTITUDE flight={flight_no} alt={alt_m}m")
             recovered = params.get("rc") == "1"
             if pilot_id > 0:
-                changed = self.server.record_altitude(pilot_id, flight_no, alt_m)
+                changed = self.server.record_altitude(
+                    pilot_id, flight_no, alt_m, self._group_for(recovered))
                 log.info(f"Altitude: pilot={pilot_id} flight={flight_no} alt={alt_m}m")
                 if recovered and changed:
                     log.warning(
@@ -271,6 +299,7 @@ class F3KServer:
         self._clients: dict[int, TimerClient] = {}
         self._mac_to_id: dict[str, int] = {}      # MAC → timer ID; cache over the timer_ids table
         self._mac_to_pilot: dict[str, int] = {}   # MAC → last pilot_id (restored on reconnect)
+        self._mac_to_group: dict[str, int] = {}   # MAC → last group_id (restored on reconnect)
         self.events = collections.deque(maxlen=100)  # connection diagnostics ring buffer
         self.db = init_db(DB_PATH)
         web_app.state.server = self
@@ -359,6 +388,8 @@ class F3KServer:
         for c in stale:
             if c.last_pilot_id:
                 self._mac_to_pilot[mac] = c.last_pilot_id
+            if c.last_group_id:
+                self._mac_to_group[mac] = c.last_group_id
             log.info(f"Evicting stale connection from MAC {mac} (id={c.timer_id})")
             self.log_event("evicted", mac, c.timer_id, "reconnect from same MAC")
             self.remove(c)
@@ -467,8 +498,10 @@ class F3KServer:
                     # would preserve the flight data.
                     log.warning(f"Keepalive send failed id={c.timer_id} {c.addr}")
 
-    def record_flight(self, pilot_id: int, dur_ms: int) -> bool:
-        group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
+    def record_flight(self, pilot_id: int, dur_ms: int,
+                      group_id: int | None = None) -> bool:
+        if group_id is None:
+            group_id = self.current_group_id()
         # Dedup: same pilot + exact duration in the same group = duplicate, regardless of
         # when it arrived. Covers both the old "double-tap" case and ACK-retry replays
         # after reconnect (timer retransmits unACKed FLIGHTs on reconnect).
@@ -490,7 +523,11 @@ class F3KServer:
         self.db.commit()
         return True
 
-    def record_altitude(self, pilot_id: int, flight_no: int, alt_m: int) -> bool:
+    def current_group_id(self) -> int | None:
+        return self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
+
+    def record_altitude(self, pilot_id: int, flight_no: int, alt_m: int,
+                        group_id: int | None = None) -> bool:
         """Set the altitude on the flight the timer named. Returns True if changed.
 
         This used to write to the most recently inserted flight and ignore
@@ -499,7 +536,8 @@ class F3KServer:
         last row: flight 1's height overwrote flight 4's, then flight 2's did, and
         the earlier flights kept none at all. [I-26]
         """
-        group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
+        if group_id is None:
+            group_id = self.current_group_id()
         row = None
         if flight_no > 0:
             row = self.db.execute(
