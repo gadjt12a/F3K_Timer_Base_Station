@@ -16,6 +16,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -36,6 +37,8 @@ class _Writer:
 
 
 class _StateMachine:
+    _loaded = None
+
     async def on_flight(self, pilot_id, dur_ms):
         pass
 
@@ -75,6 +78,17 @@ class _Server:
 
     def record_altitude(self, pilot_id, flight_no, alt_m):
         pass
+
+
+class _DedupServer(_Server):
+    """Delegates to the real record_flight so dedup is actually exercised.
+
+    The plain _Server stub inserts unconditionally, which would make any
+    reconciliation test pass regardless of whether dedup works.
+    """
+
+    def record_flight(self, pilot_id, dur_ms):
+        return srv.F3KServer.record_flight(self, pilot_id, dur_ms)
 
 
 class AckContractTests(unittest.TestCase):
@@ -125,11 +139,14 @@ class AckContractTests(unittest.TestCase):
             self._assert_acked(line)
 
     def test_no_pilot_messages_are_still_acked(self):
-        """The base drops these deliberately — but silence would loop the timer.
+        """Unattributable data is dropped — but silence would loop the timer.
 
         A timer that reconnects and loses its pilot selection really does send
-        `pilot=0`. ACK means "received and decided", not "stored".
+        `pilot=0`. ACK means "received and decided", not "stored". This client has
+        never had a pilot bound, so there is nothing to attribute to; see
+        `PilotAttributionTests` for the case where there is. [I-25]
         """
+        self.client.last_pilot_id = None
         for line in ("FLIGHT pilot=0 dur=125430",
                      "JUMPED pilot=0 dur=1500",
                      "ALTITUDE pilot=0 flight=1 alt=47",
@@ -170,6 +187,173 @@ class AckContractTests(unittest.TestCase):
         out = self._dispatch("PING")
         self.assertIn("PONG", out)
         self.assertFalse([m for m in out if m.startswith("ACK")])
+
+
+class PilotAttributionTests(unittest.TestCase):
+    """pilot=0 must fall back to the timer's last binding, not vanish. [I-25]"""
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.db.execute("INSERT INTO pilots (name) VALUES ('Alice')")
+        self.db.commit()
+        self.pilot = self.db.execute("SELECT id FROM pilots").fetchone()["id"]
+        self.client = srv.TimerClient(None, _Writer(), _Server(self.db))
+        self.client.timer_id = 1
+        self.sent = []
+
+        async def capture(msg):
+            self.sent.append(msg)
+
+        self.client.send = capture
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _dispatch(self, line):
+        async def run():
+            await self.client._dispatch(line)
+            await asyncio.sleep(0)
+
+        asyncio.run(run())
+
+    def _flights(self):
+        return self.db.execute(
+            "SELECT pilot_id, duration_ms FROM flights ORDER BY id").fetchall()
+
+    def test_flight_with_no_pilot_uses_the_last_binding(self):
+        """The case that silently lost flights: reconnect clears the timer's
+        selection, so every later report arrives as pilot=0 and used to be ACKed
+        and binned. The base still knows the binding — it is restored by MAC."""
+        self.client.last_pilot_id = self.pilot
+        self._dispatch("FLIGHT pilot=0 dur=125430")
+        rows = self._flights()
+        self.assertEqual(len(rows), 1, "the flight must not be dropped")
+        self.assertEqual(rows[0]["pilot_id"], self.pilot)
+
+    def test_flight_with_no_pilot_and_no_binding_is_still_dropped(self):
+        """Attribution is a fallback, not a guess. With nothing to fall back to
+        an orphan row would be worse than a loud error."""
+        self.client.last_pilot_id = None
+        self._dispatch("FLIGHT pilot=0 dur=125430")
+        self.assertEqual(len(self._flights()), 0)
+
+    def test_attribution_still_acks(self):
+        self.client.last_pilot_id = self.pilot
+        self.sent.clear()
+        self._dispatch("FLIGHT pilot=0 dur=125430")
+        self.assertIn("ACK FLIGHT pilot=0 dur=125430", self.sent,
+                      "the ACK must echo what the timer sent, not what we resolved")
+
+    def test_explicit_pilot_always_wins(self):
+        self.client.last_pilot_id = 999
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        self.assertEqual(self._flights()[0]["pilot_id"], self.pilot)
+
+
+class ReconciliationTests(unittest.TestCase):
+    """End-of-round resend: rc=1 copies fill gaps without creating duplicates."""
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.db.execute("INSERT INTO pilots (name) VALUES ('Alice')")
+        self.db.commit()
+        self.pilot = self.db.execute("SELECT id FROM pilots").fetchone()["id"]
+        self.client = srv.TimerClient(None, _Writer(), _DedupServer(self.db))
+        self.client.timer_id = 1
+        self.sent = []
+
+        async def capture(msg):
+            self.sent.append(msg)
+
+        self.client.send = capture
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _dispatch(self, line):
+        async def run():
+            await self.client._dispatch(line)
+            await asyncio.sleep(0)
+
+        asyncio.run(run())
+
+    def _count(self):
+        return self.db.execute("SELECT COUNT(*) FROM flights").fetchone()[0]
+
+    def test_resend_of_a_known_flight_adds_nothing(self):
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430 rc=1")
+        self.assertEqual(self._count(), 1, "the resend must dedup, not duplicate")
+
+    def test_resend_of_a_lost_flight_records_it(self):
+        """Nothing arrived during the round; the resend is the only copy."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430 rc=1")
+        self.assertEqual(self._count(), 1)
+
+    def test_resend_is_acked_like_any_other_message(self):
+        line = f"FLIGHT pilot={self.pilot} dur=125430 rc=1"
+        self.sent.clear()
+        self._dispatch(line)
+        self.assertIn(f"ACK {line}", self.sent)
+
+    def test_rc_marker_does_not_change_dedup_identity(self):
+        """Dedup keys on (pilot, group, duration) — the marker must not leak in."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430 rc=1")
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        self.assertEqual(self._count(), 1)
+
+
+class AltitudeTargetingTests(unittest.TestCase):
+    """Altitudes must land on the flight they name. [I-26]"""
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.db.execute("INSERT INTO pilots (name) VALUES ('Alice')")
+        self.db.commit()
+        self.pilot = self.db.execute("SELECT id FROM pilots").fetchone()["id"]
+        for n, dur in enumerate([10000, 20000, 30000], start=1):
+            self.db.execute(
+                "INSERT INTO flights (pilot_id, duration_ms, flight_no)"
+                " VALUES (?, ?, ?)", (self.pilot, dur, n))
+        self.db.commit()
+
+        class _Loaded:
+            _loaded = None
+
+        self.server = types.SimpleNamespace(db=self.db, state_machine=_Loaded())
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _alt(self, flight_no):
+        return self.db.execute(
+            "SELECT altitude_m FROM flights WHERE pilot_id = ? AND flight_no = ?",
+            (self.pilot, flight_no)).fetchone()["altitude_m"]
+
+    def test_each_altitude_lands_on_its_own_flight(self):
+        """The whole round used to collapse onto the last row: F5K altitudes are
+        entered after the flights exist, so every UPDATE hit the newest one."""
+        for n, alt in ((1, 45), (2, 60), (3, 55)):
+            srv.F3KServer.record_altitude(self.server, self.pilot, n, alt)
+        self.assertEqual((self._alt(1), self._alt(2), self._alt(3)), (45, 60, 55))
+
+    def test_changed_flag_reports_whether_it_moved(self):
+        self.assertTrue(srv.F3KServer.record_altitude(self.server, self.pilot, 1, 45))
+        self.assertFalse(srv.F3KServer.record_altitude(self.server, self.pilot, 1, 45),
+                         "an unchanged resend must not be reported as a recovery")
+
+    def test_unknown_flight_no_falls_back_rather_than_dropping(self):
+        srv.F3KServer.record_altitude(self.server, self.pilot, 99, 70)
+        self.assertEqual(self._alt(3), 70, "fall back to the most recent flight")
 
 
 class TimerNumberingTests(unittest.TestCase):

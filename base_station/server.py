@@ -88,6 +88,52 @@ class TimerClient:
             log.info(f"Disconnected: {self.addr} (id={self.timer_id})")
             asyncio.create_task(self.server.broadcast_timers())
 
+    def _attribute(self, pilot_id: int, what: str) -> int:
+        """Resolve pilot=0 against this timer's last known binding. [I-25]
+
+        A timer that reconnects mid-round loses its pilot selection, so everything
+        it reports afterwards arrives as pilot=0. That used to be logged and
+        dropped — and because `ACK` means "received and decided", the timer cleared
+        it from the pending queue and believed it delivered. Silent loss at both
+        ends, and the one hole the ACK queue can never plug.
+
+        The base is not actually ignorant here: the binding is saved on eviction
+        and restored by MAC on JOIN, so it knows who the timer was flying for even
+        when the timer has forgotten. Losing a flight time is the worst outcome
+        this system has, so attribute it and say so loudly.
+        """
+        if pilot_id > 0:
+            return pilot_id
+        if self.last_pilot_id:
+            log.warning(
+                f"{what} arrived with pilot=0 — attributing to this timer's last "
+                f"bound pilot {self.last_pilot_id}. The timer lost its selection "
+                f"(most likely a reconnect mid-round)."
+            )
+            return self.last_pilot_id
+        log.error(f"{what} arrived with pilot=0 and timer id={self.timer_id} has no "
+                  f"bound pilot — DROPPED. This flight is lost; enter it by hand.")
+        return 0
+
+    async def _alert_recovered(self, kind: str, pilot_id: int, detail: str) -> None:
+        """Tell the run page that data arrived late and the log has changed.
+
+        A recovery is good news, but it is still the flight log changing after the
+        round ended, which the CD would otherwise never see. Silence in either
+        direction is the thing to avoid.
+        """
+        row = self.server.db.execute(
+            "SELECT name FROM pilots WHERE id = ?", (pilot_id,)).fetchone()
+        from frontend.app import manager
+        await manager.broadcast({
+            "type": "recovered",
+            "kind": kind,
+            "timer_id": self.timer_id,
+            "pilot_id": pilot_id,
+            "pilot_name": row["name"] if row else f"Pilot {pilot_id}",
+            "detail": detail,
+        })
+
     async def _dispatch(self, line: str):
         log.info(f"<< [id={self.timer_id or '?'}] {line}")
         parts = line.split()
@@ -120,15 +166,26 @@ class TimerClient:
             params = parse_params(parts[1:])
             pilot_id = int(params.get("pilot", 0))
             dur_ms = int(params.get("dur", 0))
-            if pilot_id <= 0:
-                # No bound pilot (e.g. a timer that reconnected and lost its selection).
-                # Park it rather than writing an orphan row into the flight log.
-                log.warning(f"FLIGHT with no pilot (dur={dur_ms}ms) — ignored")
-            else:
+            # rc=1 marks an end-of-round reconciliation copy. Absent on fw-v19 and
+            # earlier, and on every live report.
+            recovered = params.get("rc") == "1"
+            pilot_id = self._attribute(pilot_id, f"FLIGHT dur={dur_ms}ms")
+            if pilot_id > 0:
                 self.last_pilot_id = pilot_id
                 if self.server.record_flight(pilot_id, dur_ms):
                     asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
                     log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
+                    if recovered:
+                        # An insert from a reconciliation copy means the live report
+                        # never made it: a real gap, caught. Never let this be quiet
+                        # — the CD has to know the log changed after the round.
+                        log.warning(
+                            f"RECOVERED flight for pilot={pilot_id} "
+                            f"({dur_ms / 1000:.2f}s) — the live report was lost and "
+                            f"the end-of-round resend caught it."
+                        )
+                        asyncio.create_task(self._alert_recovered(
+                            "flight", pilot_id, f"{dur_ms / 1000:.2f}s"))
             # ACK unconditionally — including the discarded no-pilot case and dups.
             # ACK means "received and decided", not "stored": the timer retries until
             # ACKed, so withholding one from a message we deliberately drop would put
@@ -161,9 +218,18 @@ class TimerClient:
             pilot_id = int(params.get("pilot", 0))
             flight_no = int(params.get("flight", 0))
             alt_m = int(params.get("alt", 0))
+            pilot_id = self._attribute(
+                pilot_id, f"ALTITUDE flight={flight_no} alt={alt_m}m")
+            recovered = params.get("rc") == "1"
             if pilot_id > 0:
-                self.server.record_altitude(pilot_id, flight_no, alt_m)
+                changed = self.server.record_altitude(pilot_id, flight_no, alt_m)
                 log.info(f"Altitude: pilot={pilot_id} flight={flight_no} alt={alt_m}m")
+                if recovered and changed:
+                    log.warning(
+                        f"RECOVERED altitude for pilot={pilot_id} flight={flight_no} "
+                        f"({alt_m}m) — the live report was lost.")
+                    asyncio.create_task(self._alert_recovered(
+                        "altitude", pilot_id, f"flight {flight_no}: {alt_m}m"))
                 from frontend.app import manager
                 asyncio.create_task(manager.broadcast({
                     "type": "altitude",
@@ -424,19 +490,47 @@ class F3KServer:
         self.db.commit()
         return True
 
-    def record_altitude(self, pilot_id: int, flight_no: int, alt_m: int):
+    def record_altitude(self, pilot_id: int, flight_no: int, alt_m: int) -> bool:
+        """Set the altitude on the flight the timer named. Returns True if changed.
+
+        This used to write to the most recently inserted flight and ignore
+        `flight_no` altogether. F5K altitudes are entered after the round, one
+        flight at a time, so every altitude in a multi-flight round landed on the
+        last row: flight 1's height overwrote flight 4's, then flight 2's did, and
+        the earlier flights kept none at all. [I-26]
+        """
         group_id = self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None
-        # Update the most recently inserted flight for this pilot in this group
+        row = None
+        if flight_no > 0:
+            row = self.db.execute(
+                "SELECT id, altitude_m FROM flights"
+                " WHERE pilot_id = ? AND group_id IS ? AND flight_no = ?",
+                (pilot_id, group_id, flight_no),
+            ).fetchone()
+        if row is None:
+            # No flight_no match — an older timer, or a flight that never reached
+            # us. Fall back to the previous behaviour rather than dropping it.
+            row = self.db.execute(
+                "SELECT id, altitude_m FROM flights"
+                " WHERE pilot_id = ? AND group_id IS ? ORDER BY id DESC LIMIT 1",
+                (pilot_id, group_id),
+            ).fetchone()
+            if row is not None and flight_no > 0:
+                log.warning(
+                    f"ALTITUDE for pilot={pilot_id} flight={flight_no}: no flight with "
+                    f"that number in this group — applied to the most recent instead."
+                )
+        if row is None:
+            log.error(f"ALTITUDE for pilot={pilot_id} flight={flight_no} alt={alt_m}m "
+                      f"has no flight to attach to — DROPPED.")
+            return False
+        changed = row["altitude_m"] != alt_m
         self.db.execute(
-            """UPDATE flights SET altitude_m = ?, altitude_source = 'timer'
-               WHERE id = (
-                   SELECT id FROM flights
-                   WHERE pilot_id = ? AND group_id IS ?
-                   ORDER BY id DESC LIMIT 1
-               )""",
-            (alt_m, pilot_id, group_id),
+            "UPDATE flights SET altitude_m = ?, altitude_source = 'timer' WHERE id = ?",
+            (alt_m, row["id"]),
         )
         self.db.commit()
+        return changed
 
     async def broadcast_timers(self):
         """Push current timer list to all web clients so the run page stays in sync."""

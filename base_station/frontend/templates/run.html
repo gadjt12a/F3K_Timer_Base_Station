@@ -49,6 +49,9 @@ function runner(initialState) {
         _tickSec: 0,
         flights: [],
         altitudes: {},
+        // Late-arriving data caught by a timer's end-of-round resend. Sticky by
+        // design — dismissed by hand, never on a timer.
+        recovered: [],
         timers: [],
         ws: null,
         wsOk: false,
@@ -194,6 +197,18 @@ function runner(initialState) {
                     } else {
                         this.loadTimers();
                     }
+                } else if (msg.type === 'recovered') {
+                    // A flight or altitude that never made it during the round,
+                    // caught by the timer's end-of-round resend. Good news, but it
+                    // means the log changed after the round closed — the CD has to
+                    // see that, so it sticks until dismissed rather than fading.
+                    this.recovered = [...this.recovered, {
+                        id: Date.now() + Math.random(),
+                        kind: msg.kind, pilot_name: msg.pilot_name,
+                        timer_id: msg.timer_id, detail: msg.detail,
+                    }];
+                    if (msg.kind === 'flight') this.loadHeat();
+                    if (this.altOpen) this.refreshAltitudes();
                 } else if (msg.type === 'timers_update') {
                     this.timers = msg.timers || [];
                 }
@@ -441,6 +456,36 @@ function runner(initialState) {
 
 <div x-data="runner(INITIAL_STATE)" x-init="init()"
      class="flex gap-6 h-[calc(100vh-8rem)]">
+
+    <!-- Recovered-data alerts. A flight or altitude that never arrived during the
+         round and was caught by the timer's end-of-round resend. Fixed overlay so
+         it cannot be scrolled past and does not reflow the run layout; dismissed
+         by hand, because the flight log changing after a round has closed is
+         something the CD must actually acknowledge. -->
+    <div x-show="recovered.length"
+         class="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[36rem] max-w-[90vw] space-y-2">
+        <template x-for="r in recovered" :key="r.id">
+            <div class="bg-amber-900/95 border border-amber-500 rounded-lg px-4 py-3 shadow-lg flex items-start gap-3">
+                <span class="text-amber-300 text-lg leading-none">&#9888;</span>
+                <div class="flex-1 text-sm">
+                    <div class="font-semibold text-amber-200">
+                        Recovered <span x-text="r.kind"></span> &mdash; added after the round
+                    </div>
+                    <div class="text-amber-100/90">
+                        <span x-text="r.pilot_name"></span> &middot;
+                        <span x-text="r.detail"></span>
+                        <span class="text-amber-300/70">(T<span x-text="r.timer_id"></span>)</span>
+                    </div>
+                    <div class="text-[11px] text-amber-300/70 mt-1">
+                        The live report was lost; the timer re-sent it when the round ended.
+                        Check the log reads correctly.
+                    </div>
+                </div>
+                <button @click="recovered = recovered.filter(x => x.id !== r.id)"
+                        class="text-amber-300 hover:text-white text-lg leading-none">&times;</button>
+            </div>
+        </template>
+    </div>
 
     <!-- Left: heat queue -->
     <div class="{{ 'w-[35rem]' if queue_cols | length > 1 else 'w-72' }} flex-shrink-0 bg-gray-800 rounded-lg p-4 overflow-y-auto">
