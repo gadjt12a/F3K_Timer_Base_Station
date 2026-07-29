@@ -23,25 +23,26 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 61, 2026-07-29)
 
-**27 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**28 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
-Everything the session-55 audit raised is closed. Seven came from elsewhere and are
+Everything the session-55 audit raised is closed. Eight came from elsewhere and are
 registered here rather than tracked separately: [I-22] reported by the user, [I-23]
 from the session-57 repo review, [I-24] from the session-61 audio verification, and
-[I-25]–[I-28] from running T1/T2 against real hardware in session 61. Each fix
+[I-25]–[I-29] from running T1/T2 and a real F5K round against hardware in session 61. Each fix
 carries its issue ID in a comment at the site, so the reason survives the next
 reader.
 
-⚠ **Four of the seven were found by exercising the thing, not by reading it.** The
+⚠ **Five of the eight were found by exercising the thing, not by reading it.** The
 audit that produced [I-01]–[I-21] read every route and every handler and did not
 see any of them. [I-25] needed a reconnect mid-round, [I-27] needed a round to
-actually end, [I-28] needed two rounds of different disciplines in sequence, and
-[I-24] needed the cue schedule dumped second by second. Static review cannot reach
+actually end, [I-28] needed two rounds of different disciplines in sequence, [I-29]
+needed a real F5K round with altitude entry, and [I-24] needed the cue schedule
+dumped second by second. Static review cannot reach
 this class of defect.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 117 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 120 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -455,6 +456,42 @@ compared.
 `_reconcileRound` refuses to send altitudes unless the round is F5K. Two lines of
 defence deliberately: a bogus altitude silently corrupts F5K scoring, and the
 bonus formula is stepped, so a wrong height does not look wrong in the results.
+
+---
+
+### I-29 · Every live F5K altitude was dropped and then "recovered" · FIXED (session 61)
+`base_station/server.py` (`TimerClient._group_for`)
+
+The immediate sequel to [I-27], and only findable by running a real F5K round.
+
+F5K heights are entered on the timer **after** the round has ended — that is how
+the state machine works, `ALTITUDE_ENTRY` follows `WORKING_TIME_EXPIRED`. So a
+live `ALTITUDE` *always* arrives with the heat already unloaded. [I-27]'s group
+fallback was gated on `rc=1`, so every live altitude resolved to `group_id=None`,
+matched no flight, and was dropped:
+
+```
+<< [id=1] ALTITUDE pilot=29 flight=3 alt=23
+ERROR ALTITUDE ... has no flight to attach to — DROPPED.
+```
+
+The end-of-round resend then applied it and — correctly, by its own logic —
+announced each one as a **RECOVERED** loss. So the data did land, but only via
+the safety net, and the CD got a spurious alert for every single flight. A
+warning that fires every round is one nobody reads, which is exactly how the
+audio set stayed missing for eight sessions ([I-23]).
+
+The fallback now applies to **every** `ALTITUDE`. It stays gated for `FLIGHT`:
+a live flight arriving with no heat loaded is a different situation and must not
+be back-dated into the previous round.
+
+Also stopped logging `Altitude: …` as success on the line immediately after
+`DROPPED` — it now logs only when the value actually changed.
+
+⚠ Note how [I-26], [I-27] and [I-29] stack: altitudes hit the wrong row, then the
+right row via the wrong path, then the right row via the right path. Each fix
+exposed the next. **F5K altitude entry had never once been run end to end against
+the base station** before session 61.
 
 ---
 
