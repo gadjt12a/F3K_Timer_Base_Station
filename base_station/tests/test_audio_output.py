@@ -38,9 +38,14 @@ class _Base(unittest.TestCase):
         self._orig_path = ac._CONFIG_PATH
         ac._CONFIG_PATH = Path(self.path)
         self._orig_env = os.environ.pop("F3K_AUDIO_DEVICE", None)
+        # Never let a test touch the developer's real ~/.asoundrc.
+        self._home = tempfile.mkdtemp()
+        self._orig_rc = ac._ASOUNDRC
+        ac._ASOUNDRC = Path(self._home) / ".asoundrc"
         self._patch_aplay(_APLAY_L)
 
     def tearDown(self):
+        ac._ASOUNDRC = self._orig_rc
         ac._CONFIG_PATH = self._orig_path
         self._aplay.stop()
         os.unlink(self.path)
@@ -54,7 +59,7 @@ class _Base(unittest.TestCase):
             self._aplay.stop()
         self._aplay = mock.patch.object(
             ac.subprocess, "run",
-            return_value=mock.Mock(stdout=output))
+            return_value=mock.Mock(stdout=output, stderr=""))
         self._aplay.start()
 
     def _write(self, cfg):
@@ -82,7 +87,8 @@ class OutputSelectionTests(_Base):
         self._write({"output": "jack"})
         self.assertEqual(ac.output_device(), "plughw:0,0")
         self._write({"output": "usb"})
-        self.assertEqual(ac.output_device(), "plughw:3,0")
+        # A named PCM, not plughw: USB needs a forced slave rate — see UsbRateTests.
+        self.assertEqual(ac.output_device(), "f3k_out")
         self._write({"output": "bt", "bt_mac": "AA:BB:CC:DD:EE:FF"})
         self.assertEqual(ac.output_device(),
                          "bluealsa:DEV=AA:BB:CC:DD:EE:FF,PROFILE=a2dp")
@@ -159,6 +165,56 @@ class MixerScaleTests(_Base):
         self.assertEqual(dev, ["-D", "bluealsa"])
 
 
+class UsbRateTests(_Base):
+    """A USB device that lies about its rate must still play at the right speed."""
+
+    def _rates(self, lo, hi):
+        return mock.patch.object(
+            ac, "_device_rates", return_value=(lo, hi))
+
+    def test_usb_gets_a_named_pcm_that_forces_resampling(self):
+        """plughw: cannot say "resample even though the device claims this rate",
+        and the Jabra claims 16k then runs at 48k — so cues played 3x fast, which
+        is worse than silence because it sounds like something is working."""
+        self._write({"output": "usb"})
+        with self._rates(8000, 48000):
+            self.assertEqual(ac.output_device(), "f3k_out")
+        conf = ac._ASOUNDRC.read_text()
+        self.assertIn('pcm "hw:3,0"', conf)
+        self.assertIn("rate 48000", conf)
+
+    def test_rate_falls_back_when_48k_is_out_of_range(self):
+        self._write({"output": "usb"})
+        with self._rates(8000, 44100):
+            ac.output_device()
+        self.assertIn("rate 44100", ac._ASOUNDRC.read_text())
+
+    def test_regenerating_does_not_duplicate_or_grow(self):
+        self._write({"output": "usb"})
+        with self._rates(8000, 48000):
+            ac.output_device()
+            first = ac._ASOUNDRC.read_text()
+            ac.output_device()
+        self.assertEqual(ac._ASOUNDRC.read_text(), first)
+        self.assertEqual(first.count("pcm.f3k_out"), 1)
+
+    def test_operator_content_in_asoundrc_is_preserved(self):
+        """Never silently eat something the operator put there by hand."""
+        ac._ASOUNDRC.write_text("pcm.mything { type null }\n")
+        self._write({"output": "usb"})
+        with self._rates(8000, 48000):
+            ac.output_device()
+        conf = ac._ASOUNDRC.read_text()
+        self.assertIn("pcm.mything", conf)
+        self.assertIn("pcm.f3k_out", conf)
+
+    def test_unwritable_asoundrc_still_makes_a_noise(self):
+        """Degrade to plughw rather than returning nothing at all."""
+        self._write({"output": "usb"})
+        with self._rates(8000, 48000),              mock.patch.object(ac.Path, "write_text", side_effect=OSError):
+            self.assertEqual(ac.output_device(), "plughw:3,0")
+
+
 class EnvOverrideTests(_Base):
     def test_env_override_wins_and_is_reported(self):
         """The trap that cost an evening: a hand-added Environment= line in the
@@ -174,7 +230,7 @@ class EnvOverrideTests(_Base):
 
     def test_no_override_leaves_the_selection_in_charge(self):
         self._write({"output": "usb"})
-        self.assertEqual(ac.output_device(), "plughw:3,0")
+        self.assertEqual(ac.output_device(), "f3k_out")
 
 
 if __name__ == "__main__":

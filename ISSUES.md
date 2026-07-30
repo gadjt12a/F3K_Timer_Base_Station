@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 61, 2026-07-29)
 
-**30 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**31 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 Everything the session-55 audit raised is closed. Eight came from elsewhere and are
 registered here rather than tracked separately: [I-22] reported by the user, [I-23]
@@ -42,7 +42,7 @@ this class of defect.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 144 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 149 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -587,6 +587,45 @@ softvol is already linear and `-M` would shift levels tuned by ear.
 
 ⚠ **`lead_s` is per-output in reality but stored globally.** 0.8 s was tuned for
 A2DP latency; on a cable it fires every cue 0.8 s early. Re-tune after switching.
+
+---
+
+### I-32 · USB audio played every cue 3x too fast · FIXED (session 62)
+`base_station/frontend/audio_control.py` (`ensure_alsa_config`, `_slave_rate`)
+
+The Jabra SPEAK 510 advertises `RATE: [8000 48000]` but actually runs at 48000
+whatever it is asked for. Our cues are 16 kHz, so ALSA saw a device that claimed
+16 kHz support, did no conversion, and the speaker consumed the samples three
+times too quickly.
+
+Measured against a 1.54 s file:
+
+| output | time |
+|---|---|
+| 3.5 mm jack | 1.638 s |
+| USB (before) | **0.557 s** — 3x fast |
+| USB (after) | 1.636 s |
+
+Confirmed by ear as well: a 48 kHz copy said "30 seconds to start" correctly, the
+16 kHz original chipmunked.
+
+**This is worse than silence.** A silent heat is obvious. A heat where every
+announcement is an unintelligible chirp sounds like equipment working badly, and
+a CD could waste a round on it before realising.
+
+`plughw:` cannot express "resample even though the device claims it can take this
+rate", and a rate cannot be pinned inline in a device string — ALSA rejects
+`plug:{slave.pcm ...}` from the command line. It needs a named PCM, so the app now
+generates one in `~/.asoundrc` between markers, keyed to the detected card and to
+a rate the device really reports. Anything else in that file is preserved.
+
+Generated rather than hand-written deliberately: a hand-added audio override in a
+systemd drop-in is what made the output setting a lie for three weeks [I-31], and
+a hand-made `.asoundrc` would hide exactly as well. If it cannot be written the
+code degrades to `plughw:` — wrong speed, but not silence.
+
+The service runs as `User=pi`, so `~/.asoundrc` does apply to it. If that ever
+changes to `root`, this breaks silently.
 
 ---
 
