@@ -134,6 +134,25 @@ class GeneratedScheduleTests(unittest.TestCase):
         for n in range(1, 10):
             self.assertIn(f"{n}.wav", _spoken(p.working, n))
 
+    def test_the_window_opens_with_a_horn(self):
+        """The start signal. Generated rounds began in total silence without it —
+        the cue pilots actually launch on."""
+        for work_s in (40, 60, 240, 600):
+            with self.subTest(work_s=work_s):
+                p = self._gen(work_s)
+                opens = [c for c in p.cues
+                         if c["state"] == audio.WT and c["t"] == 0]
+                self.assertEqual(len(opens), 1, "exactly one open signal")
+                self.assertEqual(opens[0]["beepMs"], 1000)
+
+    def test_the_window_closes_with_a_horn(self):
+        for work_s in (40, 240):
+            with self.subTest(work_s=work_s):
+                p = self._gen(work_s)
+                closes = [c for c in p.cues if c.get("wav") == "StartEndHorn.wav"]
+                self.assertEqual(len(closes), 1)
+                self.assertEqual(closes[0]["t"], work_s)
+
     def test_marks_outside_the_window_are_not_called(self):
         """A 40 s round must not announce minutes it does not have."""
         p = self._gen(40)

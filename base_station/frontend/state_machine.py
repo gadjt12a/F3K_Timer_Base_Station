@@ -235,6 +235,7 @@ class CompetitionStateMachine:
         # latency and land on the beat. The tick loop below stays the master clock
         # for the display and the timers (TCP), independent of audio.
         engine.start_schedule(d["prep_time_s"], d["land_time_s"])
+        seq_t0 = loop.time()   # same anchor the audio schedule uses
 
         # ── PREP ─────────────────────────────────────────────────────
         self._state = "PREP"
@@ -263,12 +264,19 @@ class CompetitionStateMachine:
             deadline = await self._tick_sleep(deadline)
             remaining -= 1
 
+        log.info("[AUDIO-T] prep loop ended at %.3f (expected %.3f)",
+                 loop.time() - seq_t0, float(d["prep_time_s"]))
         await self._server.broadcast(f"TASK wt={d['working_time_s']} disc={d['discipline']}")
 
         # ── WORKING ──────────────────────────────────────────────────
         self._state = "WORKING"
         await self._server.broadcast("START")
 
+        # The audio schedule assumes WORKING begins exactly at prep_time_s. This
+        # loop re-anchors to now, AFTER the TASK and START broadcasts — so any gap
+        # here is one the audio timeline does not know about.
+        log.info("[AUDIO-T] START sent at %.3f — working clock anchored here",
+                 loop.time() - seq_t0)
         deadline = loop.time() + 1.0
         for remaining in range(d["working_time_s"], 0, -1):
             self._wt_remaining = remaining

@@ -215,6 +215,17 @@ def _generate_profile(discipline: str, prep_s: int, work_s: int,
         if 0 < secs < prep_s:
             cues.append({"state": PT, "t": -secs, "wav": wav, "beepHz": 0, "beepMs": 0})
 
+    # The window-OPEN signal, at the instant working time begins. GliderScore's own
+    # profiles carry a 1 s 1000 Hz tone at WT t=0 and that is what pilots launch on
+    # — the single most important cue in the round. Generated schedules had no open
+    # horn at all: the round simply began in silence, with only the close horn 60 s
+    # later to say anything had happened.
+    #
+    # It has to live in the cue list, not be fired by the engine at the phase
+    # boundary: `horn()` exists for that and is called from nowhere, and
+    # build_schedule() drives a heat from the RAW cues, not the bucketed tables.
+    cues.append({"state": WT, "t": 0, "wav": "", "beepHz": 1000, "beepMs": 1000})
+
     # Working: t runs forward from the open, so remaining r sits at work_s - r.
     for secs, wav in _GEN_WORK_MARKS + _countdown(work_s):
         if 0 < secs < work_s:
@@ -510,6 +521,14 @@ class AudioEngine:
                 i += 1
             # Preempt whatever is currently playing and fire this group
             self._kill_current()
+            # Timing instrumentation: intended vs actual, on the sequence clock.
+            # "Does it sound right" cannot separate a late cue from a late round,
+            # and the two phases drifted in opposite directions by ear — so log
+            # numbers instead of asking. [audio-timing]
+            actual = loop.time() - t0
+            log.info("[AUDIO-T] off=%7.3f actual=%7.3f drift=%+6.0fms  %s",
+                     offset, actual, (actual - offset) * 1000,
+                     ",".join((c.get("wav") or f"beep{c.get('beepHz')}") for c in group))
             asyncio.create_task(self._play_group(group))
 
     async def _play_group(self, cues: list[dict]) -> None:
