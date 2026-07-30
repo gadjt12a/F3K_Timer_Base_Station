@@ -1356,6 +1356,21 @@ async def api_audio_status():
                 "lead_s": audio_control.get_lead()}   # reads the config file, can't fail
 
 
+@app.post("/api/audio/output")
+async def api_audio_output(mode: str):
+    """Choose 3.5mm jack / USB audio / Bluetooth.
+
+    Re-applies the saved volume straight away: each output has its own mixer, so
+    the level the operator set on one says nothing about where the next one sits.
+    """
+    result = audio_control.set_output(mode)
+    if result.get("ok"):
+        saved = audio_control.load_config().get("volume")
+        if saved is not None:
+            await audio_control.apply_volume(saved)
+    return result
+
+
 @app.post("/api/audio/volume")
 async def api_audio_volume(level: int):
     return await audio_control.set_volume(level)

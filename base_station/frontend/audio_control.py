@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 from pathlib import Path
 
 log = logging.getLogger("f3k")
@@ -71,12 +72,88 @@ def set_lead(seconds: float) -> dict:
     return {"ok": True, "lead_s": seconds}
 
 
+# How the operator chose to get sound out. Stored in audio_config.json as
+# "output"; everything else about the audio path follows from it.
+OUTPUT_MODES = ("jack", "usb", "bt")
+
+
+def _alsa_cards() -> list[tuple[int, str]]:
+    """[(card_number, description)] from `aplay -l`, in the order it lists them."""
+    try:
+        out = subprocess.run(["aplay", "-l"], capture_output=True, text=True,
+                             timeout=5).stdout
+    except Exception:
+        return []
+    return [(int(m.group(1)), m.group(2))
+            for m in re.finditer(r"^card (\d+): (.+?),", out, re.M)]
+
+
+def _find_card(*needles: str) -> int | None:
+    """First card whose description mentions any needle. Matched by NAME, never by
+    a fixed index: a USB device changes card number as things are plugged in, and
+    on this Pi the HDMI outputs sit between the headphone jack and USB audio."""
+    for num, desc in _alsa_cards():
+        low = desc.lower()
+        if any(n.lower() in low for n in needles):
+            return num
+    return None
+
+
+def jack_card() -> int | None:
+    return _find_card("headphones", "bcm2835")
+
+
+def usb_card() -> int | None:
+    return _find_card("usb")
+
+
+def output_mode() -> str:
+    """Selected output. Falls back to the pre-selector behaviour for old configs:
+    a saved bt_mac used to be the only way Bluetooth got chosen."""
+    cfg = load_config()
+    mode = cfg.get("output")
+    if mode in OUTPUT_MODES:
+        return mode
+    return "bt" if cfg.get("bt_mac") else "jack"
+
+
 def output_device() -> str:
-    """ALSA device string the engine should play to (config BT speaker > env > jack)."""
-    mac = load_config().get("bt_mac")
-    if mac:
-        return f"bluealsa:DEV={mac},PROFILE=a2dp"
-    return os.environ.get("F3K_AUDIO_DEVICE") or "plughw:0,0"
+    """ALSA device string the engine should play to.
+
+    ⚠ F3K_AUDIO_DEVICE overrides everything and is a developer escape hatch only.
+    A hand-added `Environment="F3K_AUDIO_DEVICE=bluealsa:DEV=…"` line in the
+    systemd unit on the field Pi silently pinned output to one specific speaker's
+    MAC, so changing the device in the app did nothing at all and the config on
+    disk was a lie. If it is set, the settings page says so rather than pretending
+    the selection took effect.
+    """
+    env = os.environ.get("F3K_AUDIO_DEVICE")
+    if env:
+        return env
+
+    mode = output_mode()
+    if mode == "bt":
+        mac = load_config().get("bt_mac")
+        if mac:
+            return f"bluealsa:DEV={mac},PROFILE=a2dp"
+    elif mode == "usb":
+        card = usb_card()
+        if card is not None:
+            return f"plughw:{card},0"
+    # Jack, and the safety net for "BT selected but nothing paired" or "USB
+    # selected but unplugged" — silence is the worst outcome, so fall back to the
+    # output that is always physically present.
+    card = jack_card()
+    return f"plughw:{card if card is not None else 0},0"
+
+
+def set_output(mode: str) -> dict:
+    if mode not in OUTPUT_MODES:
+        return {"ok": False, "error": f"unknown output {mode!r}"}
+    cfg = load_config()
+    cfg["output"] = mode
+    save_config(cfg)
+    return {"ok": True, "output": mode, "device": output_device()}
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +210,13 @@ async def bt_status() -> dict:
         "paired": paired,
         "connected_mac": connected_mac,
         "active_device": output_device(),
+        "output": output_mode(),
+        "jack_card": jack_card(),
+        "usb_card": usb_card(),
+        "usb_name": next((d for n, d in _alsa_cards() if n == usb_card()), None),
+        # Truthy only when the developer escape hatch is pinning output, in which
+        # case the selector below it is not actually in charge.
+        "device_override": os.environ.get("F3K_AUDIO_DEVICE"),
     }
 
 
@@ -182,6 +266,35 @@ async def _mixer_control() -> str | None:
     return m.group(1) if m else None
 
 
+async def _card_control(card: int) -> str | None:
+    """First simple mixer control on an ALSA card. Name varies by device — the
+    Pi's jack calls it 'PCM', a USB speakerphone might call it 'Speaker' or
+    'Headset' — so it is discovered rather than assumed."""
+    rc, out, _ = await _run(["amixer", "-c", str(card), "scontrols"])
+    if rc != 0:
+        return None
+    m = re.search(r"Simple mixer control '([^']+)'", out)
+    return m.group(1) if m else None
+
+
+async def _active_mixer() -> tuple[list[str], str] | None:
+    """(amixer device args, control name) for whatever output is selected.
+
+    Volume has to follow the output: `amixer -D bluealsa` only exists while an
+    A2DP transport is up, so it silently did nothing whenever sound was coming
+    out of the jack.
+    """
+    mode = output_mode()
+    if mode == "bt":
+        ctrl = await _mixer_control()
+        return (["-D", "bluealsa"], ctrl) if ctrl else None
+    card = usb_card() if mode == "usb" else jack_card()
+    if card is None:
+        return None
+    ctrl = await _card_control(card)
+    return (["-c", str(card)], ctrl) if ctrl else None
+
+
 async def pcm_alive() -> bool:
     """True if the bluealsa A2DP PCM is really available (soft-volume control present).
 
@@ -198,10 +311,11 @@ async def pcm_alive() -> bool:
 
 async def get_volume() -> int | None:
     async with bluealsa_lock:
-        ctrl = await _mixer_control()
-        if not ctrl:
+        mixer = await _active_mixer()
+        if not mixer:
             return None
-        _, out, _ = await _run(["amixer", "-D", "bluealsa", "sget", ctrl])
+        dev, ctrl = mixer
+        _, out, _ = await _run(["amixer", *dev, "sget", ctrl])
     m = re.search(r"\[(\d+)%\]", out)
     return int(m.group(1)) if m else None
 
@@ -214,10 +328,11 @@ async def apply_volume(pct: int) -> bool:
     """
     pct = max(0, min(100, int(pct)))
     async with bluealsa_lock:
-        ctrl = await _mixer_control()
-        if not ctrl:
+        mixer = await _active_mixer()
+        if not mixer:
             return False
-        rc, _, _ = await _run(["amixer", "-D", "bluealsa", "sset", ctrl, f"{pct}%"])
+        dev, ctrl = mixer
+        rc, _, _ = await _run(["amixer", *dev, "sset", ctrl, f"{pct}%"])
     return rc == 0
 
 
@@ -227,4 +342,4 @@ async def set_volume(pct: int) -> dict:
     cfg["volume"] = max(0, min(100, int(pct)))
     save_config(cfg)
     return {"ok": ok, "volume": cfg["volume"],
-            "error": None if ok else "no Bluetooth speaker connected"}
+            "error": None if ok else f"no mixer for the selected output ({output_mode()})"}

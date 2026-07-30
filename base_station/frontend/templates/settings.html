@@ -11,12 +11,53 @@
   <section class="bg-gray-800 rounded-lg p-5 mb-6">
     <h2 class="text-lg font-semibold mb-4 text-gray-200">Audio Output</h2>
 
-    <div class="flex items-center gap-4 mb-4 text-sm">
+    <!-- Output selection -->
+    <div class="mb-5">
+      <label class="text-gray-300 block mb-2">Output</label>
+      <div class="flex flex-wrap gap-2">
+        <button @click="setOutput('jack')"
+                :class="audio.output === 'jack' ? 'bg-blue-600 border-blue-400' : 'bg-gray-700 border-gray-600 hover:bg-gray-600'"
+                class="px-4 py-2 rounded border text-sm font-medium">
+          3.5&nbsp;mm Stereo
+        </button>
+        <button @click="setOutput('usb')" :disabled="audio.usb_card === null"
+                :class="audio.output === 'usb' ? 'bg-blue-600 border-blue-400' : (audio.usb_card === null ? 'bg-gray-800 border-gray-700 text-gray-600 cursor-not-allowed' : 'bg-gray-700 border-gray-600 hover:bg-gray-600')"
+                class="px-4 py-2 rounded border text-sm font-medium">
+          USB Audio
+        </button>
+        <button @click="setOutput('bt')"
+                :class="audio.output === 'bt' ? 'bg-blue-600 border-blue-400' : 'bg-gray-700 border-gray-600 hover:bg-gray-600'"
+                class="px-4 py-2 rounded border text-sm font-medium">
+          Bluetooth
+        </button>
+      </div>
+
+      <p class="text-xs text-gray-500 mt-2" x-show="audio.usb_card === null">
+        No USB audio device detected — plug one in and reload.</p>
+      <p class="text-xs text-gray-400 mt-2" x-show="audio.output === 'usb' && audio.usb_name">
+        Using <span class="font-mono" x-text="audio.usb_name"></span>.</p>
+      <p class="text-xs text-amber-400 mt-2" x-show="audio.output === 'bt' && !audio.connected_mac">
+        Bluetooth selected but no speaker is connected — falling back to the 3.5&nbsp;mm jack
+        so the field is never silent. Connect a speaker below.</p>
+      <p class="text-xs text-amber-400 mt-2" x-show="audio.output === 'bt' && audio.connected_mac">
+        Bluetooth adds output delay that a cable does not. Set <strong>Lead</strong> below
+        until the countdown and horns land on the beat &mdash; and tune it on the speaker
+        you will actually compete with, not on headphones.</p>
+
+      <!-- The escape hatch beating the selector is exactly the trap that cost an
+           evening once; say so rather than showing a selection that does nothing. -->
+      <p class="text-xs text-red-400 mt-2" x-show="audio.device_override">
+        ⚠ Overridden by <span class="font-mono">F3K_AUDIO_DEVICE</span> in the service
+        environment — this selection has no effect until that is removed.
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 mb-4 text-sm">
       <span class="text-gray-400">Bluetooth:</span>
       <span :class="audio.powered ? 'text-green-400' : 'text-red-400'"
             x-text="audio.powered ? 'adapter on' : 'adapter off'"></span>
       <span class="text-gray-500">·</span>
-      <span class="text-gray-400">Active device:</span>
+      <span class="text-gray-400">Playing to:</span>
       <span class="font-mono text-gray-200 text-xs" x-text="audio.active_device"></span>
     </div>
 
@@ -31,7 +72,7 @@
                 class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-sm font-medium">Test</button>
       </div>
       <p class="text-xs text-gray-500 mt-1" x-show="audio.volume === null">
-        No Bluetooth speaker connected — volume applies once a speaker is connected.</p>
+        No mixer for the selected output — volume applies once the device is present.</p>
     </div>
 
     <!-- Audio lead (latency compensation) -->
@@ -235,7 +276,7 @@
 <script>
 function settings() {
   return {
-    audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0 },
+    audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0, output: 'jack', jack_card: null, usb_card: null, usb_name: null, device_override: null },
     discovered: [], scanBusy: false, msg: '',
     timers: [], events: [],
     restoreBusy: false, restoreError: '',
@@ -325,6 +366,15 @@ function settings() {
     async setLead() {
       const r = await (await fetch('/api/audio/lead?seconds=' + this.audio.lead_s, { method: 'POST' })).json();
       this.msg = 'Audio lead set to ' + r.lead_s + 's';
+    },
+    async setOutput(mode) {
+      const r = await (await fetch('/api/audio/output?mode=' + mode, { method: 'POST' })).json();
+      if (!r.ok) { this.msg = r.error || 'could not switch output'; return; }
+      // Re-read rather than trusting the local guess: the server falls back to the
+      // jack when the chosen device is not actually there, and the operator needs
+      // to see where sound is really going.
+      await this.loadAudio();
+      this.msg = 'Output: ' + mode;
     },
     async test() { await fetch('/api/audio/test', { method: 'POST' }); this.msg = 'Playing test…'; },
     async scan() {

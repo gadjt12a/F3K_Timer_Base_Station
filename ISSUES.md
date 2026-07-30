@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 61, 2026-07-29)
 
-**29 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**30 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 Everything the session-55 audit raised is closed. Eight came from elsewhere and are
 registered here rather than tracked separately: [I-22] reported by the user, [I-23]
@@ -42,7 +42,7 @@ this class of defect.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 129 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 142 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -531,6 +531,53 @@ calls only, and the log line says so.
 
 This closes the open question left by [I-24] about which task/time combinations
 are legal: it no longer matters, they all work.
+
+---
+
+### I-31 · Audio output was pinned by a hidden systemd drop-in · FIXED (session 62)
+`/etc/systemd/system/f3k-server.service.d/audio.conf` (removed),
+`base_station/frontend/audio_control.py` (`output_mode`, `set_output`)
+
+There was no way to choose the audio output in the app. It was inferred from
+whether a `bt_mac` happened to be saved — and even that was overridden by a
+hand-added drop-in on the field Pi, dated **10 July**:
+
+```
+[Service]
+Environment="F3K_AUDIO_DEVICE=bluealsa:DEV=C0:28:8D:74:69:FD,PROFILE=a2dp"
+```
+
+`output_device()` checks `F3K_AUDIO_DEVICE` before anything else, so for three
+weeks every cue went to one specific WONDERBOOM by MAC. Editing
+`audio_config.json` did nothing, and the config on disk was simply a lie about
+where sound was going. Found only because a 3.5 mm speaker was plugged in and the
+app kept insisting the output was Bluetooth.
+
+Two things let it hide that long:
+
+- **The drop-in is invisible in the unit file.** `cat` on
+  `f3k-server.service` shows nothing; only `systemctl cat` reveals the `.d`
+  directory. The first removal attempt edited the main unit and silently changed
+  nothing.
+- **`setup/apply-system-config.sh` does not watch `/etc/systemd/system`.** It
+  covers `/etc/hostapd`, `/etc/dnsmasq.d`, `/etc/nftables.d` and
+  `/etc/NetworkManager/conf.d`. A unit drop-in is exactly the kind of "quick fix
+  on the Pi" that the drift check exists to catch, and it was out of scope.
+  ⚠ Still true — worth adding.
+
+Output is now an explicit setting: **3.5 mm jack / USB audio / Bluetooth**,
+selected in Settings and stored as `output`. Cards are resolved by NAME, never by
+index — on this Pi the jack is card 0, the two HDMI outputs are 1 and 2, and USB
+audio is 3, so anything assuming "USB is card 1" would play to an unplugged HDMI
+port. Volume follows the selection, because `amixer -D bluealsa` only exists
+while an A2DP transport is up and silently did nothing on the jack.
+
+`F3K_AUDIO_DEVICE` still wins — it is a genuine developer escape hatch — but the
+settings page now shows a red warning naming it when set, rather than displaying
+a selection that has no effect.
+
+⚠ **`lead_s` is per-output in reality but stored globally.** 0.8 s was tuned for
+A2DP latency; on a cable it fires every cue 0.8 s early. Re-tune after switching.
 
 ---
 
