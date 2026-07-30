@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 61, 2026-07-29)
 
-**31 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**33 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 Everything the session-55 audit raised is closed. Eight came from elsewhere and are
 registered here rather than tracked separately: [I-22] reported by the user, [I-23]
@@ -42,7 +42,7 @@ this class of defect.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 149 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 151 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -626,6 +626,72 @@ code degrades to `plughw:` — wrong speed, but not silence.
 
 The service runs as `User=pi`, so `~/.asoundrc` does apply to it. If that ever
 changes to `root`, this breaks silently.
+
+---
+
+### I-33 · Timer's working-time alerts fired a full second early · FIXED (session 62, fw-v22)
+`src/timer/WorkingTime.cpp` (`update`)
+
+```cpp
+int currentSec = (int)(_remainingMs / 1000);   // truncates
+```
+
+`_remainingMs / 1000` rounds down, so `currentSec` became 30 the instant remaining
+dropped below 31.000 s — i.e. with **30.999 s** left. Every working-time alert
+fired a second before its mark: 30, 20, 15 and the whole 10..1 countdown.
+
+In a real round the caller's timer counts "3, 2, 1" while a full second of working
+time is still on the clock, and the base station's close horn lands *after* the
+timer has already said zero.
+
+Measured by logging the base station's cue dispatch (`[AUDIO-T]`) and comparing it
+against the timer's serial log on the same wall clock:
+
+| cue | before | after |
+|---|---|---|
+| 30 s remaining | **-985 ms** | +30 ms |
+| 20 s remaining | **-993 ms** | +25 ms |
+| 10 s remaining | **-986 ms** | +32 ms |
+
+Prep measured +7 ms and the landing window emits no timer tones at all, so only
+working time sounded wrong — which is exactly why it was first mistaken for audio
+latency worth tuning `lead_s` for. It was not: the base's dispatch is exact to
+0-3 ms in all three phases. **A whole-second error hid as a "slightly out of sync"
+feeling** because the beeps are one second apart and both devices were beeping.
+
+Uses a ceiling for the alert second only. `getRemaining()` is deliberately left
+alone — it drives the display and the arc, and changing what is on screen is not
+part of fixing what is heard.
+
+The residual ~30 ms is the timer's own dispatch plus ~47 ms of ES8311 amp-enable
+per tone. `lead_s` cannot close it (it only moves the speaker *earlier*), and it
+does not matter: two independent devices metres apart, and sound covers 30 m in
+the time under discussion.
+
+### I-34 · Generated rounds had no start horn · FIXED (session 62)
+`base_station/frontend/audio.py` (`_generate_profile`)
+
+A generated schedule signalled the **close** of the working window but never the
+open. The round simply began in silence — no launch signal, the single most
+important cue in a heat — with the first sound 30 s later.
+
+Real GliderScore profiles carry a 1 s 1000 Hz tone at `WT t=0` and are unaffected,
+so this arrived with [I-30] and only ever hit generated schedules.
+
+Two things made it easy to write:
+
+- `AudioEngine.horn()` exists to fire the window horns and **is called from
+  nowhere at all**. `TimerProfile`'s comment claiming "the engine fires the
+  window-open/close horns explicitly at the phase boundaries" describes something
+  that does not happen, and that comment is what the generator was written
+  against.
+- The close horn *did* work, which made the open look like it should too. It only
+  worked because `build_schedule()` drives a heat from the RAW cue list, not the
+  bucketed tables the comment is attached to.
+
+⚠ `horn()` is still dead code. Either wire it up or delete it — leaving a method
+that looks like the mechanism, next to a comment saying it is the mechanism, is
+how this happened.
 
 ---
 
