@@ -28,7 +28,13 @@
 [ -n "$F3K_SKIP_PI_CHECK" ] && exit 0
 
 APPLIER=setup/apply-system-config.sh
-PI_HOST=${F3K_PI_HOST:-100.115.187.90}
+# mDNS by default, not the Tailscale IP: the Pi only has internet when it is on
+# ethernet, and indoors it runs on its own APs with Tailscale logged out. The
+# hardcoded 100.x address silently turned this whole check off in exactly the
+# situation where config is most likely to drift — someone hand-editing the Pi
+# because they cannot deploy to it normally. f3kbase.local resolves over ethernet,
+# over F3K_OPS, and over Tailscale. Override with F3K_PI_HOST if neither applies.
+PI_HOST=${F3K_PI_HOST:-f3kbase.local}
 PI_KEY=${F3K_PI_KEY:-$HOME/.ssh/f3k_pi}
 
 staged=$(git diff --cached --name-only)
