@@ -90,20 +90,28 @@ echo "[OK] hostapd override — loading both configs"
 # bind-dynamic, not bind-interfaces: with bind-interfaces a missing wlan1 at
 # startup (USB adapter not yet enumerated) aborts dnsmasq completely, taking
 # DHCP down on the OPS network too. bind-dynamic binds interfaces as they appear.
+#
+# Options are TAGGED, and the ranges set the tag. An untagged dhcp-option in
+# dnsmasq is GLOBAL, not per-interface, and /etc/dnsmasq.d is read alphabetically
+# — so the untagged router option here (f3k-timer, second) silently overrode the
+# one in f3k-ops for *every* subnet. OPS clients were handed 192.168.20.x
+# addresses with a 192.168.10.1 gateway, which is not even routable from their
+# own subnet. A laptop whose only network is F3K_OPS had a broken default route.
 cat > /etc/dnsmasq.d/f3k-timer.conf << 'EOF'
 interface=wlan1
 bind-dynamic
-dhcp-range=192.168.10.10,192.168.10.50,255.255.255.0,24h
-dhcp-option=3,192.168.10.1
+dhcp-range=set:timer,192.168.10.10,192.168.10.50,255.255.255.0,24h
+dhcp-option=tag:timer,3,192.168.10.1
 EOF
 echo "[OK] /etc/dnsmasq.d/f3k-timer.conf (wlan1)"
 
 # ── 7. dnsmasq — OPS network (wlan0) ──────────────────────────────────────
+# Tagged for the same reason as f3k-timer above.
 cat > /etc/dnsmasq.d/f3k-ops.conf << 'EOF'
 interface=wlan0
 bind-dynamic
-dhcp-range=192.168.20.10,192.168.20.50,255.255.255.0,24h
-dhcp-option=3,192.168.20.1
+dhcp-range=set:ops,192.168.20.10,192.168.20.50,255.255.255.0,24h
+dhcp-option=tag:ops,3,192.168.20.1
 address=/#/192.168.20.1
 EOF
 echo "[OK] /etc/dnsmasq.d/f3k-ops.conf (wlan0)"
