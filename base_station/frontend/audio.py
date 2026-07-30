@@ -89,12 +89,15 @@ def _parse_profile_span(name: str) -> tuple[int, int, int] | None:
 class TimerProfile:
     """A GliderScore cue schedule, indexed by seconds-remaining within each phase."""
 
-    def __init__(self, raw: dict) -> None:
+    def __init__(self, raw: dict, span: tuple[int, int, int] | None = None) -> None:
         self.name: str = raw["name"]
         self.timer_no: int = raw.get("timerNo", 0)
         self.cues: list[dict] = raw.get("cues", [])
+        self.generated: bool = bool(raw.get("generated"))
 
-        span = _parse_profile_span(self.name)
+        # `span` is passed for generated schedules, whose names do not follow (and
+        # should not have to follow) GliderScore's naming convention.
+        span = span or _parse_profile_span(self.name)
         self.prep_s, self.work_s, self.land_s = span if span else (0, 0, 0)
 
         # Window boundaries, in the profile's own t-space. These anchor every
@@ -158,6 +161,82 @@ class TimerProfile:
                 key = self._lt_close - t       # seconds of landing time remaining
                 self.landing.setdefault(key, []).append(c)
 
+
+
+# Announcement marks for generated schedules, as (seconds-remaining, wav).
+# A mark is used only when it falls strictly inside its window, so a 4-minute round
+# calls 3/2/1 minutes and a 40-second one goes straight to 30/20.
+_GEN_WORK_MARKS = [(m * 60, f"Remaining-{m}Mins.wav") for m in range(10, 1, -1)] + [
+    (60, "Remaining-1Min.wav"),      # singular — the only irregular name
+    (30, "Remaining-30Secs.wav"),
+    (20, "Remaining-20Secs.wav"),
+]
+_GEN_PREP_MARKS = [(m * 60, f"TimeToStart-{m:02d}.00.wav") for m in range(5, 0, -1)] + [
+    (30, "TimeToStart-00.30.wav"),
+    (20, "TimeToStart-00.20.wav"),
+]
+_GEN_LAND_MARKS = [(20, "Remaining-20Secs.wav")]
+
+
+def _countdown(span_s: int) -> list[tuple[int, str]]:
+    """The final 10..1, for whatever fits. Voice here is notional — build_schedule
+    substitutes 880Hz beeps across the last 10s of every phase, because the clips
+    run longer than a second and clip against the horn."""
+    out = []
+    for rem in range(10, 0, -1):
+        if rem < span_s:
+            out.append((rem, "10Secs.wav" if rem == 10 else f"{rem}.wav"))
+    return out
+
+
+def _generate_profile(discipline: str, prep_s: int, work_s: int,
+                      land_s: int) -> TimerProfile:
+    """Synthesise a cue schedule for a working time no GliderScore profile covers.
+
+    GliderScore ships profiles for a fixed set of working times, so a heat at any
+    other length matched nothing and ran **silently** — a competition round with no
+    audio at all, announced only by a warning in the log.
+
+    Nothing about the cues is actually length-specific: every one is anchored to
+    seconds *remaining*, and the final ten seconds of each phase are already beeps
+    regardless of round length. The landing window was generalised long ago (see
+    `lt_shift` in build_schedule); this is the same idea applied to working time.
+    So the schedule is just "call each threshold that fits inside the window".
+
+    A real profile always wins when one matches — it is the cadence pilots know,
+    and it carries the test-flying calls (`TestFlyingStartsIn`, `TestFlyingEnding`,
+    `NoFlyingAllowed`) that say when practice flying is permitted. Those are
+    competition rules, not timing, so they are deliberately NOT invented here.
+    """
+    cues: list[dict] = []
+
+    # Prep: keyed by seconds until the window opens, so t is negative.
+    for secs, wav in _GEN_PREP_MARKS + _countdown(prep_s):
+        if 0 < secs < prep_s:
+            cues.append({"state": PT, "t": -secs, "wav": wav, "beepHz": 0, "beepMs": 0})
+
+    # Working: t runs forward from the open, so remaining r sits at work_s - r.
+    for secs, wav in _GEN_WORK_MARKS + _countdown(work_s):
+        if 0 < secs < work_s:
+            cues.append({"state": WT, "t": work_s - secs, "wav": wav,
+                         "beepHz": 0, "beepMs": 0})
+
+    # The close horn. The engine fires open/close itself and skips these, but the
+    # boundary derivation reads it to find where the working window ends. [I-24]
+    cues.append({"state": LT, "t": work_s, "wav": "StartEndHorn.wav",
+                 "beepHz": 0, "beepMs": 0})
+
+    lt_close = work_s + land_s
+    for secs, wav in _GEN_LAND_MARKS + _countdown(land_s):
+        if 0 < secs < land_s:
+            cues.append({"state": LT, "t": lt_close - secs, "wav": wav,
+                         "beepHz": 0, "beepMs": 0})
+    # Closing long beep, and the anchor for _lt_close.
+    cues.append({"state": LT, "t": lt_close, "wav": "", "beepHz": 1000, "beepMs": 1000})
+
+    name = f"generated-{discipline}-{prep_s}s{work_s}s{land_s}s"
+    return TimerProfile({"name": name, "cues": cues, "generated": True},
+                        span=(prep_s, work_s, land_s))
 
 # Seconds of idle after which the A2DP transport / SBC codec is considered cold.
 # When cold, pre-silence is inserted into the next wav play so the codec reaches
@@ -223,11 +302,17 @@ class AudioEngine:
         except Exception:
             log.exception("[AUDIO] failed to load timer profiles from %s", _PROFILES_FILE)
 
-    def select_profile(self, discipline: str, working_time_s: int) -> str | None:
+    def select_profile(self, discipline: str, working_time_s: int,
+                       prep_s: int | None = None,
+                       land_s: int | None = None) -> str | None:
         """Pick the GliderScore profile matching discipline + working time.
 
         Returns the chosen profile name (or None). Prefers the discipline's
         standard prep length (F3K 3 min, F5K 5 min) when several work-time matches.
+
+        Falls back to a generated schedule when nothing matches, so any working
+        time gets audio. GliderScore only ships a handful of working times, and a
+        heat at any other length used to run in total silence.
         """
         self._load_profiles()
         prefix = f"{discipline}-"
@@ -236,12 +321,23 @@ class AudioEngine:
             if p.name.startswith(prefix) and p.work_s == working_time_s
         ]
         if not candidates:
-            self._active = None
-            log.warning(
-                "[AUDIO] no %s profile for working_time=%ds — audio disabled for heat",
-                discipline, working_time_s,
+            if prep_s is None or land_s is None:
+                self._active = None
+                log.warning(
+                    "[AUDIO] no %s profile for working_time=%ds and no prep/land "
+                    "given to generate one — audio disabled for heat",
+                    discipline, working_time_s,
+                )
+                return None
+            self._active = _generate_profile(discipline, prep_s, working_time_s, land_s)
+            log.info(
+                "[AUDIO] no %s profile for working_time=%ds — generated '%s' "
+                "(prep=%ds work=%ds land=%ds). Timing calls only; a heat that needs "
+                "the test-flying announcements needs a real profile.",
+                discipline, working_time_s, self._active.name,
+                prep_s, working_time_s, land_s,
             )
-            return None
+            return self._active.name
         std_prep = {"F3K": 180, "F5K": 300}.get(discipline)
         candidates.sort(key=lambda p: (p.prep_s != std_prep, p.name))
         self._active = candidates[0]

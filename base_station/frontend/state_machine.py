@@ -94,7 +94,8 @@ class CompetitionStateMachine:
             "pilots": pilot_names,
             "pilot_id_names": [(r["id"], r["name"]) for r in real_pilots],
         }
-        engine.select_profile(rnd["discipline"], rnd["working_time_s"])
+        engine.select_profile(rnd["discipline"], rnd["working_time_s"],
+                              rnd["prep_time_s"], rnd["land_time_s"])
 
         # Push pilot list to timers immediately so selection is available before PREP starts
         pilots_str = ",".join(f"{pid}:{name}" for pid, name in self._loaded["pilot_id_names"])

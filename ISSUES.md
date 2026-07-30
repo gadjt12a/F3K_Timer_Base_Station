@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 61, 2026-07-29)
 
-**28 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**29 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 Everything the session-55 audit raised is closed. Eight came from elsewhere and are
 registered here rather than tracked separately: [I-22] reported by the user, [I-23]
@@ -42,7 +42,7 @@ this class of defect.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 120 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 129 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -359,9 +359,9 @@ Two things this surfaced but did not change:
 
 - `F3K-3m15m30s` has no 9/8/7/6 in its landing count (14…10, then 5…1). That is
   GliderScore's data; every cue it does have is correctly anchored.
-- No profile exists for F3K at 240 s, or F5K at 180/900 s. Such a heat logs
-  `no … profile for working_time=…` and runs **silently**. Not yet raised as an
-  issue — it needs a decision about which task/time combinations are legal.
+- ~~No profile exists for F3K at 240 s, or F5K at 180/900 s — such a heat runs
+  silently.~~ **Raised and fixed as [I-30] (session 62):** schedules are generated
+  for any working time, so no ruling on legal task/time combinations is needed.
 
 ---
 
@@ -492,6 +492,45 @@ Also stopped logging `Altitude: …` as success on the line immediately after
 right row via the wrong path, then the right row via the right path. Each fix
 exposed the next. **F5K altitude entry had never once been run end to end against
 the base station** before session 61.
+
+---
+
+### I-30 · A round at any unlisted working time ran in silence · FIXED (session 62)
+`base_station/frontend/audio.py` (`_generate_profile`, `select_profile`)
+
+GliderScore ships profiles for a fixed set of working times — F3K at 3/7/10/15
+minutes, F5K at 4/7/10. Any other length matched nothing, `select_profile()`
+returned None, and **the entire heat ran with no audio**: no prep calls, no
+minute calls, no countdown, no horns. The only trace was one log line nobody was
+reading.
+
+That is a competition-affecting defect, not a configuration gap. A CD is free to
+set a 4-minute round, and the app accepts it everywhere else.
+
+Kris's observation is what reframed it: *"the audio is the same every time … if
+the round is 1 min long or 100 min long."* True, and the code already agreed in
+two places:
+
+- The last 10 s of **every** phase are already replaced with 880 Hz beeps
+  (`build_schedule`), because the voice clips run over a second and clip against
+  the horn. The most important part of the audio was already length-independent.
+- The **landing** window was already generalised — `lt_shift` re-anchors every LT
+  cue to the competition's configured landing time rather than the profile's.
+
+So nothing was length-specific except *which* "N minutes remaining" calls fit
+inside the window. Schedules are now generated for any prep/work/land when no
+profile matches: each threshold that falls strictly inside its window, then the
+countdown. A 40 s round goes straight to 30/20; a 30-minute one starts calling at
+10 minutes, which is as far as the vocabulary goes.
+
+**A real profile always wins when one matches.** It is the cadence pilots know,
+and it carries `TestFlyingStartsIn` / `TestFlyingEnding` / `NoFlyingAllowed` —
+when practice flying is permitted during prep. That is competition *rules*, not
+timing, so it is deliberately not invented. A generated schedule gives timing
+calls only, and the log line says so.
+
+This closes the open question left by [I-24] about which task/time combinations
+are legal: it no longer matters, they all work.
 
 ---
 
