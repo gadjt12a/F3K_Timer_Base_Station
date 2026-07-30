@@ -292,7 +292,13 @@ async def _active_mixer() -> tuple[list[str], str] | None:
     if card is None:
         return None
     ctrl = await _card_control(card)
-    return (["-c", str(card)], ctrl) if ctrl else None
+    # -M (mapped) is essential, not cosmetic. A hardware mixer's percentage is
+    # linear across its RAW range, and the Pi's jack control runs -102.39dB..+4dB
+    # — so a plain "20%" lands at -81dB, which is running but inaudible. That is
+    # exactly what happened: Bluetooth softvol is linear so 20 sounded fine, and
+    # the identical saved number was silence on the jack. -M maps percentages
+    # perceptually, so the slider means roughly the same thing on every output.
+    return (["-M", "-c", str(card)], ctrl) if ctrl else None
 
 
 async def pcm_alive() -> bool:

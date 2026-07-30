@@ -127,6 +127,38 @@ class BackCompatTests(_Base):
         self.assertEqual(ac.output_device(), "plughw:0,0")
 
 
+class MixerScaleTests(_Base):
+    """Percentages must be MAPPED on hardware mixers, not raw. [I-31]"""
+
+    def _mixer_for(self, mode):
+        self._write({"output": mode, "bt_mac": "AA:BB:CC:DD:EE:FF"})
+        calls = []
+
+        async def fake_run(args, timeout=20.0):
+            calls.append(args)
+            return 0, "Simple mixer control 'PCM',0", ""
+
+        async def go():
+            with mock.patch.object(ac, "_run", fake_run):
+                return await ac._active_mixer()
+
+        import asyncio
+        return asyncio.run(go())
+
+    def test_hardware_mixers_use_mapped_percentages(self):
+        """The Pi jack runs -102.39dB..+4dB, so a raw 20% is -81dB — playing, and
+        completely inaudible. That is how a "working" test produced silence."""
+        for mode in ("jack", "usb"):
+            with self.subTest(mode=mode):
+                dev, _ = self._mixer_for(mode)
+                self.assertIn("-M", dev)
+
+    def test_bluealsa_is_left_alone(self):
+        """bluealsa softvol is already linear; -M would change tuned levels."""
+        dev, _ = self._mixer_for("bt")
+        self.assertEqual(dev, ["-D", "bluealsa"])
+
+
 class EnvOverrideTests(_Base):
     def test_env_override_wins_and_is_reported(self):
         """The trap that cost an evening: a hand-added Environment= line in the

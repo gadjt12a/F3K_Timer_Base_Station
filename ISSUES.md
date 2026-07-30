@@ -42,7 +42,7 @@ this class of defect.
 
 Locked down by `base_station/tests/test_validation.py` — 20 tests, one or more per
 issue, driving the real endpoints through `TestClient` against a scratch DB. Full
-suite is 142 tests and passes under `python -m unittest discover -s tests -t .`
+suite is 144 tests and passes under `python -m unittest discover -s tests -t .`
 (which [I-19] made possible).
 
 Note what that suite **cannot** reach: [I-22] was a browser refusing to submit, so
@@ -575,6 +575,15 @@ while an A2DP transport is up and silently did nothing on the jack.
 `F3K_AUDIO_DEVICE` still wins — it is a genuine developer escape hatch — but the
 settings page now shows a red warning naming it when set, rather than displaying
 a selection that has no effect.
+
+**Volume percentages must be MAPPED (`amixer -M`), not raw.** A hardware mixer's
+percentage is linear across its *raw* range, and the Pi's jack control runs
+-102.39dB..+4dB — so the saved "20%", perfectly sensible on bluealsa's linear
+softvol, landed at **-81dB** on the jack: playing, `aplay` returning 0, and
+completely inaudible. The first test on the 3.5 mm speaker produced silence for
+exactly this reason. With `-M`, 20% is -37.94dB and 75% is -3.50dB, so the slider
+means roughly the same thing on every output. bluealsa is left alone — its
+softvol is already linear and `-M` would shift levels tuned by ear.
 
 ⚠ **`lead_s` is per-output in reality but stored globally.** 0.8 s was tuned for
 A2DP latency; on a cable it fires every cue 0.8 s early. Re-tune after switching.
