@@ -860,11 +860,9 @@ covers `OTA_FAILED` (base unreachable, or serving something unparseable) — tha
 the same dead end and no auto-recovery is possible for it. The screen shows
 `L = RETRY` on both, since an invisible affordance is not one.
 
-⚠ **The version check still cannot tell an upgrade from a downgrade** —
-`strcmp(ver, FW_VERSION) != 0` reads as "available" (`OtaUpdater.cpp:68`). A stale base
-station will offer to take a timer backwards, and the CD has no way to see that from
-the screen. Left open deliberately; it needs a decision on version ordering (parse the
-integer after `fw-v`?) rather than a one-line change.
+⚠ ~~The version check still cannot tell an upgrade from a downgrade~~ — **fixed as
+[I-41]** the same session, once the decision was made: a timer must refuse the
+downgrade *and* the base station must admit it is the stale one.
 
 ### I-40 · OTA screen stuck on CHECKING — the status was sampled twice · FIXED (session 64, fw-v28)
 `src/main.cpp` (`_doRender`, `STATE_OTA_CHECK` branch)
@@ -911,6 +909,49 @@ believing something that is not on the glass), reached by a different route.
 raised to 8192 in fw-v27. `stack hwm=6248` of 8192 shows under 2 KB was ever used. The
 larger stack is harmless insurance; the race was the defect. Recorded so the stack size
 is not "re-fixed" later.
+
+### I-41 · A stale base station would offer to downgrade a timer · FIXED (session 64, fw-v29)
+`src/ota/OtaUpdater.cpp` (`_fwNum`, `_checkTask`), `include/config.h` (`OTA_BASE_OLDER`), `src/display/UI.cpp`, `base_station/frontend/app.py` (`_fw_num`, `api_timers`), `base_station/frontend/templates/settings.html`
+
+The check was `strcmp(ver, FW_VERSION) != 0` — **any** difference read as "an update is
+available". So a base station holding an old `firmware.bin` would offer to take a timer
+*backwards*, with nothing on either screen to say so. Hit for real in this session: the
+Pi sat on fw-v21 while the device ran fw-v23.
+
+**The field failure this prevents:** a CD updates the timers, forgets the Pi, and then
+"updates" a timer straight back onto older firmware in the middle of a competition —
+silently undoing whatever the update was for.
+
+Fixed on **both** sides, because they fail differently:
+
+| side | behaviour |
+|---|---|
+| **Timer** | Only a *strictly newer* build is an update. Equal → `UP TO DATE`. Older → new `OTA_BASE_OLDER`, shown as orange `BASE IS OLDER` / `UPDATE THE BASE`. |
+| **Base** | `/api/timers` serves `fw_state` per timer (`current`/`behind`/`ahead`/`unknown`) plus `ota_version` and `base_firmware_stale`; the Settings page shows an orange banner. |
+
+The refusal is **enforced, not merely displayed** — `startUpdate()` already gated on
+`OTA_AVAILABLE`, so an `OTA_BASE_OLDER` screen cannot be made to flash anything.
+
+⚠ **The comparison must be numeric.** `"fw-v9"` sorts *above* `"fw-v28"` lexically, so
+comparing the version strings would have been **worse than the equality test it
+replaces** — it would mark a genuinely out-of-date timer as current. Pinned by
+`tests/test_fw_version.py::test_ordering_is_numeric_not_lexical`.
+
+⚠ **Unparseable versions fall back to the old "any difference means available"**, so a
+future naming scheme cannot silently disable updates altogether.
+
+**The duplicate was removed, not added to.** `settings.html` already did its own numeric
+comparison client-side, with its own `ahead` state. The rule now lives on the server and
+the page consumes `fw_state` — version ordering is exactly the kind of thing that drifts
+when two copies exist.
+
+**A timer reporting no `fw=` is `behind`, not `unknown`** — it predates fw-v17, which is
+knowledge rather than absence of it. `unknown` is reserved for the base having no cached
+firmware to compare against.
+
+Verified end to end on hardware: Pi backdated to fw-v24 with the device on fw-v29 gave
+`fw_state: "ahead"`, `base_firmware_stale: true`, the Settings banner, and `BASE IS
+OLDER` on the timer with no update offered. Pi restored to fw-v29 afterwards.
 
 ---
 

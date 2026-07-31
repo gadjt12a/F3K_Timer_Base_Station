@@ -1431,8 +1431,42 @@ async def downloads(filename: str):
 
 @app.get("/api/timers")
 async def api_timers():
+    """Connected timers, each tagged with how its firmware compares to ours.
+
+    The interesting case is a timer *ahead* of the base station: it means
+    somebody updated the timers and not the Pi, and until this existed the only
+    symptom was the base quietly offering a downgrade. The base station is the
+    stale one there, and it should say so rather than hand out old firmware.
+    [I-41]
+    """
     srv = app.state.server
-    return {"timers": srv.timers_info(), "events": srv.recent_events()}
+    timers = srv.timers_info()
+    ota_ver = _ota_version()
+    ota_n = _fw_num(ota_ver)
+    base_stale = False
+
+    for t in timers:
+        t_n = _fw_num(t.get("fw"))
+        if ota_n is None:
+            t["fw_state"] = "unknown"   # nothing cached here to compare against
+        elif t_n is None:
+            # A timer that reports no fw= at all predates fw-v17, so it is
+            # necessarily behind. That is knowledge, not an unknown.
+            t["fw_state"] = "behind"
+        elif t_n > ota_n:
+            t["fw_state"] = "ahead"     # timer is newer — WE are out of date
+            base_stale = True
+        elif t_n < ota_n:
+            t["fw_state"] = "behind"    # a genuine update is available for it
+        else:
+            t["fw_state"] = "current"
+
+    return {
+        "timers": timers,
+        "events": srv.recent_events(),
+        "ota_version": ota_ver,
+        "base_firmware_stale": base_stale,
+    }
 
 
 @app.post("/api/timers/screen")
@@ -2242,6 +2276,21 @@ def _ota_version() -> str | None:
         return json.loads(ver_path.read_text()).get("version") if ver_path.exists() else None
     except Exception:
         return None
+
+
+def _fw_num(ver: str | None) -> int | None:
+    """Release number from a version string: 'fw-v28' -> 28, else None.
+
+    Ordering needs the number, not the string. The timer's check originally
+    treated *any* difference as "an update is available", so a base station
+    holding an old build would offer to take a timer backwards with nothing on
+    screen to say so — and lexically 'fw-v9' sorts above 'fw-v28', so comparing
+    the strings would have been worse than useless. [I-41]
+    """
+    if not ver:
+        return None
+    m = re.match(r"^fw-v(\d+)$", ver.strip())
+    return int(m.group(1)) if m else None
 
 
 @app.get("/api/system/info")

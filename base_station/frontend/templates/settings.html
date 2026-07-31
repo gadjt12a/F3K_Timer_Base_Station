@@ -149,6 +149,22 @@
       </button>
     </div>
     <p x-show="renumberMsg" class="text-xs text-yellow-400 mb-2" x-text="renumberMsg"></p>
+
+    <!-- The base station is the stale one here: somebody updated the timers and
+         not the Pi. Worth a banner rather than a tooltip, because the failure it
+         prevents is a CD "updating" a timer straight back to an older build. -->
+    <div x-show="baseFwStale"
+         class="mb-4 rounded border border-orange-500 bg-orange-900/30 px-3 py-2 text-sm">
+      <p class="font-semibold text-orange-300">This base station's firmware is out of date.</p>
+      <p class="text-orange-200/90 text-xs mt-1">
+        A connected timer is running a newer build than the
+        <span class="font-mono" x-text="otaVersion || 'none'"></span>
+        cached here. Timers will not offer to install it, so nothing will be
+        downgraded — but this base station cannot update anything until it is
+        refreshed. Run <span class="font-semibold">Update from GitHub</span> below.
+      </p>
+    </div>
+
     <table class="w-full text-sm">
       <thead>
         <tr class="text-gray-400 text-left border-b border-gray-700">
@@ -184,7 +200,9 @@
       "Last pilot" is the pilot on this timer's most recent recorded flight. Updates live.
       Firmware is <span class="text-green-400">green</span> when it matches the cached timer
       firmware above, <span class="text-orange-400">orange</span> when the timer is behind and
-      should be updated from its settings screen.</p>
+      should be updated from its settings screen, and
+      <span class="text-orange-300">light orange</span> when the timer is <em>ahead</em> —
+      which means this base station is the stale one.</p>
   </section>
 
   <!-- ── Connection log ── -->
@@ -278,7 +296,7 @@ function settings() {
   return {
     audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0, output: 'jack', jack_card: null, usb_card: null, usb_name: null, device_override: null },
     discovered: [], scanBusy: false, msg: '',
-    timers: [], events: [],
+    timers: [], events: [], baseFwStale: false, otaVersion: null,
     restoreBusy: false, restoreError: '',
     sysInfo: { git: false }, updateBusy: false, updateMsg: '', updateOutput: '', updateOk: null,
 
@@ -358,6 +376,7 @@ function settings() {
     async loadTimers() {
       const r = await (await fetch('/api/timers')).json();
       this.timers = r.timers; this.events = r.events;
+      this.baseFwStale = r.base_firmware_stale; this.otaVersion = r.ota_version;
     },
     async setVolume() {
       const r = await (await fetch('/api/audio/volume?level=' + this.audio.volume, { method: 'POST' })).json();
@@ -433,21 +452,13 @@ function settings() {
     },
 
     // ── Timer firmware vs the cached OTA build ──────────────────────────────
-    // Versions are "fw-vN", so compare the number rather than the string:
-    // "fw-v9" > "fw-v16" lexically, which would show an out-of-date timer green.
-    _fwNum(v) {
-      const m = /^fw-v(\d+)$/.exec(v || '');
-      return m ? parseInt(m[1], 10) : null;
-    },
+    // The comparison itself lives on the server (/api/timers -> fw_state), so
+    // the timer, the base station and this page all order versions the same way.
+    // It used to be duplicated here; version ordering is exactly the kind of rule
+    // that drifts when two copies exist. The server reports
+    // current / behind / ahead / unknown.
     fwState(t) {
-      const cached = this._fwNum(this.sysInfo.ota_version);
-      const timer  = this._fwNum(t.fw);
-      // A timer that reports nothing predates the field entirely, so it is
-      // necessarily behind — that is knowledge, not an unknown.
-      if (timer === null) return 'old';
-      if (cached === null) return 'unknown';   // nothing cached to compare against
-      if (timer === cached) return 'current';
-      return timer < cached ? 'old' : 'ahead';
+      return { behind: 'old' }[t.fw_state] || t.fw_state || 'unknown';
     },
     fwLabel(t) {
       if (t.fw) return t.fw;
@@ -457,16 +468,17 @@ function settings() {
       return {
         current: 'text-green-400',
         old:     'text-orange-400',
-        ahead:   'text-gray-400',
+        ahead:   'text-orange-300',
         unknown: 'text-gray-500',
       }[this.fwState(t)];
     },
     fwTitle(t) {
-      const cached = this.sysInfo.ota_version || 'none cached';
+      const cached = this.otaVersion || 'none cached';
       return {
         current: `Up to date (${cached})`,
-        old:     `Behind ${cached} — update from the timer's settings screen (page 3)`,
-        ahead:   `Newer than the cached ${cached} — run Update from GitHub on the base station`,
+        old:     `Behind ${cached} — update from the timer's settings screen (page 4)`,
+        ahead:   `Newer than the cached ${cached} — this base station is out of date. `
+                 + `The timer will refuse the downgrade; run Update from GitHub here.`,
         unknown: 'No timer firmware cached on the base station to compare against',
       }[this.fwState(t)];
     },
