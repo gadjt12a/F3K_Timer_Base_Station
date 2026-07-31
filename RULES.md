@@ -85,13 +85,11 @@ when the line is ready early). Only during prep, never during the window.
 
 > `state_machine.py` — `skip_prep_to`
 
-**R-08 ⚠️ The landing window is a countdown after the working window closes, and the
-timer shows it.** At zero the timer moves to the results screen. The timekeeper can skip
-ahead with the right-hand button.
-
-❓ **The system does not enforce anything about landings.** It does not know where a
-model landed, and it applies no landing bonus or penalty. If your rules score landings,
-that happens in GliderScore.
+**R-08 ❓ The landing window is a countdown, and nothing more.** At zero the timer moves
+to the results screen; the timekeeper can skip ahead with the right-hand button.
+**The system does not enforce anything about landings** — it does not know where a model
+landed, and it applies no landing bonus or penalty. If your rules score landings, that
+happens in GliderScore.
 
 ---
 

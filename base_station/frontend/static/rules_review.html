@@ -1,0 +1,1799 @@
+<title>F3K Timer System — Rules for Review</title>
+
+<style>
+  :root {
+    --paper:      #EDF0F3;
+    --paper-2:    #E3E8EC;
+    --card:       #F7F9FA;
+    --ink:        #16202A;
+    --ink-2:      #3F4E5A;
+    --ink-3:      #6B7B87;
+    --rule:       #C8D2D9;
+    --rule-soft:  #DCE3E8;
+    --accent:     #0B6E99;
+
+    --ok:         #2F6F52;
+    --ok-bg:      #DCEAE2;
+    --warn:       #8A5300;
+    --warn-bg:    #F4E7D0;
+    --gap:        #9C2F3F;
+    --gap-bg:     #F3DCE0;
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+
+    --measure: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #0F151A;
+      --paper-2:   #161E25;
+      --card:      #151D24;
+      --ink:       #DDE5EB;
+      --ink-2:     #A9B7C2;
+      --ink-3:     #788894;
+      --rule:      #2A353E;
+      --rule-soft: #202A32;
+      --accent:    #5AB0D6;
+
+      --ok:        #7FC4A0;
+      --ok-bg:     #172A22;
+      --warn:      #DBA453;
+      --warn-bg:   #2C2213;
+      --gap:       #E2828F;
+      --gap-bg:    #2C1619;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:     #0F151A;
+    --paper-2:   #161E25;
+    --card:      #151D24;
+    --ink:       #DDE5EB;
+    --ink-2:     #A9B7C2;
+    --ink-3:     #788894;
+    --rule:      #2A353E;
+    --rule-soft: #202A32;
+    --accent:    #5AB0D6;
+    --ok:        #7FC4A0;
+    --ok-bg:     #172A22;
+    --warn:      #DBA453;
+    --warn-bg:   #2C2213;
+    --gap:       #E2828F;
+    --gap-bg:    #2C1619;
+  }
+
+  :root[data-theme="light"] {
+    --paper:     #EDF0F3;
+    --paper-2:   #E3E8EC;
+    --card:      #F7F9FA;
+    --ink:       #16202A;
+    --ink-2:     #3F4E5A;
+    --ink-3:     #6B7B87;
+    --rule:      #C8D2D9;
+    --rule-soft: #DCE3E8;
+    --accent:    #0B6E99;
+    --ok:        #2F6F52;
+    --ok-bg:     #DCEAE2;
+    --warn:      #8A5300;
+    --warn-bg:   #F4E7D0;
+    --gap:       #9C2F3F;
+    --gap-bg:    #F3DCE0;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 0 1.5rem 6rem;
+  }
+
+  /* ---- masthead ---- */
+  header.mast {
+    border-bottom: 2px solid var(--ink);
+    padding: 3.5rem 0 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 1rem;
+  }
+  h1 {
+    font-family: var(--sans);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+    font-size: clamp(2.1rem, 6vw, 3.4rem);
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 1.14rem;
+    color: var(--ink-2);
+    max-width: var(--measure);
+    margin: 0 0 1.75rem;
+  }
+  .standfirst strong { color: var(--ink); }
+
+  .mast-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 2rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .mast-meta b {
+    color: var(--ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- legend + filter ---- */
+  .control {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    padding: 1.25rem 1.25rem 1.4rem;
+    margin-bottom: 3rem;
+  }
+  .control h2 {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 1rem;
+    font-weight: 500;
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  .filters button {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: left;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+    border-radius: 0;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .filters button .n {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+  }
+  .filters button:hover { border-color: var(--ink-3); }
+  .filters button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .filters button[aria-pressed="true"] {
+    border-color: currentColor;
+  }
+  .filters button[data-f="ok"][aria-pressed="true"]   { background: var(--ok-bg);   color: var(--ok); }
+  .filters button[data-f="warn"][aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); }
+  .filters button[data-f="gap"][aria-pressed="true"]  { background: var(--gap-bg);  color: var(--gap); }
+  .filters button[aria-pressed="true"] .n { color: inherit; opacity: 0.75; }
+
+  .legend-note {
+    margin: 1.1rem 0 0;
+    font-size: 0.92rem;
+    color: var(--ink-3);
+    max-width: var(--measure);
+  }
+
+  /* ---- sections ---- */
+  section { margin-bottom: 3.5rem; scroll-margin-top: 1.5rem; }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.75rem;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .sec-head h2 {
+    font-family: var(--sans);
+    font-weight: 750;
+    letter-spacing: -0.015em;
+    font-size: 1.4rem;
+    margin: 0;
+    flex: 1;
+    text-wrap: balance;
+  }
+  .sec-intro {
+    color: var(--ink-2);
+    max-width: var(--measure);
+    margin: -0.75rem 0 1.75rem;
+  }
+
+  /* ---- rule ---- */
+  .rule {
+    display: grid;
+    grid-template-columns: 4.25rem 1fr;
+    gap: 0 1.25rem;
+    padding: 1.15rem 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .rule:first-of-type { border-top: none; }
+  .rule.is-hidden { display: none; }
+
+  .rid {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    padding-top: 0.15rem;
+  }
+  .rule-body > *:first-child { margin-top: 0; }
+  .rule-body > *:last-child  { margin-bottom: 0; }
+
+  .chip {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.18rem 0.45rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+  }
+  .rule[data-s="ok"]   .chip { background: var(--ok-bg);   color: var(--ok); }
+  .rule[data-s="warn"] .chip { background: var(--warn-bg); color: var(--warn); }
+  .rule[data-s="gap"]  .chip { background: var(--gap-bg);  color: var(--gap); }
+
+  .claim { margin: 0 0 0.6rem; }
+  .claim strong { font-weight: 700; }
+  p { margin: 0 0 0.75rem; max-width: var(--measure); }
+
+  /* annotation — a pencil note in the margin of a scoresheet, not a card */
+  .note {
+    margin: 0.85rem 0 0;
+    padding: 0.7rem 0 0.1rem;
+    border-top: 1px solid var(--rule);
+    max-width: var(--measure);
+  }
+  .note-label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+  .note.why      .note-label { color: var(--ink-3); }
+  .note.challenge .note-label { color: var(--warn); }
+  .note.why p, .note.challenge p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--ink-2);
+  }
+  .note.challenge p { font-style: italic; }
+
+  .src {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--ink-3);
+    margin: 0.7rem 0 0;
+    word-break: break-word;
+  }
+
+  /* ---- tables ---- */
+  .tw { overflow-x: auto; margin: 1.25rem 0; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; width: 100%; font-family: var(--sans); font-size: 0.88rem; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 0.7rem 0.85rem;
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--rule);
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 0.85rem;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  td:first-child { font-weight: 700; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* ---- omissions ---- */
+  ul.omit { list-style: none; padding: 0; margin: 0; max-width: var(--measure); }
+  ul.omit li {
+    padding: 0.6rem 0 0.6rem 1.6rem;
+    border-top: 1px solid var(--rule-soft);
+    position: relative;
+    font-size: 0.97rem;
+  }
+  ul.omit li:first-child { border-top: none; }
+  ul.omit li::before {
+    content: "—";
+    position: absolute;
+    left: 0;
+    color: var(--gap);
+    font-family: var(--mono);
+  }
+
+  /* ---- the five questions: genuinely ordered by priority ---- */
+  .qs { counter-reset: q; margin: 0; padding: 0; list-style: none; }
+  .qs li {
+    counter-increment: q;
+    display: grid;
+    grid-template-columns: 3rem 1fr;
+    gap: 0 1rem;
+    padding: 1.1rem 0;
+    border-top: 1px solid var(--rule);
+  }
+  .qs li::before {
+    content: counter(q);
+    font-family: var(--mono);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .qs h3 {
+    font-family: var(--sans);
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 0.3rem;
+  }
+  .qs p { margin: 0; font-size: 0.95rem; color: var(--ink-2); }
+
+  .closing {
+    border-top: 2px solid var(--ink);
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    font-size: 0.9rem;
+    color: var(--ink-3);
+    max-width: var(--measure);
+  }
+  .closing code {
+    font-family: var(--mono);
+    font-size: 0.85em;
+    color: var(--ink-2);
+  }
+
+  a { color: var(--accent); }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .rule { grid-template-columns: 1fr; gap: 0.35rem; }
+    .rid { padding-top: 0; }
+    .qs li { grid-template-columns: 2rem 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  /* ---- sign-in gate ---- */
+  .gate {
+    position: fixed;
+    inset: 0;
+    background: var(--paper);
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+    overflow-y: auto;
+  }
+  .gate[hidden] { display: none; }
+  .gate-inner {
+    width: 100%;
+    max-width: 34rem;
+    border: 1px solid var(--rule);
+    background: var(--card);
+    padding: 2rem;
+  }
+  .gate h2 {
+    font-family: var(--sans);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-size: 1.6rem;
+    margin: 0 0 0.75rem;
+    text-wrap: balance;
+  }
+  .gate p { font-size: 0.98rem; color: var(--ink-2); }
+  .gate label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 1.5rem 0 0.4rem;
+  }
+  .gate-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  input[type="text"] {
+    flex: 1 1 14rem;
+    min-width: 0;
+    font-family: var(--sans);
+    font-size: 1rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 0;
+  }
+  input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .btn {
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    font-weight: 650;
+    padding: 0.65rem 1.1rem;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .gate-err { color: var(--gap); font-size: 0.9rem; margin: 0.6rem 0 0; min-height: 1.2em; }
+  .resume { margin-top: 1.75rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+  .resume-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
+  .resume-list button {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .resume-list button:hover { border-color: var(--accent); color: var(--accent); }
+  .resume-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- status bar ---- */
+  .statusbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--rule);
+    margin: 0 -1.5rem 0;
+    padding: 0.6rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+  }
+  .statusbar .who { color: var(--ink); font-weight: 600; }
+  .statusbar .prog { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .statusbar .spacer { flex: 1; }
+  .statusbar button {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .statusbar button:hover { border-color: var(--accent); color: var(--accent); }
+  .statusbar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .statusbar button[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .saved-flash { color: var(--ok); }
+
+  /* ---- per-rule review ---- */
+  .review {
+    margin-top: 0.9rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--rule);
+    max-width: var(--measure);
+  }
+  .verdicts { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .verdicts button {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .verdicts button:hover { border-color: var(--ink-3); color: var(--ink-2); }
+  .verdicts button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .verdicts button[aria-pressed="true"][data-v="agree"]  { background: var(--ok-bg);   color: var(--ok);   border-color: var(--ok); }
+  .verdicts button[aria-pressed="true"][data-v="change"] { background: var(--gap-bg);  color: var(--gap);  border-color: var(--gap); }
+  .verdicts button[aria-pressed="true"][data-v="talk"]   { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+  .review textarea {
+    display: block;
+    width: 100%;
+    margin-top: 0.5rem;
+    font-family: var(--sans);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 0;
+    resize: vertical;
+    min-height: 2.6rem;
+  }
+  .review textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .rule.reviewed .rid::after {
+    content: "✓";
+    display: block;
+    color: var(--ok);
+    font-size: 0.9rem;
+  }
+
+  /* ---- handback ---- */
+  .handback {
+    border: 1px solid var(--accent);
+    background: var(--card);
+    padding: 1.5rem;
+    margin-top: 3rem;
+  }
+  .handback h2 {
+    font-family: var(--sans);
+    font-size: 1.2rem;
+    font-weight: 750;
+    margin: 0 0 0.6rem;
+  }
+  .handback .actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+  .handback .msg { font-size: 0.88rem; color: var(--ink-3); margin: 0.75rem 0 0; min-height: 1.2em; }
+</style>
+
+<div class="gate" id="gate" role="dialog" aria-modal="true" aria-labelledby="gate-h">
+  <div class="gate-inner">
+    <p class="eyebrow">F3K / F5K timing system · rules review</p>
+    <h2 id="gate-h">Who's reviewing?</h2>
+    <p>
+      Your name tags every comment you leave, so we know whose opinion is whose.
+      As you work through the rules your answers save automatically — come back any time
+      and type <strong>the same name</strong> to pick up where you left off.
+    </p>
+    <p style="font-size:0.88rem;color:var(--ink-3)" id="gate-mode">Checking where your answers will be saved…</p>
+    <label for="who">Your name</label>
+    <div class="gate-row">
+      <input type="text" id="who" autocomplete="name" spellcheck="false" placeholder="e.g. Dave Harrison">
+      <button type="button" class="btn" id="gate-go">Start reviewing</button>
+    </div>
+    <p class="gate-err" id="gate-err" role="alert"></p>
+    <div class="resume" id="resume" hidden>
+      <span style="font-family:var(--mono);font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--ink-3)">Continue a review on this device</span>
+      <div class="resume-list" id="resume-list"></div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+<div class="statusbar" id="statusbar" hidden>
+  <span class="who" id="sb-who"></span>
+  <span class="prog" id="sb-prog"></span>
+  <span class="spacer"></span>
+  <span class="prog" id="sb-mode"></span>
+  <button type="button" id="sb-todo" aria-pressed="false">Unreviewed only</button>
+  <button type="button" id="sb-switch">Switch reviewer</button>
+</div>
+
+<header class="mast">
+  <p class="eyebrow">Review document · F3K / F5K competition timing system</p>
+  <h1>Every rule the system enforces</h1>
+  <p class="standfirst">
+    This is a working timing and scoring system for hand-launch glider competitions.
+    Each rule below is something it actually does today, and each one was a decision made
+    by someone still learning the sport. <strong>The marked ones are the point — they need
+    someone who has run competitions to say whether they are right.</strong>
+  </p>
+  <div class="mast-meta">
+    <span>Rules <b>46</b></span>
+    <span>Verified <b>15</b></span>
+    <span>Judgement calls <b>28</b></span>
+    <span>Known gaps <b>3</b></span>
+    <span>Omissions <b>8</b></span>
+  </div>
+</header>
+
+<div class="control">
+  <h2>Filter — show me only</h2>
+  <div class="filters">
+    <button type="button" data-f="ok"   aria-pressed="true">Verified <span class="n">15</span></button>
+    <button type="button" data-f="warn" aria-pressed="true">Judgement call <span class="n">28</span></button>
+    <button type="button" data-f="gap"  aria-pressed="true">Known gap <span class="n">3</span></button>
+  </div>
+  <p class="legend-note">
+    <strong>Verified</strong> — taken from GliderScore 6.78 or FAI rules and checked against real
+    competition data. <strong>Judgement call</strong> — defensible, but chosen rather than looked up.
+    <strong>Known gap</strong> — incomplete, and shipped that way knowingly.
+    Turn off "Verified" to see only what needs your attention.
+  </p>
+</div>
+
+<section id="s1">
+  <div class="sec-head"><span class="sec-num">01</span><h2>What the system is, and is not</h2></div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-01</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>The system times and records; GliderScore remains the scorer of record.</strong>
+      Results export as a GliderScore-compatible file and the CD scores there. The built-in
+      scoring exists so the CD can see live standings during the day.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-02</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The built-in scoring engine is a second opinion, not an authority.</strong>
+      It implements the task rules independently. If it and GliderScore disagree,
+      GliderScore is right and we have a bug.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>It has never been validated against a full scored competition. Until it has, how much
+        should a CD trust the live leaderboard in front of the pilots?</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-03</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Everything works with no internet.</strong> The field system is three
+      isolated networks with no uplink. Nothing depends on a cloud service or a phone signal.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s2">
+  <div class="sec-head"><span class="sec-num">02</span><h2>The round: prep, working window, landing</h2></div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-04</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A round runs prep → working window → landing window.</strong>
+      Defaults are <strong>prep 2:00, landing 0:30</strong>, with a 30 s gap between heats and
+      between rounds, 45 s focus time and a 15 s final count.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>Two minutes of prep is shorter than the three minutes F3K commonly uses, and it is what
+        every new competition starts with unless the CD changes it. If 3:00 is standard, this is a
+        one-line change.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-05</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The base station starts the round; the timekeeper cannot.</strong>
+      While a timer is connected, its start buttons are locked. Every timer in the heat starts on
+      the same broadcast, so the group is on one clock.</p>
+      <div class="note why"><span class="note-label">Why</span>
+        <p>Independent starts drift, and the pilot flying nearest the CD gets a different window
+        from the one at the far end of the line.</p></div>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>A timekeeper who wants to start their own pilot cannot. Should there be a manual
+        override for a timer that has lost the link?</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-06</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>If the start signal is lost, the timer opens the window itself 250 ms
+      after its own prep clock hits zero.</strong> That clock is re-synced from the base every second
+      through the last ten, so its zero is accurate to about one packet.</p>
+      <div class="note why"><span class="note-label">Why</span>
+        <p>A dropped packet must never cost a pilot part of their window. Waiting even a second for
+        a start that may never come opens the window late for that pilot alone.</p></div>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>A pilot on a degraded link could start a fraction before the rest of the group.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-07</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The CD can skip the prep countdown forward</strong> — jumping to
+      "one minute to go" when the line is ready early. Only during prep, never during the window.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="gap">
+    <div class="rid">R-08</div>
+    <div class="rule-body">
+      <span class="chip">Known gap</span>
+      <p class="claim"><strong>The landing window is a countdown, and nothing more.</strong>
+      The timer shows it and moves to results at zero. <strong>The system does not enforce anything
+      about landings</strong> — it does not know where a model came down, and applies no landing
+      bonus or penalty. If your rules score landings, that happens in GliderScore.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s3">
+  <div class="sec-head"><span class="sec-num">03</span><h2>Launching and jumped starts</h2></div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-09</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A launch before the window opens is recorded, flown, and then
+      invalidated.</strong> The right-hand button unlocks two seconds before the window opens. A
+      flight started there runs on screen marked JUMPED in red, and is automatically scratched when
+      it stops — it never counts and never reaches the results.</p>
+      <div class="note why"><span class="note-label">Why</span>
+        <p>The alternative is refusing to start the clock, which leaves the timekeeper fighting the
+        device while the model is already in the air.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-10</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A jumped start is a note to the CD, never a stored flight.</strong>
+      It appears on the run screen. It is not in the database and cannot appear in results.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>Should a jumped start be a scoring penalty rather than a discarded flight? Right now the
+        pilot simply loses that launch. Some readings say it should cost more.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-11</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Why two seconds.</strong> Wide enough to catch a genuine early launch,
+      narrow enough that it is not a general "start early" button. The unlock stays open at zero,
+      because the local clock can reach zero up to a second before the start signal arrives — and
+      that gap is exactly when a pilot jumps.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s4">
+  <div class="sec-head"><span class="sec-num">04</span><h2>Flights and scratching</h2></div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-12</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>A flight is timed launch to landing by the timekeeper's button
+      presses</strong>, recorded to hundredths, and sent to the base station immediately.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-13</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Up to ten flights per pilot per round are recorded.</strong>
+      More launches than the task allows are still recorded, but not scored — see R-20.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-14</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Scratching discards the most recent flight not already scratched.</strong>
+      The timekeeper presses left, then confirms within two seconds. There is no way to scratch an
+      earlier flight from the timer.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>Is "most recent" always what a caller means? A caller who realises two flights later that
+        one was invalid cannot fix it on the timer — the CD must do it on the base station.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-15</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A scratched flight is kept and marked, never deleted.</strong>
+      It shows struck through in red on the results screen, and is excluded from both scoring and
+      the export.</p>
+      <div class="note why"><span class="note-label">Why</span>
+        <p>An audit trail if a pilot disputes the call — and a deleted flight would be silently
+        re-created by the end-of-round safety resend (R-27).</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-16</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A scratch is the timekeeper's decision and needs no CD confirmation.</strong>
+      The timer already requires a deliberate confirm press.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>At a serious competition, should a scratch require the CD to countersign? Currently the
+        caller's word is final and the CD only sees the result.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="s5">
+  <div class="sec-head"><span class="sec-num">05</span><h2>Task scoring</h2></div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-17</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Flight times are truncated, not rounded</strong> — to one decimal by
+      default. 59.98 s scores 59.9, not 60.0. This matches GliderScore.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-18</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>The task rules as implemented.</strong> "Cap" is the longest time a
+      single flight can score.</p>
+
+      <div class="tw">
+        <table>
+          <caption>F3K</caption>
+          <thead><tr><th>Task</th><th>Rule</th><th>Cap</th></tr></thead>
+          <tbody>
+            <tr><td>A</td><td>Last flight counts</td><td class="num">5:00</td></tr>
+            <tr><td>B</td><td>Last 2 flights count</td><td class="num">4:00 · B(2) 3:00</td></tr>
+            <tr><td>C</td><td>First 3 flights (all-up); variants 4 or 5</td><td class="num">3:00 each</td></tr>
+            <tr><td>D</td><td>Ladder — first flight ≥ 30 s scores 30, target then rises 15 s each time</td><td class="num">—</td></tr>
+            <tr><td>D(1)</td><td>First 2 flights count</td><td class="num">5:00</td></tr>
+            <tr><td>E</td><td>Poker — best 5 (E(1)/E(2): best 3) · see R-19</td><td class="num">none</td></tr>
+            <tr><td>F</td><td>Best 3 of at most 6 launches</td><td class="num">3:00</td></tr>
+            <tr><td>G</td><td>Best 5 flights</td><td class="num">2:00</td></tr>
+            <tr><td>H</td><td>4 flights matched to targets</td><td class="num">1:00 / 2:00 / 3:00 / 4:00</td></tr>
+            <tr><td>I</td><td>Best 3 flights</td><td class="num">3:20</td></tr>
+            <tr><td>J</td><td>Last 3 flights</td><td class="num">3:00</td></tr>
+            <tr><td>K</td><td>5 flights in order</td><td class="num">1:00 / 1:30 / 2:00 / 2:30 / 3:00</td></tr>
+            <tr><td>L</td><td>First flight only</td><td class="num">9:59</td></tr>
+            <tr><td>M</td><td>3 flights in order</td><td class="num">3:00 / 5:00 / 7:00</td></tr>
+            <tr><td>N</td><td>Best single flight</td><td class="num">10:00</td></tr>
+            <tr><td>U10 / U15</td><td>Every flight counts</td><td class="num">none</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tw">
+        <table>
+          <caption>F5K</caption>
+          <thead><tr><th>Task</th><th>Rule</th><th>Launches</th></tr></thead>
+          <tbody>
+            <tr><td>A</td><td>4 flights matched to targets 1:00 / 2:00 / 3:00 / 4:00</td><td class="num">4</td></tr>
+            <tr><td>B</td><td>Last flight counts, cap 5:00</td><td class="num">3</td></tr>
+            <tr><td>C</td><td>First 3 flights, cap 4:00</td><td class="num">—</td></tr>
+            <tr><td>D</td><td>3 flights matched to targets 3:00 / 3:00 / 4:00</td><td class="num">3</td></tr>
+            <tr><td>E</td><td>Poker — best 3 · see R-19</td><td class="num">3</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="gap">
+    <div class="rid">R-19</div>
+    <div class="rule-body">
+      <span class="chip">Known gap</span>
+      <p class="claim"><strong>Poker is not really implemented.</strong> A declared target is central
+      to the task, and the system never records a declaration. It simply takes the achieved times and
+      scores the best few. A pilot who declares 3:00 and flies 2:30 should score nothing for that
+      flight; here they score 2:30.</p>
+      <div class="note challenge"><span class="note-label">The single biggest known gap</span>
+        <p>It needs either a way for the timekeeper to enter a declaration on the timer before the
+        launch, or an explicit decision that Poker is scored by the CD in GliderScore and the timer
+        only records times.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-20</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Where a task limits launches, extra flights are ignored in the order
+      flown</strong> — the first few are kept, later ones dropped. They remain recorded and visible.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>Should a pilot who over-launches keep their <em>best</em> allowed flights instead? Keeping
+        the first ones is the stricter reading, but it is a reading.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-21</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Target-matched tasks pair the longest flight with the largest
+      target</strong>, second-longest with second-largest, and so on — each scoring the lesser of
+      flight and target. This maximises the pilot's score.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>It assumes the pilot always gets the most favourable assignment. If your rules require the
+        pilot to nominate which flight targets which slot, this is wrong.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-22</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>An unknown task scores every flight rather than failing.</strong>
+      If a round references a task the system does not know, it counts all flights instead of
+      crashing the results page.</p>
+      <div class="note why"><span class="note-label">Why</span>
+        <p>A scoring page that fails mid-competition is worse than one that is generous and visibly
+        wrong.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="s6">
+  <div class="sec-head"><span class="sec-num">06</span><h2>F5K height bonus</h2></div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-23</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Bonus points by motor-cut height</strong>, relative to a reference
+      height (default 60 m, settable per competition and per round).</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Height vs reference</th><th>Points</th></tr></thead>
+          <tbody>
+            <tr><td>Below</td><td class="num">+0.5 per metre, no limit</td></tr>
+            <tr><td>1–10 m above</td><td class="num">−1 per metre</td></tr>
+            <tr><td>11 m+ above</td><td class="num">−1/m for the first 10 m, then −3 per metre</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>15 m above reference is −10 for the first ten metres and −15 for the next five:
+      <strong>−25 points</strong>. Verified against GliderScore's own bonus table and the
+      NZ Nationals 2026 data.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-24</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The bonus applies only to a flight that counts and is at least
+      30 seconds</strong> (configurable). A flight that does not score gets neither bonus nor penalty.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>A pilot who launches very high and lands immediately escapes the height penalty entirely,
+        because the flight is too short to qualify. Intended, or should the penalty apply regardless?</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="gap">
+    <div class="rid">R-25</div>
+    <div class="rule-body">
+      <span class="chip">Known gap</span>
+      <p class="claim"><strong>Heights are entered on the timer after the round</strong>, one flight
+      at a time, and can be overridden by the CD. Each height records whether it came from the timer
+      or the CD. <strong>Heights are not exported</strong> — the file carries flight times only, and
+      GliderScore applies the bonus from heights the CD types there. Confirmed against a scored F5K
+      competition, but it does mean heights are entered twice.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s7">
+  <div class="sec-head"><span class="sec-num">07</span><h2>When things go wrong</h2></div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-26</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Every flight, scratch, height and pilot selection must be acknowledged
+      by the base station.</strong> The timer holds each message until the base echoes it back, and
+      retries until it does — through a dropped link, a base station restart, or a flat battery on
+      the network.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-27</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>At the end of every round the timer re-reports the whole round from
+      its own memory.</strong> Anything the base missed is recovered; anything it already has is
+      recognised and ignored. Recovered flights are flagged loudly, because the log changed after
+      the round ended.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-28</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>The timer keeps the last three rounds in permanent memory</strong>,
+      written flight by flight as they happen. A timer that loses power mid-round keeps everything
+      already flown, and the round can be recovered without the base station.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-29</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A duplicate means: same pilot, same group, same time to the
+      millisecond.</strong> Two genuinely identical flights in one group are treated as one.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>Two flights matching to the millisecond is vanishingly unlikely — but not impossible, and
+        if it happened the pilot would silently lose one.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="s8">
+  <div class="sec-head"><span class="sec-num">08</span><h2>Normalisation, drops and standings</h2></div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-30</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Within a group, the best raw score scores 1000</strong> and everyone
+      else scores their score ÷ best × 1000, truncated to one decimal.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-31</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A group where nobody scores gives everyone zero, not 1000.</strong>
+      If no one posts a time, no one gets the winner's points.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-32</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A round with no flights at all does not count</strong> toward the
+      competition, and is not a drop candidate — it simply did not happen.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-33</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Drop scores are configured per competition</strong> — drop one becomes
+      active after round <em>n</em>, and so on for up to three. The lowest scores are dropped.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-34</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>On tied scores, the earliest round is dropped.</strong></p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-35</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Ties in the standings break on the last round flown, then working
+      backwards</strong> — FAI style.</p>
+      <div class="note challenge"><span class="note-label">Worth checking</span>
+        <p>The tie-break compares each round's score <em>including rounds that were dropped</em>.
+        A stricter reading might compare only counting rounds.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="s9">
+  <div class="sec-head"><span class="sec-num">09</span><h2>The draw</h2></div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-36</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Round one is drawn at random; later rounds are seeded by reverse
+      standings, snaked across groups</strong> — so the leaders are spread out rather than all
+      flying together.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-37</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The multi-round draw optimises for every pilot flying with every other
+      pilot at least once.</strong> Meeting a new pilot is weighted heavily; repeat meetings are
+      mildly discouraged.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-38</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Back-to-back flying is avoided</strong> — a pilot in the last group of
+      one round and the first group of the next gets no break. With three or more groups this is
+      treated as effectively mandatory; with two groups it is only a preference, because forcing it
+      would freeze the group composition for the whole competition.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>Is one group's gap enough rest, or should it be two?</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-39</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The draw warns if there are not enough non-flying pilots to
+      timekeep</strong> — assuming one timekeeper per flying pilot, drawn from those not in the group.</p>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>This assumes pilot-timekeepers. A competition with dedicated helpers does not need the
+        warning at all.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-40</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Group sizes differ by at most one, and the earlier groups get the
+      extra pilot.</strong></p>
+    </div>
+  </div>
+</section>
+
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">10</span><h2>Audio</h2></div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-41</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>The cues are GliderScore's own</strong>, extracted from its database —
+      the same announcements and beeps at the same times, so a pilot hears what they are used to.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-42</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>Working times GliderScore has no profile for get a generated cue
+      schedule</strong> rather than running in silence.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-43</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The last ten seconds of the working and landing windows are beeps,
+      not spoken numbers.</strong> Spoken counts overlapped each other at one-second spacing.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-44</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>The spoken cue "to land" is deliberately suppressed.</strong>
+      It fired one second before the landing beeps and clipped them. "Pilots must land" already makes
+      the call 17 seconds earlier, and the timer shows the landing clock.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-45</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Landing cues are re-anchored to the competition's actual landing
+      window</strong>, not the length in GliderScore's profile.</p>
+    </div>
+  </div>
+
+  <div class="rule" data-s="ok">
+    <div class="rid">R-46</div>
+    <div class="rule-body">
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Audio latency was removed rather than compensated</strong> — cues fire
+      on the beat with no offset. Bluetooth speakers are the exception: they add 100–200 ms that
+      cannot be removed and must be dialled out per speaker.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s11">
+  <div class="sec-head"><span class="sec-num">11</span><h2>Deliberate omissions</h2></div>
+  <p class="sec-intro">Things the system does <strong>not</strong> do, on purpose. Each is a candidate
+  for challenge — better you tell us which of these matters than a CD discovers one mid-competition.</p>
+  <ul class="omit">
+    <li><strong>No landing scoring or bonus.</strong></li>
+    <li><strong>No Poker declarations</strong> — the largest gap (R-19).</li>
+    <li><strong>No penalties of any kind.</strong> No airframe, safety or late-landing penalties.
+      There is a penalty field in the database and nothing writes to it.</li>
+    <li><strong>No fly-off handling.</strong> A fly-off is run as ordinary extra rounds.</li>
+    <li><strong>No airframe or model registration</strong>, so no model-change rules.</li>
+    <li><strong>No wind or weather record</strong>, and no round abandonment or re-fly workflow.
+      A round is re-flown by deleting the flights and running it again.</li>
+    <li><strong>No handicapping, junior or age classes</strong> in scoring — pilots are one field.</li>
+    <li><strong>Timekeeper assignment is not tracked</strong>; the draw only warns whether enough
+      pilots exist to fill the role.</li>
+  </ul>
+</section>
+
+<section id="s12">
+  <div class="sec-head"><span class="sec-num">12</span><h2>The five questions most worth your time</h2></div>
+  <p class="sec-intro">In priority order. If you read nothing else, these are the calls where being
+  wrong would matter most on the day.</p>
+  <ol class="qs">
+    <li>
+      <div>
+        <h3>Poker — we never record a declaration</h3>
+        <p>Task E scores achieved times instead. Is that an acceptable simplification, or does it
+        make the task meaningless? <em>R-19</em></p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <h3>Jumped starts cost only the launch</h3>
+        <p>The flight is discarded and nothing more. Should it carry a scoring penalty? <em>R-10</em></p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <h3>Over-launching drops flights by order, not quality</h3>
+        <p>The first allowed flights are kept and later ones discarded. Is that the right reading?
+        <em>R-20</em></p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <h3>Target matching always favours the pilot</h3>
+        <p>We pair the longest flight with the largest target. Is that how these tasks are actually
+        scored? <em>R-21</em></p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <h3>A very high launch can escape the height penalty</h3>
+        <p>If the flight is too short to qualify for the bonus calculation, no penalty applies.
+        Should it? <em>R-24</em></p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section class="handback" id="handback">
+  <h2>Send your review back</h2>
+  <p style="margin:0" id="hb-note">
+    Your answers live in this browser only — they don't reach anyone until you hand them over.
+    This collects everything you've marked into one file to send back.
+  </p>
+  <div class="actions">
+    <button type="button" class="btn" id="dl">Download my review</button>
+    <button type="button" class="btn ghost" id="copy">Copy to clipboard</button>
+  </div>
+  <p class="msg" id="hb-msg" role="status"></p>
+</section>
+
+<p class="closing">
+  Rules marked <strong>verified</strong> are pinned by 169 automated tests — changing one without
+  updating its test fails the build. Every rule cites where it lives in the code, so a decision can
+  be changed without hunting for it. Quote the rule number when you disagree.
+  Full source: <code>RULES.md</code> in the base station repository.
+</p>
+
+</div>
+
+<script>
+  (function () {
+    'use strict';
+
+    var NS = 'f3k-rules-review:v1:';
+    var IDX = 'f3k-rules-review:names';
+    var LAST = 'f3k-rules-review:last';
+
+    var VERDICTS = [
+      { k: 'agree',  label: 'Looks right' },
+      { k: 'change', label: 'Needs changing' },
+      { k: 'talk',   label: "Let's discuss" }
+    ];
+
+    var rules = Array.prototype.slice.call(document.querySelectorAll('.rule'));
+    var sections = Array.prototype.slice.call(document.querySelectorAll('section'));
+    var filterBtns = Array.prototype.slice.call(document.querySelectorAll('.filters button'));
+
+    var gate = document.getElementById('gate');
+    var gateInput = document.getElementById('who');
+    var gateErr = document.getElementById('gate-err');
+    var statusbar = document.getElementById('statusbar');
+    var sbWho = document.getElementById('sb-who');
+    var sbProg = document.getElementById('sb-prog');
+    var sbMode = document.getElementById('sb-mode');
+    var sbTodo = document.getElementById('sb-todo');
+    var gateMode = document.getElementById('gate-mode');
+    var handbackNote = document.getElementById('hb-note');
+
+    var reviewer = null;
+    var data = {};          // { "R-01": {v: "agree", note: "..."} }
+    var todoOnly = false;
+    var flashTimer = null;
+    var store = null;       // set at boot: server-backed if an API answers, else this browser
+
+    // localStorage can throw (private browsing, storage disabled). The page must
+    // still be readable if it does — losing the save is bad, losing the document
+    // is worse.
+    function safeGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+    function safeSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+
+    function key(name) { return NS + name.trim().toLowerCase(); }
+
+    function countDone(verdicts) {
+      return Object.keys(verdicts || {}).filter(function (id) {
+        var d = verdicts[id];
+        return d && (d.v || (d.note && d.note.trim()));
+      }).length;
+    }
+
+    // ---- storage backends ------------------------------------------------
+    // Same three methods either way, so nothing above here cares which is live.
+
+    var localStore = {
+      mode: 'local',
+      label: 'Saved in this browser',
+      names: function () {
+        var out = [];
+        try {
+          JSON.parse(safeGet(IDX) || '[]').forEach(function (n) {
+            var raw = safeGet(key(n));
+            var v = raw ? (JSON.parse(raw).verdicts || {}) : {};
+            out.push({ name: n, count: countDone(v) });
+          });
+        } catch (e) { /* index unreadable — show none */ }
+        return Promise.resolve(out);
+      },
+      load: function (name) {
+        var v = {};
+        try {
+          var raw = safeGet(key(name));
+          v = raw ? (JSON.parse(raw).verdicts || {}) : {};
+        } catch (e) { v = {}; }
+        return Promise.resolve(v);
+      },
+      save: function (name, verdicts) {
+        var all = [];
+        try { all = JSON.parse(safeGet(IDX) || '[]'); } catch (e) { all = []; }
+        if (all.indexOf(name) === -1) all.push(name);
+        safeSet(IDX, JSON.stringify(all));
+        safeSet(LAST, name);
+        var ok = safeSet(key(name), JSON.stringify({
+          name: name, updated: new Date().toISOString(), verdicts: verdicts
+        }));
+        return ok ? Promise.resolve()
+                  : Promise.reject(new Error('This browser is blocking storage'));
+      }
+    };
+
+    function apiStore(base, token) {
+      function req(path, opts) {
+        opts = opts || {};
+        opts.headers = opts.headers || {};
+        opts.headers['Content-Type'] = 'application/json';
+        if (token) opts.headers['X-Review-Token'] = token;
+        return fetch(base + path, opts).then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.status === 204 ? null : r.json();
+        });
+      }
+      return {
+        mode: 'server',
+        label: 'Saved to the server',
+        names: function () {
+          return req('reviews').then(function (j) { return j.reviewers || []; });
+        },
+        load: function (name) {
+          return req('review?name=' + encodeURIComponent(name))
+            .then(function (j) { return (j && j.verdicts) || {}; });
+        },
+        save: function (name, verdicts) {
+          safeSet(LAST, name);
+          return req('review?name=' + encodeURIComponent(name), {
+            method: 'PUT',
+            body: JSON.stringify({ verdicts: verdicts })
+          });
+        }
+      };
+    }
+
+    var saveQueued = false, saveInFlight = false;
+
+    function save() {
+      if (!reviewer) return;
+      // One write at a time; a save requested mid-flight is collapsed into a
+      // single follow-up rather than queueing a burst at the server.
+      if (saveInFlight) { saveQueued = true; return; }
+      saveInFlight = true;
+      store.save(reviewer, data).then(function () {
+        flash('Saved');
+      }).catch(function (err) {
+        flash('Not saved — ' + (err && err.message ? err.message : 'try again'));
+      }).then(function () {
+        saveInFlight = false;
+        if (saveQueued) { saveQueued = false; save(); }
+      });
+    }
+
+    function flash(msg) {
+      sbProg.dataset.flash = '1';
+      sbProg.textContent = msg;
+      sbProg.classList.add('saved-flash');
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(function () {
+        sbProg.classList.remove('saved-flash');
+        delete sbProg.dataset.flash;
+        updateProgress();
+      }, 1200);
+    }
+
+    function reviewedCount() { return countDone(data); }
+
+    function updateProgress() {
+      if (sbProg.dataset.flash) return;
+      sbProg.textContent = reviewedCount() + ' of ' + rules.length + ' reviewed';
+    }
+
+    // Build the review controls once, from the rule list, rather than repeating
+    // the same markup 46 times by hand.
+    function buildControls() {
+      rules.forEach(function (rule) {
+        var id = rule.querySelector('.rid').textContent.trim();
+        rule.dataset.rid = id;
+
+        var wrap = document.createElement('div');
+        wrap.className = 'review';
+
+        var row = document.createElement('div');
+        row.className = 'verdicts';
+        VERDICTS.forEach(function (v) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.dataset.v = v.k;
+          b.textContent = v.label;
+          b.setAttribute('aria-pressed', 'false');
+          b.setAttribute('aria-label', v.label + ' — ' + id);
+          b.addEventListener('click', function () {
+            var cur = data[id] || {};
+            cur.v = (cur.v === v.k) ? null : v.k;   // click again to clear
+            data[id] = cur;
+            paint(rule);
+            save();
+            updateProgress();
+            applyFilters();
+          });
+          row.appendChild(b);
+        });
+        wrap.appendChild(row);
+
+        var ta = document.createElement('textarea');
+        ta.rows = 2;
+        ta.placeholder = 'Comment on ' + id + ' (optional)';
+        ta.setAttribute('aria-label', 'Comment on ' + id);
+        var t = null;
+        ta.addEventListener('input', function () {
+          var cur = data[id] || {};
+          cur.note = ta.value;
+          data[id] = cur;
+          rule.classList.toggle('reviewed', !!(cur.v || (cur.note && cur.note.trim())));
+          clearTimeout(t);
+          t = setTimeout(function () { save(); updateProgress(); }, 500);
+        });
+        wrap.appendChild(ta);
+
+        rule.querySelector('.rule-body').appendChild(wrap);
+      });
+    }
+
+    function paint(rule) {
+      var id = rule.dataset.rid;
+      var d = data[id] || {};
+      rule.querySelectorAll('.verdicts button').forEach(function (b) {
+        b.setAttribute('aria-pressed', d.v === b.dataset.v ? 'true' : 'false');
+      });
+      var ta = rule.querySelector('.review textarea');
+      if (ta && ta.value !== (d.note || '')) ta.value = d.note || '';
+      rule.classList.toggle('reviewed', !!(d.v || (d.note && d.note.trim())));
+    }
+
+    function applyFilters() {
+      var on = {};
+      filterBtns.forEach(function (b) {
+        on[b.dataset.f] = b.getAttribute('aria-pressed') === 'true';
+      });
+      rules.forEach(function (r) {
+        var hide = !on[r.dataset.s];
+        if (!hide && todoOnly && r.classList.contains('reviewed')) hide = true;
+        r.classList.toggle('is-hidden', hide);
+      });
+      sections.forEach(function (s) {
+        var own = s.querySelectorAll('.rule');
+        if (!own.length) return;
+        var any = Array.prototype.some.call(own, function (r) {
+          return !r.classList.contains('is-hidden');
+        });
+        s.style.display = any ? '' : 'none';
+      });
+    }
+
+    filterBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+        applyFilters();
+      });
+    });
+
+    sbTodo.addEventListener('click', function () {
+      todoOnly = !todoOnly;
+      sbTodo.setAttribute('aria-pressed', todoOnly ? 'true' : 'false');
+      applyFilters();
+    });
+
+    document.getElementById('sb-switch').addEventListener('click', function () {
+      reviewer = null;
+      statusbar.hidden = true;
+      gate.hidden = false;
+      gateInput.value = '';
+      renderResume();
+      gateInput.focus();
+    });
+
+    // ---- sign in ----
+    var goBtn = document.getElementById('gate-go');
+
+    function start(name) {
+      name = name.trim().replace(/\s+/g, ' ');
+      if (name.length < 2) {
+        gateErr.textContent = 'Please enter a name of at least two characters.';
+        gateInput.focus();
+        return;
+      }
+      gateErr.textContent = '';
+      goBtn.disabled = true;
+      store.load(name).then(function (verdicts) {
+        reviewer = name;
+        data = verdicts;
+        gate.hidden = true;
+        statusbar.hidden = false;
+        sbWho.textContent = name;
+        sbMode.textContent = store.label;
+        rules.forEach(paint);
+        updateProgress();
+        applyFilters();
+        window.scrollTo(0, 0);
+      }).catch(function (err) {
+        gateErr.textContent = 'Could not load your review: ' +
+          (err && err.message ? err.message : 'unknown error');
+      }).then(function () { goBtn.disabled = false; });
+    }
+
+    function renderResume() {
+      var box = document.getElementById('resume');
+      var list = document.getElementById('resume-list');
+      return store.names().then(function (names) {
+        list.textContent = '';
+        if (!names.length) { box.hidden = true; return; }
+        box.hidden = false;
+        names.forEach(function (n) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = n.name + ' (' + n.count + '/' + rules.length + ')';
+          b.addEventListener('click', function () { start(n.name); });
+          list.appendChild(b);
+        });
+      }).catch(function () { box.hidden = true; });
+    }
+
+    document.getElementById('gate-go').addEventListener('click', function () {
+      start(gateInput.value);
+    });
+    gateInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); start(gateInput.value); }
+    });
+
+    // ---- handing the review back ----
+    function buildReport() {
+      var lines = [];
+      lines.push('# F3K / F5K rules review');
+      lines.push('');
+      lines.push('Reviewer: ' + reviewer);
+      lines.push('Date: ' + new Date().toISOString().slice(0, 10));
+      lines.push('Reviewed: ' + reviewedCount() + ' of ' + rules.length + ' rules');
+      lines.push('');
+      var any = false;
+      rules.forEach(function (rule) {
+        var id = rule.dataset.rid;
+        var d = data[id];
+        if (!d || (!d.v && !(d.note && d.note.trim()))) return;
+        any = true;
+        var claim = rule.querySelector('.claim');
+        var label = '—';
+        VERDICTS.forEach(function (v) { if (v.k === d.v) label = v.label; });
+        lines.push('## ' + id + ' — ' + label);
+        if (claim) {
+          lines.push('');
+          lines.push('> ' + claim.textContent.replace(/\s+/g, ' ').trim().slice(0, 240));
+        }
+        if (d.note && d.note.trim()) {
+          lines.push('');
+          lines.push(d.note.trim());
+        }
+        lines.push('');
+      });
+      if (!any) lines.push('_Nothing marked yet._');
+      return lines.join('\n');
+    }
+
+    var hbMsg = document.getElementById('hb-msg');
+    var dlBtn = document.getElementById('dl');
+
+    // downloads is a per-view capability — if the viewer's session doesn't grant
+    // it, hide the button rather than offering something that cannot work.
+    if (!window.claude || !window.claude.downloads) {
+      dlBtn.hidden = true;
+    }
+
+    dlBtn.addEventListener('click', function () {
+      if (!reviewer) return;
+      var safe = reviewer.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      dlBtn.disabled = true;
+      hbMsg.textContent = '';
+      window.claude.downloads.save({
+        filename: 'f3k-rules-review-' + (safe || 'reviewer') + '.md',
+        data: buildReport()
+      }).then(function () {
+        hbMsg.textContent = 'Saved. Send that file back and you’re done.';
+      }).catch(function (err) {
+        var code = err && err.code;
+        if (code === 'declined') {
+          hbMsg.textContent = 'No problem — nothing was saved.';
+        } else if (code === 'rate_limited') {
+          hbMsg.textContent = 'A save prompt is already open. Finish that one first.';
+        } else {
+          hbMsg.textContent = 'Download isn’t available here — use Copy to clipboard instead.';
+          dlBtn.hidden = true;
+        }
+      }).then(function () { dlBtn.disabled = false; });
+    });
+
+    document.getElementById('copy').addEventListener('click', function () {
+      if (!reviewer) return;
+      var text = buildReport();
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        hbMsg.textContent = ok
+          ? 'Copied. Paste it into an email or message.'
+          : 'Couldn’t copy automatically — select the page text and copy manually.';
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          hbMsg.textContent = 'Copied. Paste it into an email or message.';
+        }).catch(fallback);
+      } else {
+        fallback();
+      }
+    });
+
+    // ---- boot ----
+    // Prefer a review server when one is answering on this origin; fall back to
+    // browser storage so the same file works as a plain static page.
+    function detectStore() {
+      var base = (window.F3K_REVIEW_API || 'api/').replace(/\/?$/, '/');
+      var token = null;
+      try {
+        var q = new URLSearchParams(window.location.search);
+        token = q.get('token') || window.sessionStorage.getItem('f3k-review-token');
+        if (token) window.sessionStorage.setItem('f3k-review-token', token);
+      } catch (e) { token = null; }
+
+      if (!window.fetch) return Promise.resolve(localStore);
+
+      return fetch(base + 'ping', {
+        headers: token ? { 'X-Review-Token': token } : {}
+      }).then(function (r) {
+        if (!r.ok) throw new Error('no api');
+        return r.json();
+      }).then(function (j) {
+        return (j && j.ok) ? apiStore(base, token) : localStore;
+      }).catch(function () {
+        return localStore;
+      });
+    }
+
+    buildControls();
+    detectStore().then(function (s) {
+      store = s;
+      gateMode.textContent = (s.mode === 'server')
+        ? 'Your answers save to the shared review server, so you can carry on from any device — and they reach the author automatically.'
+        : 'Saved in this browser on this device only. Nothing is sent anywhere, so when you are done use Send your review back at the bottom to hand it over.';
+      if (s.mode === 'server') {
+        handbackNote.textContent = 'Your answers are already on the review server — the author can see them. This is only if you want your own copy.';
+      }
+      return renderResume();
+    }).then(function () {
+      var last = safeGet(LAST);
+      if (last) gateInput.value = last;
+      gateInput.focus();
+    });
+  })();
+</script>

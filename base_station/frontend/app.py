@@ -81,6 +81,12 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 # scripts would leave every page unstyled and dead on an uncached device.
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
+# Public rules-review page (/rules) and its collection API. Kept in its own
+# module with its own JSON store — it is reachable from the internet and must
+# never be able to write to the competition database.
+from frontend import rules_review  # noqa: E402
+app.include_router(rules_review.router)
+
 
 def _fmt_date(value: str) -> str:
     """YYYY-MM-DD → 22 Jul 2026; passes through anything that doesn't parse."""
