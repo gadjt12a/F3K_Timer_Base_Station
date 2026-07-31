@@ -355,8 +355,11 @@ def score_group_db(db, group_id: int) -> dict:
     raw: dict = {}
     for p in pilot_rows:
         flights = db.execute(
+            # Scratched flights are kept in the table for the audit trail but are
+            # not flights any more — they must not reach the task rules, or a
+            # discarded launch still counts toward the pilot's score. [I-42]
             """SELECT id, duration_ms, altitude_m, altitude_source FROM flights
-               WHERE pilot_id = ? AND group_id = ?
+               WHERE pilot_id = ? AND group_id = ? AND NOT scratched
                ORDER BY COALESCE(flight_no, 9999), recorded_at""",
             (p["id"], group_id)).fetchall()
         result = score_task(discipline, rnd["task"],

@@ -107,8 +107,16 @@
                             {% for i in range(hd.max_flights) %}
                             {% if i < p.flights | length %}
                             <td class="py-1.5 pl-5 text-right align-top">
+                                {# A scratched flight is shown, not hidden: the CD needs to see it
+                                   was flown and discarded. Struck through and red, matching the
+                                   timer's own results screen, and excluded from scoring/export. #}
+                                {% if p.flights[i].scratched %}
+                                <span class="font-mono font-semibold text-red-400 line-through"
+                                      title="Scratched by the caller on the timer — not scored, not exported">{{ p.flights[i].duration_ms | fmt_ms }}</span>
+                                {% else %}
                                 <span class="font-mono font-semibold {% if not hd.any_scores or p.flights[i].scored_s > 0 %}text-green-400{% else %}text-gray-500{% endif %}"
                                       {% if hd.any_scores and p.flights[i].scored_s == 0 %}title="Does not count for this task"{% endif %}>{{ p.flights[i].duration_ms | fmt_ms }}</span>
+                                {% endif %}
                                 {% if p.flights[i].bonus is defined and p.flights[i].bonus is not none %}
                                 <br><span class="font-mono text-xs {% if p.flights[i].bonus >= 0 %}text-cyan-400{% else %}text-red-400{% endif %}"
                                           title="F5K height bonus">{{ '%+.1f'|format(p.flights[i].bonus) }}</span>

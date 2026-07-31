@@ -953,6 +953,59 @@ Verified end to end on hardware: Pi backdated to fw-v24 with the device on fw-v2
 `fw_state: "ahead"`, `base_firmware_stale: true`, the Settings banner, and `BASE IS
 OLDER` on the timer with no update offered. Pi restored to fw-v29 afterwards.
 
+### I-42 · A scratched flight stayed valid at the base and in the export · FIXED (session 65, fw-v30)
+`src/main.cpp`, `src/timer/FlightLog.{h,cpp}`, `src/comms/TimerComms.{h,cpp}`, `base_station/server.py` (`SCRATCH`, `scratch_flight`), `frontend/db.py`, `frontend/scoring.py`, `frontend/app.py`, `frontend/templates/results.html`
+
+A flight is reported to the base **the instant it is flown**, so scratching it on the
+timer was only half the job: `g_log.scratchLast()` updated the live `FlightLog` and
+nothing else. The flight stayed valid in the base's log, in scoring, and **in the CSV
+that goes to GliderScore**. Carried open from session 61 because it needed a decision,
+not code.
+
+**The decision: flag the row, do not delete it.** The deciding argument is mechanical
+rather than philosophical — the timer re-reports the whole round from NVS when it ends,
+and `record_flight()` dedups on `(pilot, group, duration)`. A **deleted** row would match
+nothing on that resend and be **re-inserted seconds later**, silently undoing the
+scratch. Flagging makes the resend a no-op and leaves an audit trail for a disputed call.
+
+Measured on hardware, exactly that sequence:
+
+```
+10:14:22  ACK FLIGHT pilot=29 dur=4047          <- flight flown and stored
+10:14:24  SCRATCH: pilot=29 4.05s group=37 — flight marked scratched
+10:14:58  Duplicate FLIGHT suppressed: dur=4047ms group=37   <- the resend, absorbed
+```
+
+`SCRATCH pilot=N dur=M` goes through the **ACK-gated pending queue**, so a scratch
+cannot be lost to a dropped link — which would otherwise leave the flight scoring at the
+base while the timer showed it struck through. Round trip measured at **72 ms**.
+
+The flight is identified **by duration**, the same key the dedup uses. That is
+unambiguous by construction: a second flight with an identical duration in the same
+group cannot exist, because `record_flight()` would have suppressed it.
+
+Every consumer had to honour the flag, or the flag would be worse than useless:
+
+| consumer | behaviour |
+|---|---|
+| `scoring.py` | excluded — `AND NOT scratched` |
+| CSV export + sync JSON | excluded — a scratched flight is not a result |
+| Results page | **shown**, struck through in red — the CD must see it was flown and discarded |
+| "round has flights" guards | still counted — it *was* flown, so the round is not editable |
+
+Proof it matters: the test round was **task A, which scores the last flight**. Scratching
+a 4.05 s relaunch after a 15.03 s flight gave `raw_s = 15.0`. Without the fix the pilot
+would have been scored on the launch they threw away.
+
+⚠ **No `SCRATCH` for a jumped start.** That flight is never sent as a `FLIGHT` at all —
+`JUMPED` goes instead, as a CD note — so there is no row at the base to scratch.
+
+⚠ **fw-v30 requires a base with this handler.** An older base logs `Unknown command` and
+sends no ACK, so the timer retries forever, the entry never leaves the 32-slot pending
+queue, and that queue **drops the newest when full** — enough stuck scratches would start
+discarding live `FLIGHT`s. Accepted as a development-only window; production ships both
+together.
+
 ---
 
 ## Not bugs — verified during the audit

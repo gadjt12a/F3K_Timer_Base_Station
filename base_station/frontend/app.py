@@ -761,8 +761,12 @@ async def results_get(request: Request, error: str = None, comp_id: int = None):
             heat_data = []
             for grp in groups:
                 rows = db.execute(
+                    # Scratched flights are *shown* here, struck through — the CD
+                    # needs to see that a flight was flown and discarded, not have
+                    # it vanish. They are excluded from scoring and export instead.
                     """SELECT p.id AS pilot_id, p.name AS pilot_name,
-                              f.id AS flight_id, f.duration_ms, f.altitude_m, f.recorded_at
+                              f.id AS flight_id, f.duration_ms, f.altitude_m,
+                              f.recorded_at, f.scratched
                        FROM group_pilots gp
                        JOIN pilots p ON p.id = gp.pilot_id
                        LEFT JOIN flights f ON f.pilot_id = p.id AND f.group_id = ?
@@ -788,7 +792,8 @@ async def results_get(request: Request, error: str = None, comp_id: int = None):
                         if alt is not None:
                             any_altitudes = True
                         pilot_flights[pid]["flights"].append(
-                            {"id": row["flight_id"], "duration_ms": row["duration_ms"], "altitude_m": alt}
+                            {"id": row["flight_id"], "duration_ms": row["duration_ms"],
+                             "altitude_m": alt, "scratched": bool(row["scratched"])}
                         )
 
                 pilots = [pilot_flights[pid] for pid in pilot_order]
@@ -1002,8 +1007,10 @@ async def export_csv(comp_id: int):
             ).fetchall()
             for pilot in pilots:
                 flights = db.execute(
+                    # A scratched flight must never reach GliderScore — this file
+                    # is the competition result. [I-42]
                     """SELECT duration_ms FROM flights
-                       WHERE pilot_id = ? AND group_id = ?
+                       WHERE pilot_id = ? AND group_id = ? AND NOT scratched
                        ORDER BY COALESCE(flight_no, 9999), recorded_at""",
                     (pilot["id"], grp["id"]),
                 ).fetchall()
@@ -1053,8 +1060,9 @@ async def export_json(comp_id: int):
                 flights_out = [
                     {"duration_ms": f["duration_ms"], "altitude_m": f["altitude_m"]}
                     for f in db.execute(
+                        # Same rule as the CSV: a scratched flight is not a result.
                         """SELECT duration_ms, altitude_m FROM flights
-                           WHERE pilot_id = ? AND group_id = ?
+                           WHERE pilot_id = ? AND group_id = ? AND NOT scratched
                            ORDER BY COALESCE(flight_no, 9999), recorded_at""",
                         (pilot["id"], grp["id"]),
                     ).fetchall()

@@ -42,10 +42,11 @@ def _add_pilot(db, name, comp_id, group_ids):
     return pid
 
 
-def _fly(db, pid, gid, secs, alt=None, source=None):
+def _fly(db, pid, gid, secs, alt=None, source=None, scratched=0):
     db.execute(
-        "INSERT INTO flights (pilot_id, duration_ms, group_id, altitude_m, altitude_source)"
-        " VALUES (?, ?, ?, ?, ?)", (pid, int(secs * 1000), gid, alt, source))
+        "INSERT INTO flights (pilot_id, duration_ms, group_id, altitude_m,"
+        " altitude_source, scratched) VALUES (?, ?, ?, ?, ?, ?)",
+        (pid, int(secs * 1000), gid, alt, source, scratched))
     db.commit()
 
 
@@ -83,6 +84,27 @@ class TestScoringDb(unittest.TestCase):
         self.assertEqual(res["pilots"][p1]["norm"], 1000.0)
         self.assertEqual(res["pilots"][p2]["norm"], 500.0)
         self.assertEqual(res["pilots"][p2]["rank"], 2)
+
+    def test_scratched_flight_is_not_scored(self):
+        """A scratched flight stays in the table but must not reach the rules.
+
+        Task A scores the *last* flight, so a scratched final launch is the case
+        that matters: if it counted, the pilot would be scored on the flight they
+        deliberately threw away. [I-42]
+        """
+        ids = _setup_comp(self.db, "F3K", task="A")
+        gid = ids["groups"][0]
+        p1 = _add_pilot(self.db, "Alice", ids["comp"], [gid])
+        _fly(self.db, p1, gid, 290)
+        _fly(self.db, p1, gid, 12, scratched=1)   # relaunch, discarded
+        res = scoring.score_group_db(self.db, gid)
+        self.assertEqual(res["pilots"][p1]["raw_s"], 290,
+                         "the scratched flight must not become the last flight")
+        self.assertEqual(len(res["pilots"][p1]["flights"]), 1,
+                         "and must not appear among the scored flights")
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM flights").fetchone()[0], 2,
+            "but the row is kept — flagged, not deleted")
 
     def test_f5k_bonus_included(self):
         ids = _setup_comp(self.db, "F5K", task="B")

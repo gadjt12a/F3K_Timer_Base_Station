@@ -227,6 +227,43 @@ class TimerClient:
             # the timer in a retry loop it can never escape.
             await self.send(f"ACK {line}")
 
+        elif cmd == "SCRATCH":
+            # The caller discarded a flight on the timer. It was already reported
+            # and stored the moment it was flown, so the base has to be told —
+            # until this existed the scratch never left the timer, and the flight
+            # stayed valid in the log and in the GliderScore export. [I-42]
+            params = parse_params(parts[1:])
+            pilot_id = int(params.get("pilot", 0))
+            dur_ms = int(params.get("dur", 0))
+            pilot_id = self._attribute(pilot_id, f"SCRATCH dur={dur_ms}ms")
+            if pilot_id > 0 and dur_ms > 0:
+                # Same key the dedup uses, which is what makes it unambiguous:
+                # a second flight with an identical duration in the same group
+                # cannot exist, because record_flight() would have suppressed it.
+                group_id = self._group_for(False)
+                if self.server.scratch_flight(pilot_id, dur_ms, group_id):
+                    log.warning(
+                        f"SCRATCH: pilot={pilot_id} {dur_ms / 1000:.2f}s "
+                        f"group={group_id} — flight marked scratched"
+                    )
+                    from frontend.app import manager
+                    asyncio.create_task(manager.broadcast({
+                        "type": "scratch",
+                        "pilot_id": pilot_id,
+                        "duration_ms": dur_ms,
+                    }))
+                else:
+                    # Nothing matched. Either the FLIGHT never arrived, or this is
+                    # a retry of a scratch already applied. Both are harmless, but
+                    # say so — a scratch that silently does nothing is the failure
+                    # this whole message exists to prevent.
+                    log.warning(
+                        f"SCRATCH matched no flight: pilot={pilot_id} "
+                        f"dur={dur_ms}ms group={group_id} (already scratched, or "
+                        f"the flight was never recorded)"
+                    )
+            await self.send(f"ACK {line}")   # unconditional — see FLIGHT above
+
         elif cmd == "JUMPED":
             # Pilot launched before the start horn — CD gets a note in the run
             # page flight log only. Never recorded in the DB (invalid flight).
@@ -532,6 +569,27 @@ class F3KServer:
         )
         self.db.commit()
         return True
+
+    def scratch_flight(self, pilot_id: int, dur_ms: int,
+                       group_id: int | None = None) -> bool:
+        """Mark a flight scratched. Returns True if a row actually changed.
+
+        Flagged rather than deleted, deliberately. The timer re-reports the whole
+        round from NVS when it ends, and record_flight() dedups on
+        (pilot, group, duration) — so a deleted row would match nothing and be
+        re-inserted seconds later, silently undoing the scratch. Keeping the row
+        makes the resend a no-op and leaves an audit trail. [I-42]
+        """
+        if group_id is None:
+            group_id = self.current_group_id()
+        cur = self.db.execute(
+            "UPDATE flights SET scratched = 1"
+            " WHERE pilot_id = ? AND group_id IS ? AND duration_ms = ?"
+            " AND scratched = 0",
+            (pilot_id, group_id, dur_ms),
+        )
+        self.db.commit()
+        return cur.rowcount > 0
 
     def current_group_id(self) -> int | None:
         return self.state_machine._loaded.get("group_id") if self.state_machine._loaded else None

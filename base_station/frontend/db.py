@@ -169,6 +169,14 @@ def _add_flight_columns(db: sqlite3.Connection) -> None:
         ("altitude_m", "REAL"),
         ("penalty",    "INTEGER DEFAULT 0"),
         ("altitude_source", "TEXT"),  # 'timer' | 'cd_entry' | NULL (audit trail)
+        # A flight the caller scratched on the timer. The row is kept rather than
+        # deleted: the timer re-reports the whole round from NVS at the end, and
+        # dedup matches on (pilot, group, duration) — so a deleted row would find
+        # no match and be re-inserted seconds later, silently undoing the scratch.
+        # Keeping it also leaves an audit trail if a pilot disputes the call.
+        # Excluded from scoring and from the GliderScore export; shown struck
+        # through in the UI. [I-42]
+        ("scratched",  "INTEGER NOT NULL DEFAULT 0"),
     ]
     for col_name, col_type in additions:
         if col_name not in existing:

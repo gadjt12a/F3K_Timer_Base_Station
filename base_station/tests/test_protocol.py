@@ -75,6 +75,9 @@ class _Server:
         loaded = self.state_machine._loaded
         return loaded.get("group_id") if loaded else None
 
+    def scratch_flight(self, pilot_id, dur_ms, group_id=None):
+        return srv.F3KServer.scratch_flight(self, pilot_id, dur_ms, group_id)
+
     def record_flight(self, pilot_id, dur_ms, group_id=None):
         self.db.execute("INSERT INTO flights (pilot_id, duration_ms) VALUES (?, ?)",
                         (pilot_id, dur_ms))
@@ -110,6 +113,9 @@ class _DedupServer(_Server):
 
     def record_altitude(self, pilot_id, flight_no, alt_m, group_id=None):
         return srv.F3KServer.record_altitude(self, pilot_id, flight_no, alt_m, group_id)
+
+    def scratch_flight(self, pilot_id, dur_ms, group_id=None):
+        return srv.F3KServer.scratch_flight(self, pilot_id, dur_ms, group_id)
 
 
 class AckContractTests(unittest.TestCase):
@@ -505,6 +511,101 @@ class TimerNumberingTests(unittest.TestCase):
         self.db.commit()
         s._mac_to_id.pop("aa:aa")
         self.assertEqual(s.assign_id("cc:cc"), 1, "should fill the gap, not go to 3")
+
+
+class ScratchTests(unittest.TestCase):
+    """SCRATCH: a flight the caller discarded on the timer. [I-42]
+
+    The flight is reported and stored the instant it is flown, so scratching it
+    on the timer alone left it valid at the base — and in the CSV that goes to
+    GliderScore. The row is flagged rather than deleted, because the timer
+    re-reports the whole round from NVS when it ends and dedup matches on
+    (pilot, group, duration): a deleted row would match nothing and be
+    re-inserted seconds later, silently undoing the scratch.
+    """
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.db.execute("INSERT INTO pilots (name) VALUES ('Alice')")
+        self.db.commit()
+        self.pilot = self.db.execute("SELECT id FROM pilots").fetchone()["id"]
+        self.srv = _DedupServer(self.db)
+        self.client = srv.TimerClient(None, _Writer(), self.srv)
+        self.client.timer_id = 1
+        self.sent = []
+
+        async def capture(msg):
+            self.sent.append(msg)
+
+        self.client.send = capture
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _dispatch(self, line):
+        self.sent.clear()
+
+        async def run():
+            await self.client._dispatch(line)
+            await asyncio.sleep(0)
+
+        asyncio.run(run())
+        return self.sent
+
+    def _rows(self):
+        return self.db.execute(
+            "SELECT duration_ms, scratched FROM flights ORDER BY id").fetchall()
+
+    def test_scratch_flags_the_flight(self):
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        self._dispatch(f"SCRATCH pilot={self.pilot} dur=125430")
+        rows = self._rows()
+        self.assertEqual(len(rows), 1, "the row must be kept, not deleted")
+        self.assertEqual(rows[0]["scratched"], 1)
+
+    def test_scratch_is_acked_verbatim(self):
+        """ACK-gated like FLIGHT — the timer retries until the echo matches."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        line = f"SCRATCH pilot={self.pilot} dur=125430"
+        self.assertIn(f"ACK {line}", self._dispatch(line))
+
+    def test_scratch_is_acked_even_when_nothing_matches(self):
+        """Withholding the ACK would put the timer in an unbreakable retry loop."""
+        line = f"SCRATCH pilot={self.pilot} dur=999999"
+        self.assertIn(f"ACK {line}", self._dispatch(line))
+
+    def test_only_the_named_flight_is_scratched(self):
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=100000")
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        self._dispatch(f"SCRATCH pilot={self.pilot} dur=125430")
+        rows = self._rows()
+        self.assertEqual([r["scratched"] for r in rows], [0, 1])
+
+    def test_end_of_round_resend_does_not_resurrect_a_scratch(self):
+        """The reason the row is flagged and not deleted.
+
+        A deleted row would find no dedup match here and be inserted again.
+        """
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        self._dispatch(f"SCRATCH pilot={self.pilot} dur=125430")
+        self.srv.close_heat()
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430 rc=1")
+        rows = self._rows()
+        self.assertEqual(len(rows), 1, "the resend must not re-add the flight")
+        self.assertEqual(rows[0]["scratched"], 1,
+                         "and it must still be scratched afterwards")
+
+    def test_repeated_scratch_is_harmless(self):
+        """The ACK queue can retry, so the same SCRATCH may arrive twice."""
+        self._dispatch(f"FLIGHT pilot={self.pilot} dur=125430")
+        self._dispatch(f"SCRATCH pilot={self.pilot} dur=125430")
+        self._dispatch(f"SCRATCH pilot={self.pilot} dur=125430")
+        rows = self._rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["scratched"], 1)
 
 
 if __name__ == "__main__":

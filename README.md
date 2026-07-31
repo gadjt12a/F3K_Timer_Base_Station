@@ -15,9 +15,14 @@ A single asyncio process runs two servers in one event loop:
   is reported as "behind" rather than guessed at), PING/PONG keepalive (base sends PONG every 15s; a successful
   send resets the ping clock so freshly reconnected timers aren't evicted before their
   first 30s PING), and the round protocol (PREP / TASK / START / STOP / LAND / PILOTS /
-  COUNT / SCREEN / FLIGHT / JUMPED / ALTITUDE). Timers run the prep and landing countdowns locally
+  COUNT / SCREEN / FLIGHT / JUMPED / SCRATCH / ALTITUDE). Timers run the prep and landing countdowns locally
   from `PREP t=` / `LAND t=`; COUNT re-syncs the last 10s of prep. JUMPED (launch before
-  the start horn) is surfaced to the CD only — never recorded. FLIGHT, JUMPED, ALTITUDE,
+  the start horn) is surfaced to the CD only — never recorded. SCRATCH (the caller
+  discarded a flight already reported) **flags** the row rather than deleting it: the
+  timer re-reports the round from NVS at the end, so a deleted row would find no dedup
+  match and be re-inserted seconds later. Scratched flights are excluded from scoring and
+  from the GliderScore export, and shown struck through on Results. FLIGHT, JUMPED,
+  SCRATCH, ALTITUDE,
   and SELECT are acknowledged (`ACK <line>`) — **always**, including duplicates and
   messages the base deliberately discards. The timer holds each one until ACKed, so a
   withheld ACK is an unbreakable retry loop rather than a lost message: `ACK` means
