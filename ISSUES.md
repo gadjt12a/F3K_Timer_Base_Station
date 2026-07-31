@@ -760,6 +760,158 @@ Latency removed rather than compensated: `lead_s` stays at **0**. A number you
 delete is exact; a number you compensate with has to be re-guessed for every
 device.
 
+### I-37 · Waking the screen repainted only the battery · FIXED (session 64, fw-v24)
+`src/display/UI.cpp` (`blank`), `include/config.h` (comment)
+
+Found running **T3** on hardware. With the screen blanked on IDLE, a press brought
+the panel back showing the battery indicator alone — no GLIDE title, no timer ID,
+on an otherwise black screen.
+
+There are two independent "what is on screen" caches, and waking reset only one:
+
+| cache | reset on wake? | what it controls |
+|---|---|---|
+| `main.cpp::_lastState` | yes, by `_wakeScreen()` | whether `UI::render()` is *called* |
+| `UI.cpp::_prevState` | **no** | what `render()` actually *draws* |
+
+So `render()` was correctly called, but inside it `_prevState` still claimed IDLE
+was on the panel. `screenChanged` and `connChanged` both came out false and IDLE
+fell to its incremental branch, which redraws the battery and only when the
+percentage differs.
+
+`UI::blank()` now invalidates the whole incremental cache (`_prevState`,
+`_prevConnState`, `_prevBatteryPct`, `_prevWtSecs`, `_prevFlashSecs`,
+`_prevAltFlightNo`, `_prevPrepDs`, `_arcVisible`), so the next render takes the
+`screenChanged` path — `_clearScreen()` plus a full draw — for **every** screen.
+
+⚠ **IDLE was not the only screen affected**, just the one T3 happened to sit on.
+The running screens would have shown the same failure in a worse place: with
+`screenChanged` false they take `_updateRunningInc()`, painting bare digits onto
+black with no arc and no flight log. Fixing this in `blank()` rather than in the
+IDLE branch is what covers those.
+
+The pattern to hold to: **anything that changes the panel behind the UI object's
+back has to tell it.** `blank()` wrote pixels the cache knew nothing about, which
+is the whole bug. Two more instances of it turned up the same evening — see
+[I-38], which is why the reset now lives in one shared helper rather than in
+`blank()` alone.
+
+Also corrected a stale comment at `config.h:45` claiming sleep "only ever applies
+in STATE_IDLE, so it cannot blank a live round" — untrue since `_screenMaySleep()`
+was generalised; the serial log shows it blanking in `state=4`.
+
+### I-38 · OTA and round-recall screens left stale pixels on exit · FIXED (session 64, fw-v25)
+`src/display/UI.cpp` (`renderOtaCheck`, `renderHistory`, `_invalidateCache`), `src/display/UI.h`
+
+The same defect as [I-37] in two more places, found by inspection while fixing it.
+
+`renderOtaCheck()` and `renderHistory()` are reached through their own branches in
+`_doRender()` and never go through `UI::render()`. Both `_clearScreen()` and draw a
+completely different screen, and neither touches `_prevState`. So on leaving either
+one for IDLE, `render()` compared IDLE against a `_prevState` that still said IDLE,
+found `screenChanged == false`, and took the incremental branch — battery only.
+
+The visible result is a timer that looks hung: the FIRMWARE or ROUND RECALL screen
+stays on the panel while the state machine is already back in IDLE, ticking `[DBG]`
+and answering `PONG` normally. **The serial log is the tiebreaker** — if `state=`
+disagrees with what is on the glass, the pixels are stale and the timer is fine.
+
+Fixed by giving all three paths one `_invalidateCache(AppState nowShowing)` helper,
+each recording what it actually left on the panel: `blank()` passes 255 (nothing),
+the other two pass their own state. Doing it in a shared helper is the point — this
+is now the third instance, and a fourth screen added later gets it right by using
+the same call.
+
+⚠ **Not the same thing as a failed OTA check.** A check started before WiFi
+associates genuinely fails, and looks identical from the outside. On the night this
+was found the timer reached the OTA screen at `22:13:18` with the radio not up until
+`22:13:24` — six seconds early. That case is [I-39], and the status for it already
+existed — `OTA_NO_WIFI` / red `NO WIFI`. What was missing was any way back out of it.
+
+### I-39 · OTA screen blanked mid-decision, and NO WIFI was a dead end · FIXED (session 64, fw-v26)
+`src/main.cpp` (screen-sleep activity, `STATE_OTA_CHECK`), `src/ota/OtaUpdater.{h,cpp}` (`retryIfWifiReturned`), `src/display/UI.cpp` (hint)
+
+Two separate defects on the firmware screen, both found while verifying T4.
+
+**a · It blanked while asking a question.** Only `OTA_CHECKING` and `OTA_DOWNLOADING`
+counted as activity, so once the check settled on `UPDATE AVAILABLE` nothing kept the
+screen alive and it went black after 2 min with the offer still open:
+
+```
+22:12:06.301  [MAIN] Screen asleep (state=7)
+```
+
+`OTA_AVAILABLE` now counts too. The terminal states (`UP_TO_DATE`, `FAILED`,
+`NO_WIFI`, `IDLE`) are deliberately still blankable — this screen has **no auto-exit**,
+so a timer parked on it overnight would otherwise ghost the panel, which is the whole
+reason screen sleep exists.
+
+**b · `NO WIFI` was terminal.** `check()` runs once, on entry via `_exitHistory()`.
+The screen is reachable in far less than the ~20 s the radio needs after a boot, so
+arriving early left a red `NO WIFI` that never cleared — and the only way to re-check
+was to exit and walk the four settings holds again. Measured on the night: screen at
+`22:13:18`, WiFi associated `22:13:24`, TCP `22:13:29`.
+
+`retryIfWifiReturned()` re-fires the check as soon as WiFi associates. It lives in
+`OtaUpdater` rather than `main.cpp` so the WiFi dependency stays where the rest of the
+radio knowledge already is, and it is a no-op unless the status is actually
+`OTA_NO_WIFI`, so it is safe to call every loop. **L also re-checks manually**, which
+covers `OTA_FAILED` (base unreachable, or serving something unparseable) — that had
+the same dead end and no auto-recovery is possible for it. The screen shows
+`L = RETRY` on both, since an invisible affordance is not one.
+
+⚠ **The version check still cannot tell an upgrade from a downgrade** —
+`strcmp(ver, FW_VERSION) != 0` reads as "available" (`OtaUpdater.cpp:68`). A stale base
+station will offer to take a timer backwards, and the CD has no way to see that from
+the screen. Left open deliberately; it needs a decision on version ordering (parse the
+integer after `fw-v`?) rather than a one-line change.
+
+### I-40 · OTA screen stuck on CHECKING — the status was sampled twice · FIXED (session 64, fw-v28)
+`src/main.cpp` (`_doRender`, `STATE_OTA_CHECK` branch)
+
+The firmware screen would sit on `CHECKING…` indefinitely. It was never a hang: the
+check completes in **30 ms**, proven once `OtaUpdater` had logging ([I-39] work):
+
+```
+22:50:26.925  [BTN] A (PWR) clicked
+22:50:26.927  [OTA] Check start, free heap=253156, stack hwm=7676
+22:50:26.945  [OTA] GET .../ota/version.json -> 200
+22:50:26.950  [OTA] Payload (71 bytes): {"version":"fw-v27",...}
+22:50:26.953  [OTA] Available=fw-v27 running=fw-v27 -> UP_TO_DATE
+22:50:26.955  [OTA] Check done, status=2, stack hwm=6248
+```
+
+`_doRender()` read the status **twice**:
+
+```cpp
+g_ui.renderOtaCheck(g_ota.getStatus(), ...);   // read 1 -- draws CHECKING
+_lastOtaStatus = g_ota.getStatus();            // read 2 -- records UP_TO_DATE
+```
+
+`_status` is `volatile`, written by the check task on another core, and a full-screen
+clear+draw+flush on the 466×466 canvas takes tens of ms — longer than the check. So the
+status routinely changed *between the two reads*: the screen drew `CHECKING` while
+`_lastOtaStatus` recorded `UP_TO_DATE`. `_needsRender()` then compared
+`UP_TO_DATE != UP_TO_DATE`, returned false, and never repainted again.
+
+**A race, not a hang** — which is why it was intermittent all evening. When the status
+happened to resolve before the first read, both reads agreed and the screen was right;
+that is why the successful fw-v24 update earlier the same night looked fine.
+
+Fixed by sampling once into a local and using that one value for both the draw and the
+record.
+
+⚠ **The general rule: never read a `volatile` twice in a render path.** Anything shared
+with a FreeRTOS task must be sampled once per frame, or what is drawn and what is
+recorded as drawn can disagree — and the incremental-render gate then locks the stale
+frame in permanently. This is the same failure family as [I-37]/[I-38] (the cache
+believing something that is not on the glass), reached by a different route.
+
+⚠ **The 4096-byte check-task stack was NOT the cause**, though it was suspected and
+raised to 8192 in fw-v27. `stack hwm=6248` of 8192 shows under 2 KB was ever used. The
+larger stack is harmless insurance; the race was the defect. Recorded so the stack size
+is not "re-fixed" later.
+
 ---
 
 ## Not bugs — verified during the audit
