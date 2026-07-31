@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 61, 2026-07-29)
 
-**33 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**35 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 Everything the session-55 audit raised is closed. Eight came from elsewhere and are
 registered here rather than tracked separately: [I-22] reported by the user, [I-23]
@@ -692,6 +692,73 @@ Two things made it easy to write:
 ⚠ `horn()` is still dead code. Either wire it up or delete it — leaving a method
 that looks like the mechanism, next to a comment saying it is the mechanism, is
 how this happened.
+
+---
+
+### I-35 · Every timer beep paid a 50 ms amp power-up · FIXED (session 63, fw-v23)
+`src/audio/Tones.cpp` (`_ampEnable`, `holdAmp`), `src/main.cpp`
+
+Powering the ES8311 amp costs 50 ms of settling, and `_playToneBlocking()` dropped
+the amp again as soon as each tone finished — so every single beep paid it:
+
+```
+20:57:44.763  [TONE] Playing tone: 880 Hz
+20:57:44.812  [TONE] Amp enabled          <- 49 ms, before a sample is written
+```
+
+That was roughly half the audible gap between the timer's beeps and the base
+station's speaker.
+
+The amp is now held up while a round is live (`_roundLive()`, hooked to the same
+state-transition point as the end-of-round reconcile), so only the first tone of
+the round pays the settle:
+
+```
+21:25:53.264  [TONE] Playing tone: 880 Hz
+21:25:53.266  [TONE] Amp enabled          <- 2 ms
+```
+
+`holdAmp()` deliberately does **not** power the amp up itself: `_ampEnable(true)`
+blocks for 50 ms and `holdAmp` is called from the main loop, which must not stall.
+The first tone enables it from the tone task, where blocking is already the norm.
+
+No hiss with the amp held — checked on the bench, since some amps do hiss when
+powered with no signal. If a future board does, narrow the hold to the final-10
+countdown windows.
+
+⚠ **`[TONE] Amp enabled` is printed unconditionally**, whether or not the amp
+actually changed state, so counting those lines does not show whether the hold is
+working. The gap between `Playing tone` and it is the real signal.
+
+### I-36 · The base station's audio latency was its own ALSA buffer · FIXED (session 63)
+`base_station/frontend/audio_control.py` (`buffer_args`)
+
+`aplay`'s default buffer is several hundred ms and it does not start playing until
+the buffer fills, so the whole thing sat in front of every cue. Measured against a
+file of known length on the field Pi:
+
+| buffer | overhead |
+|---|---|
+| aplay default | **+95 ms** (±4) |
+| `--buffer-time=60000` | **+16 ms** |
+
+No underruns at 60 ms or even 30 ms across a full set of cues, so 60 ms is taken
+with margin — the Pi is also serving the web UI and the timer TCP link during a
+round.
+
+**This is why swapping speakers does not need re-tuning.** The latency was never
+the speaker's; it was ours. With the buffer pinned, output latency is dominated by
+our own setting rather than by the device, so any jack or USB output lands in the
+same place.
+
+⚠ **Deliberately not applied to Bluetooth.** A2DP has its own transport buffering
+that a small ALSA buffer cannot shorten, and squeezing it there risks dropouts for
+no gain. Bluetooth remains the one output that genuinely needs `lead_s` tuned per
+speaker.
+
+Latency removed rather than compensated: `lead_s` stays at **0**. A number you
+delete is exact; a number you compensate with has to be re-guessed for every
+device.
 
 ---
 

@@ -225,6 +225,31 @@ def output_device() -> str:
     return f"plughw:{card if card is not None else 0},0"
 
 
+# aplay's default buffer is large (hundreds of ms) and it does not start playing
+# until the buffer fills, so the whole thing sits in front of every cue as output
+# latency. Measured on the field Pi against a file of known length: +95ms with the
+# default, +18ms at 60ms of buffer, and no underruns at either 60ms or 30ms across
+# a full set of cues.
+#
+# This matters more than it sounds. Latency you *remove* is exact; latency you
+# compensate for with lead_s is a guess that has to be re-guessed per speaker. With
+# the buffer pinned, output latency is dominated by our own setting rather than the
+# device, so swapping USB speakers no longer changes the timing.
+_BUFFER_US = 60000
+_PERIOD_US = 15000
+
+
+def buffer_args() -> list[str]:
+    """aplay buffer flags for the selected output, or none for Bluetooth.
+
+    Left alone for bluealsa: A2DP has its own transport buffering that a small ALSA
+    buffer cannot shorten, and squeezing it there risks dropouts for no gain.
+    """
+    if output_mode() == "bt":
+        return []
+    return ["--buffer-time", str(_BUFFER_US), "--period-time", str(_PERIOD_US)]
+
+
 def set_output(mode: str) -> dict:
     if mode not in OUTPUT_MODES:
         return {"ok": False, "error": f"unknown output {mode!r}"}

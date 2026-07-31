@@ -618,7 +618,8 @@ class AudioEngine:
             self._last_play_at = time.monotonic()
 
     async def _aplay(self, path: str) -> None:
-        args = ["aplay", "-q", "-D", audio_control.output_device(), path]
+        args = ["aplay", "-q", "-D", audio_control.output_device(),
+                *audio_control.buffer_args(), path]
         # Serialize with volume changes (amixer on the same bluealsa device can cause
         # A2DP renegotiation if run concurrently with aplay). Cues preempt each other
         # via _kill_current() / proc.kill(), which makes proc.communicate() return
