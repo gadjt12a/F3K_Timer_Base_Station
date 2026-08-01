@@ -98,15 +98,24 @@ happens in GliderScore.
 **R-09 ⚠️ A launch before the window opens is recorded, flown, and then invalidated.**
 The right-hand button unlocks **2 seconds** before the window opens. If the timekeeper
 starts a flight in that window, the flight runs on screen marked `JUMPED` in red, and
-when it stops it is **automatically scratched** — it never counts, and never reaches the
-results.
+when it stops it is **automatically voided** — it scores zero, but it still counts as a
+launch and appears in the results struck through (see R-10).
 
 *Why:* the alternative is refusing to start the clock, which leaves the timekeeper
 fighting the device while the model is already in the air.
 
-**R-10 ⚠️ A jumped start is reported to the CD as a note, and is never stored as a
-flight.** The CD sees it on the run screen. It is not in the database and cannot appear
-in results.
+**R-10 ⚠️ A jumped start counts as a launch and scores zero.** It is recorded like any
+other flight, takes its flight number, shows struck through and labelled `JUMPED`, and
+exports to GliderScore as a zero.
+
+*Why it counts:* this is what makes the pilot actually lose the launch. Until 2026-08-01
+a jumped start was a CD note and nothing else — never written to the database — so on
+every launch-limited task (F3K F allows six, F5K A four, F5K B/D/E three) the pilot kept
+the launch and could simply throw again at no cost.
+
+*Why the reason is stored:* a scratch and a jumped start both score zero, but they are
+different offences and a dispute turns on which. It is also what makes the question below
+answerable at all.
 
 *Worth challenging:* should a jumped start be a **scoring penalty** rather than just a
 discarded flight? Right now the pilot simply loses that launch. Under some

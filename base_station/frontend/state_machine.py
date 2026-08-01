@@ -43,7 +43,49 @@ class CompetitionStateMachine:
                 "group_id": d["group_id"],
                 "pilot_id_names": d["pilot_id_names"],
             } if d else None,
+            "flights": self._loaded_flights(),
         }
+
+    def _loaded_flights(self) -> list[dict]:
+        """Flights already recorded for the loaded heat, shaped like the `flight`
+        websocket event so the Run page can seed its log from them. [I-47]
+
+        The Run page used to build its flight log purely by accumulating live
+        websocket pushes, so every recorded time vanished from the screen on any
+        page load — a refresh, or simply visiting /results to correct an earlier
+        heat and coming back. The data was never lost, but the CD was blinded by
+        an entirely ordinary action, mid-heat.
+
+        Same lesson as [I-01]/[I-13]: a client must not assume it saw everything.
+        Anything the page needs has to be fetchable, not only broadcast.
+
+        Jumped starts are included: since [I-49] they are real voided rows that
+        consume a launch and score zero, so they survive a reload like any other
+        flight and keep their flight number. That numbering matters beyond
+        display — F5K altitudes are matched to flights by index.
+        """
+        d = self._loaded
+        if not d:
+            return []
+        rows = self._server.db.execute(
+            """SELECT f.pilot_id, f.duration_ms, f.scratched, f.void_reason,
+                      p.name AS pilot_name
+               FROM flights f
+               JOIN pilots p ON p.id = f.pilot_id
+               WHERE f.group_id = ?
+               ORDER BY COALESCE(f.flight_no, 9999), f.recorded_at""",
+            (d["group_id"],),
+        ).fetchall()
+        return [{
+            "type": "flight",
+            "pilot_id": r["pilot_id"],
+            "pilot_name": r["pilot_name"],
+            "duration_ms": r["duration_ms"],
+            "scratched": bool(r["scratched"]),
+            "void_reason": r["void_reason"],
+            "round_no": d["round_no"],
+            "heat": d["heat"],
+        } for r in rows]
 
     async def load_heat(self, round_id: int, group_id: int) -> bool:
         """Load a heat ready to run. Returns False (and changes nothing) if the

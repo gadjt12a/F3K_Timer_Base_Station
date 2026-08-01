@@ -112,8 +112,10 @@
                                    results screen. It is a land-out — it consumed a launch and
                                    scores 0.00, and exports to GliderScore as a zero. [I-46] #}
                                 {% if p.flights[i].scratched %}
+                                {% set jumped = p.flights[i].void_reason == 'jumped' %}
+                                <span class="mr-1 align-middle text-[10px] font-semibold text-red-400">{{ 'JUMPED' if jumped else 'SCRATCH' }}</span>
                                 <span class="font-mono font-semibold text-red-400 line-through"
-                                      title="Scratched by the caller on the timer — counts as a launch, scores 0.00, exported as a zero">{{ p.flights[i].duration_ms | fmt_ms }}</span>
+                                      title="{{ 'Jumped start — launched before the window opened' if jumped else 'Scratched by the caller on the timer' }} — counts as a launch, scores 0.00, exported as a zero">{{ p.flights[i].duration_ms | fmt_ms }}</span>
                                 {% else %}
                                 <span class="font-mono font-semibold {% if not hd.any_scores or p.flights[i].scored_s > 0 %}text-green-400{% else %}text-gray-500{% endif %}"
                                       {% if hd.any_scores and p.flights[i].scored_s == 0 %}title="Does not count for this task"{% endif %}>{{ p.flights[i].duration_ms | fmt_ms }}</span>

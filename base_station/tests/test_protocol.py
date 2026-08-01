@@ -87,6 +87,9 @@ class _Server:
     def record_altitude(self, pilot_id, flight_no, alt_m, group_id=None):
         pass
 
+    def record_jumped(self, pilot_id, dur_ms, group_id=None):
+        return srv.F3KServer.record_jumped(self, pilot_id, dur_ms, group_id)
+
 
 class _DedupServer(_Server):
     """Delegates to the real record_flight so dedup is actually exercised.
@@ -116,6 +119,87 @@ class _DedupServer(_Server):
 
     def scratch_flight(self, pilot_id, dur_ms, group_id=None):
         return srv.F3KServer.scratch_flight(self, pilot_id, dur_ms, group_id)
+
+    def record_jumped(self, pilot_id, dur_ms, group_id=None):
+        return srv.F3KServer.record_jumped(self, pilot_id, dur_ms, group_id)
+
+
+class JumpedStartTests(unittest.TestCase):
+    """A jumped start is a launch. It counts, and it scores zero. [I-49]
+
+    It used to be a CD note and nothing else — never written to the database — so
+    the pilot did not lose the launch at all. On any launch-limited task they
+    could jump the start and simply throw again for free.
+    """
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.db.execute("INSERT INTO pilots (name) VALUES ('Jumper')")
+        self.db.commit()
+        self.pilot = self.db.execute("SELECT id FROM pilots").fetchone()["id"]
+        self.srv = _DedupServer(self.db)
+        self.client = srv.TimerClient(None, _Writer(), self.srv)
+        self.client.timer_id = 1
+
+        async def capture(msg):
+            pass
+
+        self.client.send = capture
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _rows(self):
+        return self.db.execute(
+            "SELECT duration_ms, scratched, void_reason, flight_no"
+            " FROM flights ORDER BY id").fetchall()
+
+    def _send(self, line):
+        async def run():
+            await self.client._dispatch(line)
+            await asyncio.sleep(0)      # let create_task broadcasts complete
+
+        asyncio.run(run())
+
+    def test_a_jumped_start_is_recorded_as_a_voided_launch(self):
+        self._send(f"JUMPED pilot={self.pilot} dur=9000")
+        rows = self._rows()
+        self.assertEqual(len(rows), 1, "the launch happened — it must be stored")
+        self.assertEqual(rows[0]["duration_ms"], 9000)
+        self.assertEqual(rows[0]["scratched"], 1, "and it must score zero")
+        self.assertEqual(rows[0]["void_reason"], "jumped")
+
+    def test_a_jumped_start_consumes_a_flight_number(self):
+        """The hole: it must cost the pilot the launch, not be free."""
+        self._send(f"FLIGHT pilot={self.pilot} dur=30000")
+        self._send(f"JUMPED pilot={self.pilot} dur=4000")
+        self._send(f"FLIGHT pilot={self.pilot} dur=50000")
+        self.assertEqual([r["flight_no"] for r in self._rows()], [1, 2, 3])
+
+    def test_the_reason_distinguishes_it_from_a_scratch(self):
+        """Both score zero, but a dispute turns on which happened — and R-10 asks
+        whether a jumped start should carry a penalty, which is unanswerable if
+        the reason was never recorded."""
+        self._send(f"FLIGHT pilot={self.pilot} dur=30000")
+        self._send(f"SCRATCH pilot={self.pilot} dur=30000")
+        self._send(f"JUMPED pilot={self.pilot} dur=4000")
+        self.assertEqual([r["void_reason"] for r in self._rows()],
+                         ["scratch", "jumped"])
+
+    def test_a_repeated_jumped_is_not_double_counted(self):
+        self._send(f"JUMPED pilot={self.pilot} dur=9000")
+        self._send(f"JUMPED pilot={self.pilot} dur=9000")
+        self.assertEqual(len(self._rows()), 1)
+
+    def test_a_jumped_start_with_no_pilot_stores_nothing(self):
+        """[I-25]'s rule still applies: an unattributable message is dropped, not
+        guessed at."""
+        self.client.pilot_id = 0
+        self._send("JUMPED pilot=0 dur=9000")
+        self.assertEqual(self._rows(), [])
 
 
 class AckContractTests(unittest.TestCase):

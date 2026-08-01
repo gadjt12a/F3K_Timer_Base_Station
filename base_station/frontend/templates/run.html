@@ -47,7 +47,11 @@ function runner(initialState) {
         liveSeconds: 0,
         _tickAt: 0,
         _tickSec: 0,
-        flights: [],
+        // Seeded from the server, not built up from live pushes alone. The log
+        // used to start empty on every page load, so the recorded times vanished
+        // from the screen on a refresh — or on going to /results to fix an earlier
+        // heat and coming back — while the heat was still running. [I-47]
+        flights: initialState.flights || [],
         altitudes: {},
         // Late-arriving data caught by a timer's end-of-round resend. Sticky by
         // design — dismissed by hand, never on a timer.
@@ -90,6 +94,13 @@ function runner(initialState) {
                 this.state = s.state;
                 this.loaded = s.loaded;
                 this.loadedGroupId = (s.loaded && s.loaded.group_id) || null;
+                // Re-seed the log too: with the socket down, flights recorded
+                // meanwhile arrive by no other route. Replaces rather than merges
+                // — the server's list is authoritative and already ordered, so
+                // appending would duplicate what we already hold. Jumped starts
+                // are in that list since [I-49], so nothing is client-only any
+                // more and there is nothing to carry across. [I-47]
+                this.flights = s.flights || [];
             } catch (e) {}
         },
 
@@ -177,10 +188,23 @@ function runner(initialState) {
                         this.flights.push(msg);
                     }
                     if (this.altOpen) this.refreshAltitudes();
+                } else if (msg.type === 'scratch') {
+                    // Mark in place rather than removing: the launch still happened,
+                    // still counts, and still occupies its flight number. [I-46]
+                    const i = this.flights.findIndex(
+                        f => !f.jumped && !f.scratched
+                             && f.pilot_id === msg.pilot_id
+                             && f.duration_ms === msg.duration_ms);
+                    if (i >= 0) this.flights[i] = { ...this.flights[i], scratched: true };
                 } else if (msg.type === 'jumped') {
-                    // Pilot launched before the start horn — note in the flight log
-                    // only; not a scored flight, never recorded in the DB.
-                    this.flights.push({ ...msg, jumped: true });
+                    // Launched before the window opened. Since [I-49] this IS a
+                    // flight: the server stores it voided, so it consumes a launch,
+                    // scores 0 and takes a flight number. Shaped like the stored
+                    // row so the live view and a reloaded view agree.
+                    if (!this.flights.some(f => f.pilot_id === msg.pilot_id
+                                                && f.duration_ms === msg.duration_ms)) {
+                        this.flights.push({ ...msg, scratched: true, void_reason: 'jumped' });
+                    }
                 } else if (msg.type === 'altitude') {
                     this.altitudes = {
                         ...this.altitudes,
@@ -257,17 +281,20 @@ function runner(initialState) {
         taskDesc() { const t = this.taskInfo(); return t ? t.desc : ''; },
 
         // Group all recorded flights by pilot, each pilot's times in flight order.
-        // Jumped starts are kept separate so they don't shift flight numbering
-        // (F5K altitude entries are matched to times by index).
+        // Every launch is in one list, in flight-number order. Jumped starts used
+        // to be held separately "so they don't shift flight numbering" — correct
+        // when they were never stored, wrong since [I-49] gave them a real
+        // flight_no. F5K altitudes are matched to flights by index, so this list
+        // has to number exactly as the database does.
         pilotGroups() {
             const groups = {};
             const order = [];
             for (const f of this.flights) {
                 if (!(f.pilot_id in groups)) {
-                    groups[f.pilot_id] = { pilot_id: f.pilot_id, name: f.pilot_name, times: [], jumps: [] };
+                    groups[f.pilot_id] = { pilot_id: f.pilot_id, name: f.pilot_name, times: [] };
                     order.push(f.pilot_id);
                 }
-                (f.jumped ? groups[f.pilot_id].jumps : groups[f.pilot_id].times).push(f);
+                groups[f.pilot_id].times.push(f);
             }
             return order.map(id => groups[id]);
         },
@@ -729,8 +756,24 @@ function runner(initialState) {
                             <div class="flex items-center justify-between py-0.5 pl-2">
                                 <span class="font-mono text-xs text-gray-500" x-text="'#' + (i + 1)"></span>
                                 <div class="text-right">
-                                    <div x-text="fmtMs(f.duration_ms)"
-                                         class="font-mono text-green-400 font-semibold text-sm"></div>
+                                    <!-- A voided launch (scratch = land-out, or a jumped start)
+                                         still counts as a launch and scores zero, so the CD must
+                                         see it on the live log, not only on Results. Struck through
+                                         in red, matching Results and the timer's own screen. The
+                                         reason is shown because they are different offences and a
+                                         dispute turns on which. [I-46]/[I-47]/[I-49] -->
+                                    <div class="flex items-center justify-end gap-1.5">
+                                        <span x-show="f.scratched" class="text-[10px] font-semibold text-red-400"
+                                              x-text="f.void_reason === 'jumped' ? 'JUMPED' : 'SCRATCH'"></span>
+                                        <span x-text="fmtMs(f.duration_ms)"
+                                              class="font-mono font-semibold text-sm"
+                                              :class="f.scratched ? 'text-red-400 line-through' : 'text-green-400'"
+                                              :title="f.scratched
+                                                  ? (f.void_reason === 'jumped'
+                                                      ? 'Jumped start — counts as a launch, scores 0.00'
+                                                      : 'Scratched — counts as a launch, scores 0.00')
+                                                  : ''"></span>
+                                    </div>
                                     <div x-show="altitudes[g.pilot_id] && altitudes[g.pilot_id][i + 1] !== undefined"
                                          class="font-mono text-xs text-fuchsia-400"
                                          x-text="altitudes[g.pilot_id] && altitudes[g.pilot_id][i + 1] !== undefined
@@ -738,14 +781,9 @@ function runner(initialState) {
                                 </div>
                             </div>
                         </template>
-                        <!-- Jumped starts: noted for the CD, not scored, not numbered -->
-                        <template x-for="(j, ji) in g.jumps" :key="'j' + ji">
-                            <div class="flex items-center justify-between py-0.5 pl-2">
-                                <span class="text-xs text-red-400">⚠</span>
-                                <span class="font-mono text-red-400 font-semibold text-sm"
-                                      x-text="'JUMPED START ' + fmtMs(j.duration_ms)"></span>
-                            </div>
-                        </template>
+                        <!-- Jumped starts are no longer a separate unnumbered note: since
+                             [I-49] they are voided flights in the numbered list above,
+                             labelled JUMPED. -->
                     </div>
                 </template>
             </div>

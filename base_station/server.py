@@ -265,17 +265,24 @@ class TimerClient:
             await self.send(f"ACK {line}")   # unconditional — see FLIGHT above
 
         elif cmd == "JUMPED":
-            # Pilot launched before the start horn — CD gets a note in the run
-            # page flight log only. Never recorded in the DB (invalid flight).
+            # Pilot launched before the window opened. The launch HAPPENED, so it
+            # is recorded as a voided flight: it consumes a launch and scores 0.
+            # It used to be a CD note and nothing else — never stored — so the
+            # pilot kept the launch and could simply throw again for free. [I-49]
             params = parse_params(parts[1:])
             pilot_id = int(params.get("pilot", 0))
             dur_ms = int(params.get("dur", 0))
+            pilot_id = self._attribute(pilot_id, f"JUMPED dur={dur_ms}ms")
             if pilot_id > 0:
                 row = self.server.db.execute(
                     "SELECT name FROM pilots WHERE id = ?", (pilot_id,)
                 ).fetchone()
                 pilot_name = row["name"] if row else f"Pilot {pilot_id}"
-                log.warning(f"Jumped start: pilot={pilot_id} ({pilot_name}) {dur_ms / 1000:.2f}s")
+                group_id = self._group_for(False)
+                stored = self.server.record_jumped(pilot_id, dur_ms, group_id)
+                log.warning(f"Jumped start: pilot={pilot_id} ({pilot_name}) "
+                            f"{dur_ms / 1000:.2f}s group={group_id} — "
+                            f"{'recorded as a voided launch' if stored else 'duplicate suppressed'}")
                 from frontend.app import manager
                 asyncio.create_task(manager.broadcast({
                     "type": "jumped",
@@ -570,6 +577,44 @@ class F3KServer:
         self.db.commit()
         return True
 
+    def record_jumped(self, pilot_id: int, dur_ms: int,
+                      group_id: int | None = None) -> bool:
+        """Record a jumped start as a voided flight: it counts, and scores 0.
+
+        A jumped start used to be a CD note and nothing else — never written to
+        the database at all. So the pilot did not merely lose the launch, they
+        kept it: on every launch-limited task (F3K F allows six, F5K A four,
+        F5K B/D/E three) they could jump the start and simply launch again at no
+        cost. R-10 claimed "the pilot simply loses that launch", which the code
+        did not implement. [I-49], the same hole [I-46] closed for scratches.
+
+        ⚠ Reconciliation cannot double-count this. The timer never writes a
+        jumped start to NVS round history and never sends it as a FLIGHT
+        (`main.cpp::_recordFlight`), so the end-of-round resend does not carry it.
+        The dedup below is belt-and-braces against a repeated JUMPED only.
+        """
+        if group_id is None:
+            group_id = self.current_group_id()
+        dup = self.db.execute(
+            "SELECT id FROM flights WHERE pilot_id = ? AND group_id IS ? AND duration_ms = ?",
+            (pilot_id, group_id, dur_ms),
+        ).fetchone()
+        if dup:
+            log.warning(f"Duplicate JUMPED suppressed: pilot={pilot_id} "
+                        f"dur={dur_ms}ms group={group_id}")
+            return False
+        next_no = self.db.execute(
+            "SELECT COALESCE(MAX(flight_no), 0) + 1 FROM flights WHERE pilot_id = ? AND group_id IS ?",
+            (pilot_id, group_id),
+        ).fetchone()[0]
+        self.db.execute(
+            "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no,"
+            " scratched, void_reason) VALUES (?, ?, ?, ?, 1, 'jumped')",
+            (pilot_id, dur_ms, group_id, next_no),
+        )
+        self.db.commit()
+        return True
+
     def scratch_flight(self, pilot_id: int, dur_ms: int,
                        group_id: int | None = None) -> bool:
         """Mark a flight scratched. Returns True if a row actually changed.
@@ -583,7 +628,7 @@ class F3KServer:
         if group_id is None:
             group_id = self.current_group_id()
         cur = self.db.execute(
-            "UPDATE flights SET scratched = 1"
+            "UPDATE flights SET scratched = 1, void_reason = 'scratch'"
             " WHERE pilot_id = ? AND group_id IS ? AND duration_ms = ?"
             " AND scratched = 0",
             (pilot_id, group_id, dur_ms),

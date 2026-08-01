@@ -772,7 +772,7 @@ async def results_get(request: Request, error: str = None, comp_id: int = None):
                     # it vanish. They are excluded from scoring and export instead.
                     """SELECT p.id AS pilot_id, p.name AS pilot_name,
                               f.id AS flight_id, f.duration_ms, f.altitude_m,
-                              f.recorded_at, f.scratched
+                              f.recorded_at, f.scratched, f.void_reason
                        FROM group_pilots gp
                        JOIN pilots p ON p.id = gp.pilot_id
                        LEFT JOIN flights f ON f.pilot_id = p.id AND f.group_id = ?
@@ -799,7 +799,8 @@ async def results_get(request: Request, error: str = None, comp_id: int = None):
                             any_altitudes = True
                         pilot_flights[pid]["flights"].append(
                             {"id": row["flight_id"], "duration_ms": row["duration_ms"],
-                             "altitude_m": alt, "scratched": bool(row["scratched"])}
+                             "altitude_m": alt, "scratched": bool(row["scratched"]),
+                             "void_reason": row["void_reason"]}
                         )
 
                 pilots = [pilot_flights[pid] for pid in pilot_order]

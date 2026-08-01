@@ -278,6 +278,56 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(r.status_code, 303)
         self.assertNotIn("error=", r.headers["location"])
 
+    def test_run_state_carries_the_recorded_flights(self):
+        """[I-47] The Run page built its flight log from live websocket pushes
+        alone, so every recorded time vanished on any page load — a refresh, or
+        going to /results to correct an earlier heat and coming back, mid-heat.
+
+        get_status() feeds both the server-side page render and /api/run/state,
+        so seeding it there covers the reload and the socket-down poll at once.
+        """
+        self.client.post(f"/api/run/load?round_id={self.ids['round']}"
+                         f"&group_id={self.ids['group']}")
+        pilot = self.ids["pilot"]
+        for dur, scratched in ((12000, 0), (34000, 1)):
+            self.db.execute(
+                "INSERT INTO flights (pilot_id, group_id, duration_ms, scratched)"
+                " VALUES (?, ?, ?, ?)",
+                (pilot, self.ids["group"], dur, scratched))
+        self.db.commit()
+
+        s = self.client.get("/api/run/state").json()
+        self.assertEqual(len(s["flights"]), 2,
+                         "a reloaded Run page must see both recorded flights")
+        self.assertEqual(s["flights"][0]["duration_ms"], 12000)
+        self.assertFalse(s["flights"][0]["scratched"])
+        self.assertTrue(s["flights"][1]["scratched"],
+                        "and must know which was scratched, or it shows green")
+        # Shaped like the live `flight` event so the page can use one code path.
+        for f in s["flights"]:
+            self.assertEqual(f["type"], "flight")
+            self.assertIn("pilot_name", f)
+
+    def test_run_state_has_no_flights_when_nothing_is_loaded(self):
+        """[I-47] No heat loaded is a normal state, not an error."""
+        s = self.client.get("/api/run/state").json()
+        self.assertEqual(s["flights"], [])
+
+    def test_run_state_flights_are_scoped_to_the_loaded_heat(self):
+        """[I-47] Hydration must not drag in another heat's flights — the CD
+        would see times against pilots who have not flown this round."""
+        other = self.db.execute(
+            "INSERT INTO groups (round_id, group_no) VALUES (?, 2)",
+            (self.ids["round"],)).lastrowid
+        self.db.execute(
+            "INSERT INTO flights (pilot_id, group_id, duration_ms) VALUES (?, ?, ?)",
+            (self.ids["pilot"], other, 99000))
+        self.db.commit()
+        self.client.post(f"/api/run/load?round_id={self.ids['round']}"
+                         f"&group_id={self.ids['group']}")
+        s = self.client.get("/api/run/state").json()
+        self.assertEqual(s["flights"], [])
+
     def test_a_scratched_flight_exports_as_a_zero_in_its_own_slot(self):
         """[I-46] The CSV is the competition result GliderScore imports.
 

@@ -23,9 +23,15 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 66, 2026-08-01)
 
-**46 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 2 open.**
+**48 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 1 open.**
 
-Open: [I-47] and [I-48], from the tester's field session on 2026-08-01.
+Open: [I-48], from the tester's field session on 2026-08-01.
+
+⚠ **[I-46] and [I-49] are one idea, found twice.** A launch that happened counts
+as a launch and scores zero, whether the caller scratched it (land-out) or the
+pilot jumped the start. Both were letting a pilot buy extra attempts on every
+launch-limited task. If a third way to void a flight is ever added, it must set
+`scratched` and a `void_reason` — not vanish.
 
 ⚠ **[I-46] revised [I-42] from one session earlier** and is fixed: a scratched
 flight is a land-out, so it consumes a launch and scores zero rather than
@@ -1200,7 +1206,7 @@ they had stated the opposite in writing to reviewers who are reading it now.
 
 ---
 
-### I-47 · The Run page loses every recorded flight on any page load · OPEN · P3
+### I-47 · The Run page loses every recorded flight on any page load · FIXED (session 66) · P3
 `base_station/frontend/templates/run.html`
 
 `flights: []` is initialised empty, populated **only** by live websocket pushes,
@@ -1219,9 +1225,41 @@ survived unnoticed. But the Run page is where the CD works, and going to
 `/results` to correct an earlier heat is a normal thing to do mid-competition, so
 the CD is blinded by an ordinary action.
 
-Fix is to hydrate from the DB on load rather than trusting the socket to have
-been listening — the same lesson as [I-01]/[I-13]: *the client must not assume it
-saw everything.*
+**Fixed** by hydrating from the DB rather than trusting the socket to have been
+listening — the same lesson as [I-01]/[I-13]: *the client must not assume it saw
+everything.*
+
+`CompetitionStateMachine.get_status()` now carries the loaded heat's flights,
+shaped exactly like the live `flight` event so the page needs no second code
+path. ⚠ **One change, both routes**: `get_status()` already fed *both* the
+server-side page render and `/api/run/state`, so the reload case and the
+socket-down poll are covered by the same fix. `pollState()` replaces rather than
+merges — the server's list is authoritative and ordered, so appending would
+duplicate.
+
+Scratched flights are carried and rendered struck through, so the live log agrees
+with Results. The client also gained a handler for the `scratch` websocket event,
+which the server has **always** broadcast — nothing was listening, so a scratch
+stayed green on the CD's screen until a reload.
+
+⚠ **JUMPED notes deliberately do not survive a reload.** A jumped start is never
+written to the database (recording it would make it look like a result), so it
+cannot be rehydrated. `pollState()` carries them across explicitly rather than
+dropping them on a poll.
+
+⚠ **A near miss worth recording:** the first attempt added a scratch broadcast
+inside `scratch_flight()` — which already existed in `_dispatch()`. The duplicate
+would have double-fired. It was caught only because the protocol tests use fake
+servers that do not inherit new methods, so five tests errored immediately.
+**Check for an existing broadcast before adding one.**
+
+Pinned by three tests in `test_validation.py`: flights present after load,
+correct `scratched` flag, empty when nothing is loaded, and scoped to the loaded
+heat (hydrating another heat's flights would show times against pilots who have
+not flown this round).
+
+Verified on the Pi against the tester's own data — the `/run` HTML now carries
+all four recorded flights in its initial state, including the 4.047 s scratch.
 
 ---
 
@@ -1233,6 +1271,50 @@ saw everything.*
 Eviction is at 90 s, which is right for a dropped link but far too slow to tell a
 CD that a timekeeper's watch has actually gone. Needs a decision on how a timer
 that stops answering is presented, and how fast.
+
+---
+
+### I-49 · A jumped start cost the pilot nothing · FIXED (session 66) · P1
+`server.py` (`record_jumped`, JUMPED dispatch), `db.py`, `state_machine.py`,
+`run.html`, `results.html`, `RULES.md` R-09/R-10
+
+> Kris: *"Jumped flights still need to score 0, we can not ignore them."*
+
+Same hole as [I-46], and worse. A jumped start — a launch before the window
+opened — was broadcast to the CD as a note and **never written to the database at
+all**. So it did not merely score nothing: it consumed no launch either. On every
+launch-limited task the pilot could jump the start and simply throw again, free.
+
+⚠ R-10 stated *"the pilot simply loses that launch"*. The code did not implement
+that, and had not since the feature was written. **A rule that reads as
+implemented is worse than a missing one** — the review page asked whether a jumped
+start should carry an *additional* penalty, a question that presumes the basic
+cost was already being applied.
+
+**Fixed** by recording it as a voided flight: `scratched = 1`, `void_reason =
+'jumped'`, with a real `flight_no`. `scratched` remains the single "scores zero
+and consumes a launch" flag, so [I-46]'s scoring and export logic covers this with
+no change — the fix is entirely in *creating* the row.
+
+A new `void_reason` column (`'scratch'` | `'jumped'`) records **why**. Both score
+zero, but they are different offences, a dispute turns on which, and R-10's open
+penalty question is unanswerable if the reason was never stored.
+
+⚠ **No firmware change, and reconciliation cannot double-count it.** The timer
+never writes a jumped start to NVS round history and never sends it as a `FLIGHT`
+(`main.cpp::_recordFlight` sends `JUMPED` instead), so the end-of-round resend
+does not carry it. Verified in the firmware source before relying on it.
+
+⚠ **The Run page's separate unnumbered "jumps" list had to go.** Its comment said
+jumped starts were held apart *"so they don't shift flight numbering"* — correct
+while they were never stored, wrong the moment they take a real `flight_no`. F5K
+altitudes are matched to flights **by index**, so a list that numbered differently
+from the database would have put heights on the wrong flights. One list now, in
+flight-number order, labelled `JUMPED` or `SCRATCH`.
+
+Pinned by five tests in `test_protocol.py` — stored and voided, consumes a flight
+number, reason distinguishes it from a scratch, repeats deduped, and `pilot=0`
+still stores nothing ([I-25]'s rule).
 
 ---
 
