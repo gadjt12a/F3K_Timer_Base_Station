@@ -355,15 +355,23 @@ def score_group_db(db, group_id: int) -> dict:
     raw: dict = {}
     for p in pilot_rows:
         flights = db.execute(
-            # Scratched flights are kept in the table for the audit trail but are
-            # not flights any more — they must not reach the task rules, or a
-            # discarded launch still counts toward the pilot's score. [I-42]
-            """SELECT id, duration_ms, altitude_m, altitude_source FROM flights
-               WHERE pilot_id = ? AND group_id = ? AND NOT scratched
+            # Scratched flights ARE scored — as zero. A scratch is a land-out:
+            # the launch happened, so it consumes a launch and scores nothing.
+            # [I-46], which revises [I-42]'s "exclude entirely".
+            #
+            # ⚠ They must stay in this list, in order, because `max_flights` is a
+            # limit on LAUNCHES. Filtering them out frees the slot, and on any
+            # launch-limited task (F3K F = 6, F5K A = 4, B = 3, D = 3, E = 3) the
+            # pilot simply launches again — scratching the weak ones until six
+            # good flights remain.
+            """SELECT id, duration_ms, altitude_m, altitude_source, scratched
+               FROM flights
+               WHERE pilot_id = ? AND group_id = ?
                ORDER BY COALESCE(flight_no, 9999), recorded_at""",
             (p["id"], group_id)).fetchall()
         result = score_task(discipline, rnd["task"],
-                            [f["duration_ms"] or 0 for f in flights],
+                            [0 if f["scratched"] else (f["duration_ms"] or 0)
+                             for f in flights],
                             cfg["time_decimals"])
         bonus_total = 0.0
         fl_out = []
@@ -378,6 +386,9 @@ def score_group_db(db, group_id: int) -> dict:
                 "id": f["id"], "duration_ms": f["duration_ms"],
                 "altitude_m": f["altitude_m"], "altitude_source": f["altitude_source"],
                 "scored_s": scored, "bonus": bonus,
+                # Carried so the UI can show the flown time struck through next to
+                # the zero it scored — the CD needs to see the launch happened.
+                "scratched": bool(f["scratched"]),
                 "fpt": round(scored + bonus, 1) if bonus is not None else scored,
             })
         total = round(result.raw_s + bonus_total, 1)

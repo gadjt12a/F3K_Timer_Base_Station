@@ -278,6 +278,31 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(r.status_code, 303)
         self.assertNotIn("error=", r.headers["location"])
 
+    def test_a_scratched_flight_exports_as_a_zero_in_its_own_slot(self):
+        """[I-46] The CSV is the competition result GliderScore imports.
+
+        A scratch is a land-out, so it must appear as a zero — not be omitted.
+        Omitting it shifts every later flight up a slot, so GliderScore would
+        score a different flight from us and neither system would look wrong.
+        """
+        pilot = self.ids["pilot"]
+        group = self.ids["group"]
+        for dur, scratched in ((12000, 0), (34000, 1), (56000, 0)):
+            self.db.execute(
+                "INSERT INTO flights (pilot_id, group_id, duration_ms, scratched)"
+                " VALUES (?, ?, ?, ?)", (pilot, group, dur, scratched))
+        self.db.commit()
+
+        body = self.client.get(f"/export/{self.ids['comp']}/csv").text
+        row = [ln for ln in body.splitlines() if "012.000" in ln]
+        self.assertTrue(row, f"pilot row not found in export:\n{body}")
+        fields = row[0].split(",")
+        # Data1-3. The scratched flight holds slot 2 as a zero, and the 56 s
+        # flight stays in slot 3 rather than being promoted into slot 2.
+        self.assertEqual(fields[6], "012.000")
+        self.assertEqual(fields[7], "000.000", "the scratch must export as a zero time")
+        self.assertEqual(fields[8], "056.000", "later flights must not shift up a slot")
+
     def test_api_docs_are_not_exposed(self):
         """[I-21] /docs is a POST console for run control on the public AP.
 

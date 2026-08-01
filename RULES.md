@@ -140,11 +140,31 @@ on the base station.
 > `main.cpp` — `STATE_SCRATCH_CONFIRM`; `FlightLog::scratchLast`
 
 **R-15 ⚠️ A scratched flight is kept and marked, never deleted.** It shows struck
-through in red on the results screen. It is excluded from scoring and excluded from the
-GliderScore export.
+through in red on the results screen.
 
 *Why kept:* an audit trail if a pilot disputes the call, and a deleted row would be
 silently re-created by the end-of-round safety resend (R-27).
+
+**R-15a ⚠️ A scratch is a land-out: it counts as a launch and scores zero.** The flown
+time is displayed struck through, the flight scores 0.00, and it is exported to
+GliderScore as a zero — not omitted.
+
+*Why it counts:* several tasks limit **launches**, not scored flights (F3K F allows six,
+F5K A four, F5K B/D/E three). If a scratch freed its slot, a pilot could keep launching
+and scratch the weak attempts until only good flights remained. On a "last flight" task
+it is starker still — a pilot who lands out on their final launch could scratch it and
+fall back to the previous flight, un-flying the bad last flight that the task exists to
+make them live with.
+
+*Why exported as a zero rather than dropped:* omitting the row shifts every later flight
+up a slot, so GliderScore would score a different flight from us and neither system would
+look wrong on its own.
+
+*Worth challenging:* this makes a scratch **unrecoverable by the timekeeper** — it is a
+scored zero, not an erasure. A clock started by mistake is a different thing and needs
+the CD to delete the row on the base station, not a scratch on the timer. Is that
+distinction clear enough in the field, and is the CD's delete reliable enough to be the
+only route? (See R-27: the end-of-round resend can re-create a deleted row.)
 
 **R-16 ⚠️ A scratch is a timekeeper decision and needs no CD confirmation.** The timer
 already requires a deliberate confirm press.

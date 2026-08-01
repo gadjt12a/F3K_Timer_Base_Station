@@ -107,12 +107,13 @@
                             {% for i in range(hd.max_flights) %}
                             {% if i < p.flights | length %}
                             <td class="py-1.5 pl-5 text-right align-top">
-                                {# A scratched flight is shown, not hidden: the CD needs to see it
-                                   was flown and discarded. Struck through and red, matching the
-                                   timer's own results screen, and excluded from scoring/export. #}
+                                {# A scratched flight is shown, not hidden: the CD needs to see the
+                                   launch happened. Struck through and red, matching the timer's own
+                                   results screen. It is a land-out — it consumed a launch and
+                                   scores 0.00, and exports to GliderScore as a zero. [I-46] #}
                                 {% if p.flights[i].scratched %}
                                 <span class="font-mono font-semibold text-red-400 line-through"
-                                      title="Scratched by the caller on the timer — not scored, not exported">{{ p.flights[i].duration_ms | fmt_ms }}</span>
+                                      title="Scratched by the caller on the timer — counts as a launch, scores 0.00, exported as a zero">{{ p.flights[i].duration_ms | fmt_ms }}</span>
                                 {% else %}
                                 <span class="font-mono font-semibold {% if not hd.any_scores or p.flights[i].scored_s > 0 %}text-green-400{% else %}text-gray-500{% endif %}"
                                       {% if hd.any_scores and p.flights[i].scored_s == 0 %}title="Does not count for this task"{% endif %}>{{ p.flights[i].duration_ms | fmt_ms }}</span>

@@ -855,11 +855,35 @@
     <div class="rule-body">
       <span class="chip">Judgement call</span>
       <p class="claim"><strong>A scratched flight is kept and marked, never deleted.</strong>
-      It shows struck through in red on the results screen, and is excluded from both scoring and
-      the export.</p>
+      It shows struck through in red on the results screen.</p>
       <div class="note why"><span class="note-label">Why</span>
         <p>An audit trail if a pilot disputes the call — and a deleted flight would be silently
         re-created by the end-of-round safety resend (R-27).</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-15a</div>
+    <div class="rule-body">
+      <span class="chip">Judgement call</span>
+      <p class="claim"><strong>A scratch is a land-out: it counts as a launch and scores zero.</strong>
+      The flown time is shown struck through, the flight scores 0.00, and it is exported to
+      GliderScore as a zero rather than being left out.</p>
+      <div class="note why"><span class="note-label">Why it counts</span>
+        <p>Several tasks limit <em>launches</em>, not scored flights — F3K F allows six, F5K A four,
+        F5K B/D/E three. If a scratch freed its slot a pilot could keep launching and scratch the
+        weak attempts until only good flights remained. On a &ldquo;last flight&rdquo; task it is
+        starker: a pilot who lands out on their final launch could scratch it and fall back to the
+        previous flight, un-flying the bad last flight the task exists to make them live with.</p></div>
+      <div class="note why"><span class="note-label">Why a zero, not an omission</span>
+        <p>Dropping the row shifts every later flight up a slot, so GliderScore would score a
+        different flight from us and neither system would look wrong on its own.</p></div>
+      <div class="note challenge"><span class="note-label">Worth challenging</span>
+        <p>This makes a scratch <strong>unrecoverable by the timekeeper</strong> — it is a scored
+        zero, not an erasure. A clock started by mistake is a different thing, and needs the CD to
+        delete the row on the base station. Is that distinction clear enough in the field, and is
+        the CD&rsquo;s delete reliable enough to be the only route? (See R-27 — the end-of-round
+        resend can re-create a deleted row.)</p></div>
     </div>
   </div>
 

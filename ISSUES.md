@@ -23,7 +23,14 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 66, 2026-08-01)
 
-**45 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**46 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 2 open.**
+
+Open: [I-47] and [I-48], from the tester's field session on 2026-08-01.
+
+⚠ **[I-46] revised [I-42] from one session earlier** and is fixed: a scratched
+flight is a land-out, so it consumes a launch and scores zero rather than
+disappearing. Getting that wrong handed extra attempts to a pilot on every
+launch-limited task, and let a pilot un-fly a bad last flight.
 
 Session 66 closed the three items that had been carried as "open, deliberately
 unfixed" since session 62: [I-43] (the drift scan could not see systemd drop-ins),
@@ -1124,6 +1131,108 @@ Two things changed on the back of this:
 - `apply_saved_volume()` falls back to the default instead of doing nothing when
   no volume has been saved — that call is also what opens the switch, and a Pi
   whose operator never touched the slider is the one that would come up muted.
+
+---
+
+## Raised by the tester, 2026-08-01 (session 66) — OPEN
+
+Three defects out of a 16-item field-test list. The rest of that list is feature
+work and lives in `TESTER_FEEDBACK.md` (local, per the repo scope rule); only
+things that are *wrong* are registered here.
+
+---
+
+### I-46 · A scratched flight does not consume a launch · FIXED (session 66) · P1
+`base_station/frontend/scoring.py`, `app.py` (CSV export), `db.py`
+
+**Revises [I-42], shipped one session earlier.** That entry made a scratched
+flight invisible to scoring and to the GliderScore export. It should instead be a
+**land-out: the launch happened and it scores zero.**
+
+`Rule.max_flights` is documented as *"launches allowed in the window"*, and
+`_flights()` filters `WHERE ... NOT scratched`. So a scratched flight frees its
+slot, and on any task with a launch limit a pilot gets extra attempts:
+
+| Task | Limit |
+|---|---|
+| F3K F | best 3 of **max 6 launches** |
+| F5K A | targets, **max 4** |
+| F5K B | last 1, **max 3** |
+| F5K D | targets, **max 3** |
+| F5K E | poker, **max 3** |
+
+On Task F a pilot may launch eight times, scratch the two worst and still present
+six — which is the scoring outcome, not a display detail.
+
+**Decision (Kris, 2026-08-01): counts as a launch, scores 0.00, and exports to
+GliderScore as a zero flight.** Exporting the zero matters: if we score it and
+GliderScore does not, the two disagree on the same competition.
+
+⚠ Also update `RULES.md` and the `/rules` page, which currently state in writing
+that a scratched flight is "not scored, not exported". Reviewers are reading that
+now, so it must not be left contradicting the code.
+
+⚠ [I-42]'s flag-don't-delete decision still stands and is *reinforced* — the row
+must exist to consume the slot, so deleting it was never viable.
+
+**Fixed.** `scoring.py` now selects scratched rows and passes `0` for their
+duration; `max_flights` therefore sees them and the slot is consumed. The CSV and
+the public JSON export them as a zero in their own position.
+
+⚠ **This inverts the worked example recorded in [I-42].** There, Task A with a
+15.03 s flight then a scratched 4.05 s relaunch gave `raw_s = 15.0`. It now gives
+**0** — the land-out *is* the last flight. That is the point: under the old rule a
+pilot could land out on their final launch and scratch their way back to the
+previous flight, un-flying the bad last flight the task exists to make them live
+with.
+
+⚠ **A scratch is now unrecoverable by the timekeeper** — it is a scored zero, not
+an erasure. A clock started by mistake is a different thing and needs the CD to
+delete the row on the base station. That route exists (Results → Edit → ×) but
+R-27's end-of-round resend can re-create a deleted row, so it is not fully
+reliable. **Raised as a challenge on the `/rules` page rather than settled here.**
+
+Pinned by four tests in `test_scoring_db.py` (zero-but-counted, the Task F
+extra-launch hole with its 150-vs-410 demonstration, no F5K bonus on a land-out,
+row still never deleted) and one in `test_validation.py` for the CSV slot
+position. `RULES.md` R-15a and the `/rules` page updated in the same change —
+they had stated the opposite in writing to reviewers who are reading it now.
+
+---
+
+### I-47 · The Run page loses every recorded flight on any page load · OPEN · P3
+`base_station/frontend/templates/run.html`
+
+`flights: []` is initialised empty, populated **only** by live websocket pushes,
+and reset to `[]` on load. Nothing ever seeds it from the database.
+
+So the times vanish from the screen on a refresh *and* on any navigation away and
+back — while the heat is still running. Reported as two separate symptoms and they
+are one bug:
+
+> *"you might go to results to update a previous heat while one is in play … when
+> you go back to the running heat you have lost all the times being displayed,
+> they are in the database but they are no longer displayed"*
+
+⚠ **The data is not lost** — this is display state only, which is why it has
+survived unnoticed. But the Run page is where the CD works, and going to
+`/results` to correct an earlier heat is a normal thing to do mid-competition, so
+the CD is blinded by an ordinary action.
+
+Fix is to hydrate from the DB on load rather than trusting the socket to have
+been listening — the same lesson as [I-01]/[I-13]: *the client must not assume it
+saw everything.*
+
+---
+
+### I-48 · A timer powered off is not reflected on the Run page · OPEN · P3
+`base_station/frontend/templates/run.html`, `server.py`
+
+> *"If watch turned off run screen not updating"*
+
+Eviction is at 90 s, which is right for a dropped link but far too slow to tell a
+CD that a timekeeper's watch has actually gone. Needs a decision on how a timer
+that stops answering is presented, and how fast.
 
 ---
 

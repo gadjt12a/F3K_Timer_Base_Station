@@ -85,26 +85,74 @@ class TestScoringDb(unittest.TestCase):
         self.assertEqual(res["pilots"][p2]["norm"], 500.0)
         self.assertEqual(res["pilots"][p2]["rank"], 2)
 
-    def test_scratched_flight_is_not_scored(self):
-        """A scratched flight stays in the table but must not reach the rules.
+    def test_a_scratched_flight_scores_zero_and_stays_in_the_list(self):
+        """A scratch is a LAND-OUT: the launch happened and it scores nothing.
 
-        Task A scores the *last* flight, so a scratched final launch is the case
-        that matters: if it counted, the pilot would be scored on the flight they
-        deliberately threw away. [I-42]
+        ⚠ This inverts [I-42], which excluded scratched flights entirely and is
+        superseded by [I-46]. Task A scores the *last* flight, so under the old
+        rule a pilot who landed out on their final launch could scratch it and
+        revert to their previous flight — un-flying a bad last flight, which is
+        the one thing Task A is meant to make you live with.
         """
         ids = _setup_comp(self.db, "F3K", task="A")
         gid = ids["groups"][0]
         p1 = _add_pilot(self.db, "Alice", ids["comp"], [gid])
         _fly(self.db, p1, gid, 290)
-        _fly(self.db, p1, gid, 12, scratched=1)   # relaunch, discarded
+        _fly(self.db, p1, gid, 12, scratched=1)   # landed out
         res = scoring.score_group_db(self.db, gid)
-        self.assertEqual(res["pilots"][p1]["raw_s"], 290,
-                         "the scratched flight must not become the last flight")
-        self.assertEqual(len(res["pilots"][p1]["flights"]), 1,
-                         "and must not appear among the scored flights")
+        self.assertEqual(res["pilots"][p1]["raw_s"], 0,
+                         "the land-out IS the last flight, and it scores zero")
+        flights = res["pilots"][p1]["flights"]
+        self.assertEqual(len(flights), 2, "both launches are reported")
+        self.assertEqual(flights[1]["scored_s"], 0)
+        self.assertTrue(flights[1]["scratched"])
+        self.assertEqual(flights[1]["duration_ms"], 12000,
+                         "the flown time is kept for the CD to see, struck through")
+
+    def test_a_scratch_does_not_buy_an_extra_launch(self):
+        """The hole the tester found. F3K Task F is best 3 of max SIX LAUNCHES.
+
+        Excluding scratched flights frees the slot, so a pilot simply launches
+        again and scratches the weak ones until six good flights remain. Here:
+        eight launches, the first two scratched. Only the first six count either
+        way — what must not happen is the two 170/180 s flights being promoted
+        into the window.
+        """
+        ids = _setup_comp(self.db, "F3K", task="F")
+        gid = ids["groups"][0]
+        p1 = _add_pilot(self.db, "Alice", ids["comp"], [gid])
+        _fly(self.db, p1, gid, 10, scratched=1)
+        _fly(self.db, p1, gid, 20, scratched=1)
+        for secs in (30, 40, 50, 60, 170, 180):
+            _fly(self.db, p1, gid, secs)
+        res = scoring.score_group_db(self.db, gid)
+        # First six launches are 0, 0, 30, 40, 50, 60 -> best three = 60+50+40.
+        self.assertEqual(res["pilots"][p1]["raw_s"], 150)
+        # Excluding the scratches would give 30..180 as the six, i.e. 180+170+60.
+        self.assertNotEqual(res["pilots"][p1]["raw_s"], 410,
+                            "scratching must not promote later launches into the window")
+
+    def test_a_scratched_flight_earns_no_altitude_bonus(self):
+        """F5K: a land-out scores zero, so there is nothing to add a bonus to."""
+        ids = _setup_comp(self.db, "F5K", task="B")
+        gid = ids["groups"][0]
+        p1 = _add_pilot(self.db, "Alice", ids["comp"], [gid])
+        _fly(self.db, p1, gid, 200, alt=49, source="timer", scratched=1)
+        res = scoring.score_group_db(self.db, gid)
+        self.assertEqual(res["pilots"][p1]["bonus_pts"], 0)
+        self.assertEqual(res["pilots"][p1]["total"], 0)
+
+    def test_the_scratched_row_is_still_never_deleted(self):
+        """[I-42]'s flag-don't-delete decision survives [I-46] and is reinforced:
+        the row must exist for the launch to be counted at all."""
+        ids = _setup_comp(self.db, "F3K", task="A")
+        gid = ids["groups"][0]
+        p1 = _add_pilot(self.db, "Alice", ids["comp"], [gid])
+        _fly(self.db, p1, gid, 290)
+        _fly(self.db, p1, gid, 12, scratched=1)
+        scoring.score_group_db(self.db, gid)
         self.assertEqual(
-            self.db.execute("SELECT COUNT(*) FROM flights").fetchone()[0], 2,
-            "but the row is kept — flagged, not deleted")
+            self.db.execute("SELECT COUNT(*) FROM flights").fetchone()[0], 2)
 
     def test_f5k_bonus_included(self):
         ids = _setup_comp(self.db, "F5K", task="B")

@@ -1013,14 +1013,21 @@ async def export_csv(comp_id: int):
             ).fetchall()
             for pilot in pilots:
                 flights = db.execute(
-                    # A scratched flight must never reach GliderScore — this file
-                    # is the competition result. [I-42]
-                    """SELECT duration_ms FROM flights
-                       WHERE pilot_id = ? AND group_id = ? AND NOT scratched
+                    # A scratched flight IS exported, as a zero. It is a land-out:
+                    # the launch happened and scored nothing. [I-46]
+                    #
+                    # ⚠ Exporting the zero rather than dropping the row is what
+                    # keeps us and GliderScore agreeing on the same competition —
+                    # omitting it would shift every later flight up a slot, so on
+                    # a "last flight" task the two systems would score different
+                    # flights and neither would look wrong on its own.
+                    """SELECT duration_ms, scratched FROM flights
+                       WHERE pilot_id = ? AND group_id = ?
                        ORDER BY COALESCE(flight_no, 9999), recorded_at""",
                     (pilot["id"], grp["id"]),
                 ).fetchall()
-                times = [f["duration_ms"] for f in flights[:7]]
+                times = [0 if f["scratched"] else f["duration_ms"]
+                         for f in flights[:7]]
                 data = [_gs_time(t) for t in times] + ["0"] * (7 - len(times))
                 pilot_no = pilot["gliderscore_pilot_no"] or pilot["id"]
                 writer.writerow([
@@ -1064,11 +1071,15 @@ async def export_json(comp_id: int):
                 (grp["id"],),
             ).fetchall():
                 flights_out = [
-                    {"duration_ms": f["duration_ms"], "altitude_m": f["altitude_m"]}
+                    {"duration_ms": 0 if f["scratched"] else f["duration_ms"],
+                     "altitude_m": None if f["scratched"] else f["altitude_m"],
+                     "scratched": bool(f["scratched"])}
                     for f in db.execute(
-                        # Same rule as the CSV: a scratched flight is not a result.
-                        """SELECT duration_ms, altitude_m FROM flights
-                           WHERE pilot_id = ? AND group_id = ? AND NOT scratched
+                        # Same rule as the CSV: a scratched flight is a zero, not
+                        # an absence. The height goes with it — a land-out earns no
+                        # F5K altitude bonus. [I-46]
+                        """SELECT duration_ms, altitude_m, scratched FROM flights
+                           WHERE pilot_id = ? AND group_id = ?
                            ORDER BY COALESCE(flight_no, 9999), recorded_at""",
                         (pilot["id"], grp["id"]),
                     ).fetchall()
