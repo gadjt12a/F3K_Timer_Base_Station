@@ -61,7 +61,16 @@ F3K_RULES: dict[tuple, Rule] = {
     ("C", 3):    Rule("first_n", n=5, cap_s=180),
     ("D", None): Rule("ladder", start_s=30, step_s=15),
     ("D", 1):    Rule("first_n", n=2, cap_s=300),           # D(1): two flights, 5:00 max
-    ("E", None): Rule("poker", n=5),
+    # Three targets, per FAI 2025 (F3K.11.5): "an unlimited number of flights to
+    # achieve or exceed up to three (3) target times". Was 5, which is the 2011
+    # rule and what GliderScore's base task text still says. Kris's call
+    # 2026-08-01: follow FAI 2025. The E(1)/E(2) variants already said 3.
+    #
+    # ⚠ `n` is the only part of Poker that is right yet — the rule still scores the
+    # FLOWN time of the N longest flights, where FAI credits the ANNOUNCED target.
+    # See [I-50]; the fix needs declared targets recorded per flight, which lands
+    # with the timer work.
+    ("E", None): Rule("poker", n=3),
     ("E", 1):    Rule("poker", n=3),
     ("E", 2):    Rule("poker", n=3),
     ("F", None): Rule("best_n", n=3, cap_s=180, max_flights=6),

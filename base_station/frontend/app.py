@@ -434,7 +434,7 @@ F3K_TASKS = {
     "B": {"name": "Last 2 flights",   "desc": "Your last two flights count — 4:00 max each; unlimited flights in 10 min."},
     "C": {"name": "All up",           "desc": "All gliders launch together on the horn — 3:00 max; 3–5 flights per round."},
     "D": {"name": "Ladder",           "desc": "First target 0:30, +0:15 each time you reach it; unlimited flights in 10 min."},
-    "E": {"name": "Poker",            "desc": "Call your own target times; best 5 timed flights count; unlimited flights in 10 min."},
+    "E": {"name": "Poker",            "desc": "Call your own target times; up to 3 targets, unlimited launches at each; 10 or 15 min."},
     "F": {"name": "Best 3 of 6",      "desc": "Your 3 longest flights count — 3:00 max each; max 6 flights in 10 min."},
     "G": {"name": "Best 5",           "desc": "Your 5 longest flights count — 2:00 max each; unlimited flights in 10 min."},
     "H": {"name": "Best 4 (1-2-3-4)", "desc": "Best 4 flights against 1, 2, 3 and 4 min targets (any order); unlimited flights in 10 min."},

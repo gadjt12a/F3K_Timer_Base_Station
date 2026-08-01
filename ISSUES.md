@@ -1445,9 +1445,14 @@ Rules that fall out of the same clause and must be implemented together:
   timekeeper in written numbers immediately after the launch"* — which is why the
   target picker has to show the running flight time.
 
-⚠ **Target count is unsettled**: `scoring.py` has `n=5`, GliderScore's base F3K E
-says *"5 flights to time count"* (its `E(1)`/`E(2)` variants say 3), and FAI 2025
-says three. Decide before implementing, since it changes the score.
+**Target count settled (Kris, 2026-08-01): three, following FAI 2025.** Applied —
+`("E", None)` is now `n=3`, matching the `E(1)`/`E(2)` variants and F5K E.
+GliderScore's base task text still says five; that is the 2011 rule.
+
+⚠ **The count is the only part of Poker that is right.** The rule still scores the
+flown times of the N longest flights. What remains is the actual defect above, and
+it needs declared targets recorded per flight — so it lands with the timer work
+rather than alone.
 
 ---
 

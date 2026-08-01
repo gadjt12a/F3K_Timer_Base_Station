@@ -69,11 +69,18 @@ class TestF3KTasks(unittest.TestCase):
         r = score_task("F3K", "D(1)", s(320, 100, 50))
         self.assertEqual(r.flight_scores, [300, 100, 0])
 
-    def test_e_poker_five_longest(self):
+    def test_e_poker_counts_three_targets(self):
+        """FAI 2025 F3K.11.5: "up to three (3) target times". Was five, which is
+        the 2011 rule and what GliderScore's base task text still says.
+
+        ⚠ The count is the only part of Poker that is right yet. This still scores
+        the FLOWN times of the N longest flights, where FAI credits the ANNOUNCED
+        target — see [I-50]. Fixing that needs declared targets recorded per
+        flight, which lands with the timer work.
+        """
         r = score_task("F3K", "E", s(60, 120, 30, 90, 45, 180))
-        # 5 longest of 6 count, no cap
-        self.assertEqual(r.flight_scores, [60, 120, 0, 90, 45, 180])
-        self.assertEqual(r.raw_s, 495)
+        self.assertEqual(r.flight_scores, [0, 120, 0, 90, 0, 180])
+        self.assertEqual(r.raw_s, 390)
 
     def test_e1_three_scores(self):
         r = score_task("F3K", "E(1)", s(60, 120, 30, 90))
