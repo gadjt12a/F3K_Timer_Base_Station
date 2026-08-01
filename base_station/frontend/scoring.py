@@ -192,9 +192,15 @@ class TaskResult:
 
 
 def score_task(discipline: str, task: str, flights_ms: Sequence[int],
-               time_decimals: int = 1) -> TaskResult:
+               time_decimals: int = 1,
+               targets_s: Sequence[float] | None = None) -> TaskResult:
     """Apply a task rule to flights in chronological order (ms). Times are
-    truncated (not rounded) to time_decimals before capping, per GliderScore."""
+    truncated (not rounded) to time_decimals before capping, per GliderScore.
+
+    ``targets_s`` is the ANNOUNCED target per flight, in seconds, aligned with
+    ``flights_ms``; 0 or None where nothing was declared. Only Poker reads it, and
+    only Poker can be scored without it being wrong — see the rule body. [I-50]
+    """
     letter, variant = parse_task(task)
     if discipline in CUSTOM_SCORERS:
         return CUSTOM_SCORERS[discipline](task, variant, flights_ms, time_decimals)
@@ -226,9 +232,34 @@ def score_task(discipline: str, task: str, flights_ms: Sequence[int],
         for i in ranked[: rule.n]:
             scores[i] = min(times[i], cap)
     elif rule.kind == "poker":
-        ranked = sorted(idx, key=lambda i: (-times[i], i))
-        for i in ranked[: rule.n]:
-            scores[i] = times[i]
+        # FAI SC4 Vol. F3 F3K.11.5: "If the target is reached or exceeded, then the
+        # TARGET TIME is credited." Never the flown time — the rulebook's own
+        # example scores 45 s for a 46 s flight against a 45 s call. [I-50]
+        #
+        # Judged strictly (>=), with no tolerance: the timer's picker reaches every
+        # second, so any legal call can be entered exactly. A tolerance would only
+        # ever help, and since we export the CALLED time and GliderScore sums the
+        # calls, this decision IS the score.
+        declared = [(targets_s[i] if targets_s and i < len(targets_s) else 0) or 0
+                    for i in range(len(times))]
+        if any(declared):
+            achieved = 0
+            for i in idx:
+                if declared[i] and times[i] >= declared[i] and achieved < rule.n:
+                    scores[i] = float(declared[i])
+                    achieved += 1
+        else:
+            # ⚠ Nothing was declared for any flight in this heat. That is either a
+            # round flown before the timer recorded targets, or one entered by hand
+            # on the Results page. Scoring it all as zero would be defensible by the
+            # rules and useless in practice — it would blank historical comps and
+            # any CD-entered heat — so fall back to the pre-[I-50] behaviour.
+            #
+            # This is a WRONG score, kept only because no-data is worse. It cannot
+            # fire once a heat has any declaration.
+            ranked = sorted(idx, key=lambda i: (-times[i], i))
+            for i in ranked[: rule.n]:
+                scores[i] = times[i]
     elif rule.kind == "all":
         for i in idx:
             scores[i] = times[i]
@@ -403,7 +434,8 @@ def score_group_db(db, group_id: int) -> dict:
             # launch-limited task (F3K F = 6, F5K A = 4, B = 3, D = 3, E = 3) the
             # pilot simply launches again — scratching the weak ones until six
             # good flights remain.
-            """SELECT id, duration_ms, altitude_m, altitude_source, scratched
+            """SELECT id, duration_ms, altitude_m, altitude_source, scratched,
+                      declared_target_ms, declared_window
                FROM flights
                WHERE pilot_id = ? AND group_id = ?
                ORDER BY COALESCE(flight_no, 9999), recorded_at""",
@@ -411,7 +443,13 @@ def score_group_db(db, group_id: int) -> dict:
         result = score_task(discipline, rnd["task"],
                             [0 if f["scratched"] else (f["duration_ms"] or 0)
                              for f in flights],
-                            cfg["time_decimals"])
+                            cfg["time_decimals"],
+                            # A voided launch cannot have achieved its call, so its
+                            # target goes with it — otherwise a scratched flight
+                            # could still credit a Poker target. [I-46]/[I-50]
+                            [0 if f["scratched"]
+                             else (f["declared_target_ms"] or 0) / 1000.0
+                             for f in flights])
         bonus_total = 0.0
         fl_out = []
         for i, f in enumerate(flights):
@@ -428,6 +466,11 @@ def score_group_db(db, group_id: int) -> dict:
                 # Carried so the UI can show the flown time struck through next to
                 # the zero it scored — the CD needs to see the launch happened.
                 "scratched": bool(f["scratched"]),
+                # The announced call, so Results can show what was flown FOR next
+                # to what was flown — the two are different numbers in Poker and
+                # the score is the former. [I-50]
+                "declared_target_s": (f["declared_target_ms"] or 0) / 1000.0 or None,
+                "declared_window": bool(f["declared_window"]),
                 "fpt": round(scored + bonus, 1) if bonus is not None else scored,
             })
         total = round(result.raw_s + bonus_total, 1)

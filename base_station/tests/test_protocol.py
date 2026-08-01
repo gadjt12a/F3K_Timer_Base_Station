@@ -80,7 +80,8 @@ class _Server:
     def scratch_flight(self, pilot_id, dur_ms, group_id=None):
         return srv.F3KServer.scratch_flight(self, pilot_id, dur_ms, group_id)
 
-    def record_flight(self, pilot_id, dur_ms, group_id=None):
+    def record_flight(self, pilot_id, dur_ms, group_id=None,
+                      target_s=0, target_window=False):
         self.db.execute("INSERT INTO flights (pilot_id, duration_ms) VALUES (?, ?)",
                         (pilot_id, dur_ms))
         self.db.commit()
@@ -113,8 +114,10 @@ class _DedupServer(_Server):
     def current_group_id(self):
         return srv.F3KServer.current_group_id(self)
 
-    def record_flight(self, pilot_id, dur_ms, group_id=None):
-        return srv.F3KServer.record_flight(self, pilot_id, dur_ms, group_id)
+    def record_flight(self, pilot_id, dur_ms, group_id=None,
+                      target_s=0, target_window=False):
+        return srv.F3KServer.record_flight(self, pilot_id, dur_ms, group_id,
+                                           target_s, target_window)
 
     def record_altitude(self, pilot_id, flight_no, alt_m, group_id=None):
         return srv.F3KServer.record_altitude(self, pilot_id, flight_no, alt_m, group_id)

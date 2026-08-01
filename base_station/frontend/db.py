@@ -187,6 +187,20 @@ def _add_flight_columns(db: sqlite3.Connection) -> None:
         # start should carry a penalty rather than just costing the launch. That
         # question is unanswerable if the reason was never recorded. [I-49]
         ("void_reason", "TEXT"),
+        # The target the pilot ANNOUNCED for this flight, in ms. Poker credits the
+        # announced time and never the flown one — FAI SC4 Vol. F3 F3K.11.5, whose
+        # own example scores 45 s for a 46 s flight against a 45 s call. Without
+        # this the engine had nothing to score and fell back to the N longest
+        # flights, which is a different (and more generous) task. [I-50]
+        #
+        # NULL means no declaration: either a task with no targets, or a flight
+        # reported by a pre-v31 timer.
+        ("declared_target_ms", "INTEGER"),
+        # That announcement was "end of working time" — the W call, which the
+        # rulebook has the helper write as a letter. Stored separately from the
+        # resolved seconds because a W carries a rule the number does not: it may
+        # be attempted ONCE, where any other call is re-flown until achieved.
+        ("declared_window", "INTEGER NOT NULL DEFAULT 0"),
     ]
     for col_name, col_type in additions:
         if col_name not in existing:

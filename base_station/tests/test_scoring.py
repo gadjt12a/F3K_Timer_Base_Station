@@ -184,6 +184,61 @@ class TestF5KTasks(unittest.TestCase):
         self.assertEqual(r.raw_s, 450)
 
 
+class TestPokerDeclaredTargets(unittest.TestCase):
+    """Poker credits the ANNOUNCED target, never the flown time. [I-50]
+
+    FAI SC4 Vol. F3 F3K.11.5: "If the target is reached or exceeded, then the
+    target time is credited."
+    """
+
+    def test_the_rulebooks_own_worked_example(self):
+        """Straight from F3K.11.5. Announced / flown / scored:
+
+            45 s   46 s   45
+            50 s   48 s    0
+                   52 s   50
+            47 s   49 s   47      total 142
+        """
+        r = score_task("F3K", "E", s(46, 48, 52, 49),
+                       targets_s=[45, 50, 50, 47])
+        self.assertEqual(r.flight_scores, [45, 0, 50, 47])
+        self.assertEqual(r.raw_s, 142)
+
+    def test_overflying_the_call_credits_only_the_call(self):
+        """The whole point of the task: 65 s flown against 60 s called is 60."""
+        r = score_task("F3K", "E", s(65), targets_s=[60])
+        self.assertEqual(r.raw_s, 60)
+
+    def test_missing_the_call_scores_zero_not_the_flight(self):
+        r = score_task("F3K", "E", s(57), targets_s=[60])
+        self.assertEqual(r.raw_s, 0)
+
+    def test_only_three_targets_score(self):
+        """FAI 2025: up to three target times."""
+        r = score_task("F3K", "E", s(30, 40, 50, 60), targets_s=[30, 40, 50, 60])
+        self.assertEqual(r.flight_scores, [30, 40, 50, 0])
+        self.assertEqual(r.raw_s, 120)
+
+    def test_a_flight_with_no_call_scores_nothing(self):
+        """You cannot score a target you never announced -- but the others still do."""
+        r = score_task("F3K", "E", s(90, 90), targets_s=[0, 60])
+        self.assertEqual(r.flight_scores, [0, 60])
+
+    def test_heats_with_no_declarations_fall_back(self):
+        """⚠ A wrong score, kept deliberately: rounds flown before the timer
+        recorded targets, and CD-entered heats, would otherwise blank entirely.
+        It cannot fire once ANY flight in the heat carries a call."""
+        r = score_task("F3K", "E", s(60, 120, 30, 90))
+        self.assertEqual(r.raw_s, 270)          # 120+90+60, the old N-longest rule
+
+    def test_one_declaration_switches_the_whole_heat_to_the_real_rule(self):
+        """The fallback is all-or-nothing on purpose — a heat that is half
+        declared is a heat where the timer was working, so score it properly."""
+        r = score_task("F3K", "E", s(200, 60), targets_s=[0, 60])
+        self.assertEqual(r.flight_scores, [0, 60],
+                         "the 200 s flight scores nothing: no call was made")
+
+
 class TestTargetMode(unittest.TestCase):
     """What the timer is told to run. [TF-10]/[TF-11]
 

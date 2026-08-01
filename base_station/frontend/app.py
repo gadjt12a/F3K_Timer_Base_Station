@@ -118,6 +118,33 @@ def _gs_time(ms: int) -> str:
     return f"{total_s // 60}{total_s % 60:02d}.{millis:03d}"
 
 
+def _gs_flight_ms(row, is_poker: bool) -> int:
+    """What this flight is worth in the CSV, in ms.
+
+    Normally the flown time — GliderScore applies the task rule itself.
+
+    ⚠ **Poker is different: it takes the CALLED time.** Kris: *"GS will sort this
+    when synced as it will only take the first 3 called flight lengths."* The
+    announced target is the score (FAI F3K.11.5 credits the target, never the
+    flight), and a call that was not reached is worth nothing — so a missed call
+    exports as 0 even though the glider was up for 48 seconds. [I-50]
+
+    A voided launch is 0 whatever the task: the launch happened and scored
+    nothing. [I-46]
+    """
+    if row["scratched"]:
+        return 0
+    if not is_poker:
+        return row["duration_ms"]
+    target_ms = row["declared_target_ms"] or 0
+    if not target_ms:
+        # No declaration recorded — a pre-fw-v31 timer, or a hand-entered flight.
+        # Fall back to the flown time rather than exporting a zero for a flight
+        # that plainly happened; it matches what this export did before.
+        return row["duration_ms"]
+    return target_ms if row["duration_ms"] >= target_ms else 0
+
+
 # A flight is a hand-launched glider in a working window that is never longer than
 # 30 minutes, and motor-cut heights are tens of metres. These ceilings exist to turn
 # a CD's typo into an error rather than into plausible-looking data. [I-02] [I-03]
@@ -1002,6 +1029,9 @@ async def export_csv(comp_id: int):
 
     for rnd in rounds:
         task_no = _TASK_NO.get(rnd["discipline"], 5)
+        # Poker exports the called time, not the flown one — see _gs_flight_ms.
+        is_poker = (scoring.target_mode(rnd["discipline"], rnd["task"])["mode"]
+                    == "poker")
         groups = db.execute(
             "SELECT * FROM groups WHERE round_id = ? ORDER BY group_no", (rnd["id"],)
         ).fetchall()
@@ -1022,13 +1052,13 @@ async def export_csv(comp_id: int):
                     # omitting it would shift every later flight up a slot, so on
                     # a "last flight" task the two systems would score different
                     # flights and neither would look wrong on its own.
-                    """SELECT duration_ms, scratched FROM flights
+                    """SELECT duration_ms, scratched, declared_target_ms
+                       FROM flights
                        WHERE pilot_id = ? AND group_id = ?
                        ORDER BY COALESCE(flight_no, 9999), recorded_at""",
                     (pilot["id"], grp["id"]),
                 ).fetchall()
-                times = [0 if f["scratched"] else f["duration_ms"]
-                         for f in flights[:7]]
+                times = [_gs_flight_ms(f, is_poker) for f in flights[:7]]
                 data = [_gs_time(t) for t in times] + ["0"] * (7 - len(times))
                 pilot_no = pilot["gliderscore_pilot_no"] or pilot["id"]
                 writer.writerow([

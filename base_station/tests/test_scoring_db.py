@@ -42,11 +42,12 @@ def _add_pilot(db, name, comp_id, group_ids):
     return pid
 
 
-def _fly(db, pid, gid, secs, alt=None, source=None, scratched=0):
+def _fly(db, pid, gid, secs, alt=None, source=None, scratched=0, target_s=None):
     db.execute(
         "INSERT INTO flights (pilot_id, duration_ms, group_id, altitude_m,"
-        " altitude_source, scratched) VALUES (?, ?, ?, ?, ?, ?)",
-        (pid, int(secs * 1000), gid, alt, source, scratched))
+        " altitude_source, scratched, declared_target_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (pid, int(secs * 1000), gid, alt, source, scratched,
+         int(target_s * 1000) if target_s else None))
     db.commit()
 
 
@@ -153,6 +154,30 @@ class TestScoringDb(unittest.TestCase):
         scoring.score_group_db(self.db, gid)
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM flights").fetchone()[0], 2)
+
+    def test_poker_scores_the_declared_target_from_the_db(self):
+        """[I-50] end to end: the target the timer reported is what scores."""
+        ids = _setup_comp(self.db, "F3K", task="E")
+        gid = ids["groups"][0]
+        p1 = _add_pilot(self.db, "Alice", ids["comp"], [gid])
+        _fly(self.db, p1, gid, 46, target_s=45)     # over the call -> scores 45
+        _fly(self.db, p1, gid, 48, target_s=50)     # under -> 0
+        _fly(self.db, p1, gid, 52, target_s=50)     # re-flown, made it -> 50
+        res = scoring.score_group_db(self.db, gid)
+        self.assertEqual(res["pilots"][p1]["raw_s"], 95)
+        fl = res["pilots"][p1]["flights"]
+        self.assertEqual([f["scored_s"] for f in fl], [45, 0, 50])
+        self.assertEqual(fl[0]["declared_target_s"], 45)
+
+    def test_a_scratched_poker_flight_cannot_claim_its_target(self):
+        """[I-46] + [I-50]: a voided launch scores zero, so its call goes with it —
+        otherwise scratching would still bank the target."""
+        ids = _setup_comp(self.db, "F3K", task="E")
+        gid = ids["groups"][0]
+        p1 = _add_pilot(self.db, "Alice", ids["comp"], [gid])
+        _fly(self.db, p1, gid, 90, target_s=60, scratched=1)
+        res = scoring.score_group_db(self.db, gid)
+        self.assertEqual(res["pilots"][p1]["raw_s"], 0)
 
     def test_f5k_bonus_included(self):
         ids = _setup_comp(self.db, "F5K", task="B")

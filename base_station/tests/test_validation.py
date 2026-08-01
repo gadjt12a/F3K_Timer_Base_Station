@@ -472,6 +472,40 @@ class EndpointTests(unittest.TestCase):
         body = self.client.get("/run").text
         self.assertIn("TEST MODE", body)
 
+    def test_poker_exports_the_called_time_not_the_flown_one(self):
+        """[I-50] Kris: "GS will only take the first 3 called flight lengths."
+
+        FAI credits the announced target, so 46 s flown against a 45 s call is
+        worth 45 — and a call that was missed is worth nothing, even though the
+        glider was plainly in the air.
+        """
+        self.db.execute("UPDATE rounds SET task = 'E' WHERE id = ?",
+                        (self.ids["round"],))
+        for dur, target in ((46000, 45000), (48000, 50000)):
+            self.db.execute(
+                "INSERT INTO flights (pilot_id, group_id, duration_ms,"
+                " declared_target_ms) VALUES (?, ?, ?, ?)",
+                (self.ids["pilot"], self.ids["group"], dur, target))
+        self.db.commit()
+
+        body = self.client.get(f"/export/{self.ids['comp']}/csv").text
+        row = [ln for ln in body.splitlines() if "045.000" in ln]
+        self.assertTrue(row, f"called time not in export:\n{body}")
+        fields = row[0].split(",")
+        self.assertEqual(fields[6], "045.000", "achieved call exports as the CALL")
+        self.assertEqual(fields[7], "000.000", "a missed call is worth nothing")
+
+    def test_a_non_poker_task_still_exports_the_flown_time(self):
+        """Only Poker is special. Everything else sends raw times and lets
+        GliderScore apply the task rule, as it always has."""
+        self.db.execute(
+            "INSERT INTO flights (pilot_id, group_id, duration_ms,"
+            " declared_target_ms) VALUES (?, ?, ?, ?)",
+            (self.ids["pilot"], self.ids["group"], 46000, 45000))
+        self.db.commit()
+        body = self.client.get(f"/export/{self.ids['comp']}/csv").text
+        self.assertIn("046.000", body)
+
     def test_api_docs_are_not_exposed(self):
         """[I-21] /docs is a POST console for run control on the public AP.
 

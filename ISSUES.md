@@ -23,16 +23,14 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 66, 2026-08-01)
 
-**49 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 2 open.**
+**51 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
-[I-46]–[I-49] all came from the tester's field session on 2026-08-01 and are
-closed. Open: **[I-50]** (Poker scores the flown time, not the announced one) and
-**[I-51]** (no way to sync a running working-time clock to a timer). The rest of
-that session's list is feature work, tracked in `TESTER_FEEDBACK.md`.
+[I-46]–[I-51] all came out of the tester's 2026-08-01 session and are all closed.
+The rest of that list is feature work, tracked in `TESTER_FEEDBACK.md`.
 
-⚠ Both open items were found by *checking the source of truth* rather than by
-review — [I-50] by reading the FAI clause, [I-51] by trying to make the
-fast-forward move the timer. Neither would have surfaced from the code alone.
+⚠ The last two were found by *checking the source of truth* rather than by review
+— [I-50] by reading the FAI clause, [I-51] by trying to make the fast-forward move
+the timer. Neither would have surfaced from the code alone.
 
 ⚠ **[I-46] and [I-49] are one idea, found twice.** A launch that happened counts
 as a launch and scores zero, whether the caller scratched it (land-out) or the
@@ -1390,7 +1388,7 @@ still stores nothing ([I-25]'s rule).
 
 ---
 
-### I-50 · Poker scores the flown time, not the announced one · OPEN · P1
+### I-50 · Poker scores the flown time, not the announced one · FIXED (session 66) · P1
 `base_station/frontend/scoring.py` (`poker` rule)
 
 Found by looking up the FAI text for TF-10 rather than by review. **`F3K.11.5`
@@ -1456,7 +1454,7 @@ rather than alone.
 
 ---
 
-### I-51 · No way to sync a running working-time clock to a timer · OPEN · P2
+### I-51 · No way to sync a running working-time clock to a timer · FIXED (session 66, fw-v31) · P2
 `F3K_Timer_1/src/comms/TimerComms.cpp`, `src/timer/WorkingTime.h`, `src/main.cpp`,
 `base_station/frontend/state_machine.py`
 

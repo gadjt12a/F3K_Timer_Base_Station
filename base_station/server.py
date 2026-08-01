@@ -235,11 +235,17 @@ class TimerClient:
             # rc=1 marks an end-of-round reconciliation copy. Absent on fw-v19 and
             # earlier, and on every live report.
             recovered = params.get("rc") == "1"
+            # The announced target this flight was flown against, in seconds, and
+            # whether it was a W ("end of working time") call. Both absent on
+            # fw-v30 and earlier and on any task without targets. [I-50]
+            target_s = int(params.get("target", 0) or 0)
+            target_window = params.get("tw") == "1"
             pilot_id = self._attribute(pilot_id, f"FLIGHT dur={dur_ms}ms")
             if pilot_id > 0:
                 self.last_pilot_id = pilot_id
                 group_id = self._group_for(recovered)
-                if self.server.record_flight(pilot_id, dur_ms, group_id):
+                if self.server.record_flight(pilot_id, dur_ms, group_id,
+                                             target_s, target_window):
                     asyncio.create_task(self.server.state_machine.on_flight(pilot_id, dur_ms))
                     log.info(f"Flight: pilot={pilot_id} {dur_ms / 1000:.2f}s")
                     if recovered:
@@ -605,7 +611,8 @@ class F3KServer:
                     log.warning(f"Keepalive send failed id={c.timer_id} {c.addr}")
 
     def record_flight(self, pilot_id: int, dur_ms: int,
-                      group_id: int | None = None) -> bool:
+                      group_id: int | None = None,
+                      target_s: int = 0, target_window: bool = False) -> bool:
         if group_id is None:
             group_id = self.current_group_id()
         # Dedup: same pilot + exact duration in the same group = duplicate, regardless of
@@ -623,8 +630,11 @@ class F3KServer:
             (pilot_id, group_id),
         ).fetchone()[0]
         self.db.execute(
-            "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no) VALUES (?, ?, ?, ?)",
-            (pilot_id, dur_ms, group_id, next_no),
+            "INSERT INTO flights (pilot_id, duration_ms, group_id, flight_no,"
+            " declared_target_ms, declared_window) VALUES (?, ?, ?, ?, ?, ?)",
+            (pilot_id, dur_ms, group_id, next_no,
+             (target_s * 1000) if target_s > 0 else None,
+             1 if target_window else 0),
         )
         self.db.commit()
         return True
