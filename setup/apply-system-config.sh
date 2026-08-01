@@ -35,7 +35,7 @@
 
 set -uo pipefail   # deliberately NOT -e: failures are handled with rollback
 
-CONFIG_VERSION=2
+CONFIG_VERSION=3
 STATE_FILE=/var/lib/f3k/system-config.version
 BACKUP_DIR=/var/backups/f3k-system-config
 
@@ -63,6 +63,12 @@ MANAGED_PATHS=(
     /etc/cron.d/hostapd-watchdog
     /etc/systemd/system/f3k-server.service   # written by migrate-to-git.sh
     /etc/hostapd/ifupdown.sh                 # shipped by the hostapd package
+    # Listed as known-ours but DELIBERATELY not applied: the serial logger
+    # (setup/timer-serial-logger.py) is a bench aid for a Pi with a timer cabled
+    # to it, not part of a competition install. Without this line the drop-in
+    # scan reports it on every single run, and a check that always cries wolf is
+    # one everybody learns to skim past.
+    /etc/systemd/system/f3k-timer-serial.service
 )
 WATCH_DIRS=(
     /etc/hostapd /etc/dnsmasq.d /etc/nftables.d /etc/NetworkManager/conf.d
@@ -379,6 +385,18 @@ if [ "$DRY_RUN" -eq 1 ]; then
     }
     for dir in "${WATCH_DIRS[@]}"; do
         [ -d "$dir" ] || continue
+        # systemd drop-ins live one level down, in <unit>.d/, so a maxdepth of 1
+        # could never see them — and a drop-in is invisible in the unit file
+        # itself: only `systemctl cat` reveals one. That combination is exactly
+        # how [I-31] hid for three weeks. A hand-added
+        # f3k-server.service.d/override.conf pinned audio output to one speaker's
+        # MAC address, so the app's own output setting did nothing at all, and
+        # this scan — which exists precisely to catch a fix applied by hand over
+        # SSH — was structurally unable to report it.
+        # /etc/systemd/system/hostapd.service.d/override.conf is in MANAGED_PATHS
+        # above and was equally unreachable, which should have been the clue.
+        depth=1
+        [ "$dir" = /etc/systemd/system ] && depth=2
         while IFS= read -r f; do
             is_managed "$f" && continue
             # Backup leftovers. Severity depends on whether the daemon actually
@@ -397,6 +415,18 @@ if [ "$DRY_RUN" -eq 1 ]; then
                     fi
                     continue ;;
             esac
+            # An unmanaged systemd drop-in is flagged on its PATH alone, with no
+            # content test. A drop-in need not mention F3K anywhere to change how
+            # f3k-server runs — [I-31]'s set an Environment= line, and a content
+            # grep is a coin toss on whether it matches. Anything under /etc that
+            # overrides a unit is admin-made local config by definition (vendor
+            # drop-ins ship in /usr/lib/systemd/system), so if we do not own it,
+            # it is drift and belongs in this script.
+            case "$f" in
+                /etc/systemd/system/*.d/*)
+                    UNMANAGED+=("$f  (systemd DROP-IN — silently overrides a unit; invisible in the unit file, see 'systemctl cat')")
+                    continue ;;
+            esac
             # Otherwise only flag things that look like ours, or the conf dirs we
             # own outright, so OS defaults do not drown the signal.
             if grep -qiE 'f3k|wlan[01]|hostapd|dnsmasq|mt76|192\.168\.(10|20)\.' "$f" 2>/dev/null \
@@ -404,7 +434,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
                 case "$f" in */README|*/README.*) continue ;; esac
                 UNMANAGED+=("$f")
             fi
-        done < <(find "$dir" -maxdepth 1 -type f 2>/dev/null)
+        # -type f skips the *.wants/ symlink farms, which are systemd's own
+        # bookkeeping and not config anybody edits.
+        done < <(find "$dir" -maxdepth "$depth" -type f 2>/dev/null)
     done
     if [ ${#UNMANAGED[@]} -eq 0 ]; then
         echo "  [ok]      nothing unmanaged found"

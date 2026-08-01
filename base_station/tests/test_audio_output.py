@@ -165,6 +165,68 @@ class MixerScaleTests(_Base):
         self.assertEqual(dev, ["-D", "bluealsa"])
 
 
+class UnmuteTests(_Base):
+    """Setting a level is not the same as opening the switch.
+
+    A muted ALSA card gives no signal that anything is wrong: it accepts the
+    stream, consumes it in real time and `aplay` exits 0 — so every check we have
+    would call it healthy. Nothing here ever set the switch, only the level.
+
+    ⚠ Defensive only. The 3.5 mm silence was [I-31]'s raw-vs-mapped percentages,
+    not a mute; the field Pi's jack switch measured `on`.
+    """
+
+    def _calls_for(self, mode):
+        self._write({"output": mode, "bt_mac": "AA:BB:CC:DD:EE:FF"})
+        calls = []
+
+        async def fake_run(args, timeout=20.0):
+            calls.append(args)
+            return 0, "Simple mixer control 'PCM',0", ""
+
+        async def go():
+            with mock.patch.object(ac, "_run", fake_run):
+                return await ac.apply_volume(45)
+
+        import asyncio
+        ok = asyncio.run(go())
+        return ok, calls
+
+    def test_setting_the_volume_also_unmutes(self):
+        for mode in ("jack", "usb", "bt"):
+            with self.subTest(mode=mode):
+                ok, calls = self._calls_for(mode)
+                self.assertTrue(ok)
+                self.assertTrue(any("unmute" in c for c in calls),
+                                f"{mode}: volume set but the switch never opened")
+
+    def test_the_unmute_is_a_separate_call(self):
+        """Not a trailing token on the volume line: a control with no playback
+        switch must not be able to take the volume set down with it."""
+        _, calls = self._calls_for("jack")
+        setvol = [c for c in calls if "45%" in c]
+        self.assertTrue(setvol)
+        for c in setvol:
+            self.assertNotIn("unmute", c)
+
+    def test_a_switchless_control_is_not_an_error(self):
+        """Plenty of controls have no playback switch; that is normal, not a fault,
+        and must not report the volume change as failed."""
+        self._write({"output": "usb"})
+
+        async def fake_run(args, timeout=20.0):
+            if "unmute" in args:
+                return 1, "", "amixer: Unable to find simple control"
+            return 0, "Simple mixer control 'PCM',0", ""
+
+        async def go():
+            with mock.patch.object(ac, "_run", fake_run):
+                return await ac.apply_volume(45)
+
+        import asyncio
+        self.assertTrue(asyncio.run(go()))
+
+
 class UsbRateTests(_Base):
     """A USB device that lies about its rate must still play at the right speed."""
 

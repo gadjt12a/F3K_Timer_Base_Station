@@ -21,7 +21,23 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ---
 
-## Status (session 61, 2026-07-29)
+## Status (session 66, 2026-08-01)
+
+**45 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+
+Session 66 closed the three items that had been carried as "open, deliberately
+unfixed" since session 62: [I-43] (the drift scan could not see systemd drop-ins),
+[I-44] (dead code that looked like the horn mechanism — the follow-up [I-34] asked
+for), and [I-45], which turned out **not to be a defect at all**: the 3.5 mm jack
+was cured by [I-31] in the same session it was raised, and nobody re-ran the
+failing case. It was carried forward three times on a wrong theory.
+
+⚠ Two of the three were failures of *record-keeping*, not code. [I-43] made a
+whole class of drift invisible to the check built to find it, and [I-45] was fixed
+for three sessions while sitting in the notes as open. Both argue the same thing:
+re-run the failing case before you write "still open".
+
+### Previously (session 61, 2026-07-29)
 
 **35 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
@@ -1005,6 +1021,109 @@ sends no ACK, so the timer retries forever, the entry never leaves the 32-slot p
 queue, and that queue **drops the newest when full** — enough stuck scratches would start
 discarding live `FLIGHT`s. Accepted as a development-only window; production ships both
 together.
+
+---
+
+### I-43 · The drift scan could not see systemd drop-ins · FIXED (session 66)
+`setup/apply-system-config.sh` (section 8, unmanaged config scan)
+
+`/etc/systemd/system` was in `WATCH_DIRS`, so the scan looked correct — but it ran
+`find -maxdepth 1`, and **a drop-in lives one level down** in `<unit>.d/`. The
+whole class of file was unreachable.
+
+That is the precise mechanism by which [I-31] hid for three weeks. A hand-added
+`f3k-server.service.d/override.conf` pinned audio output to one speaker's MAC, so
+the app's own output setting did nothing and the config on disk was a lie. A
+drop-in is also invisible in the unit file itself — only `systemctl cat` shows one
+— so the scan was the only thing that could have caught it, and it structurally
+could not.
+
+The clue was sitting in the file: `/etc/systemd/system/hostapd.service.d/override.conf`
+has been in `MANAGED_PATHS` all along, and was equally unreachable by the scan
+that is supposed to check it.
+
+Two parts to the fix:
+
+- `maxdepth` is 2 for `/etc/systemd/system` only. `-type f` still excludes the
+  `*.wants/` symlink farms, which are systemd's bookkeeping and not config.
+- An unmanaged drop-in is flagged **on its path alone, with no content test**.
+  ⚠ This matters: [I-31]'s drop-in set an `Environment=` line, and the scan's
+  `f3k|wlan|hostapd|…` content grep is a coin toss on whether such a file mentions
+  anything it looks for. Anything under `/etc` that overrides a unit is admin-made
+  by definition — vendor drop-ins ship in `/usr/lib/systemd/system` — so if we do
+  not own it, it is drift.
+
+`CONFIG_VERSION` 2 → 3. The change is check-mode only, so strictly nothing applied
+moved; bumped anyway because the pre-commit guard fires on any edit to this script
+and the alternative is teaching `--no-verify`, which would disable the guard
+entirely. An idempotent re-run costs a fielded Pi nothing — it reports no changes
+and restarts nothing, which is what the script is built for.
+
+---
+
+### I-44 · A dead method that looked like the horn mechanism · FIXED (session 66)
+`base_station/frontend/audio.py`
+
+Follow-up to [I-34], which that entry explicitly asked for: *"either wire it up or
+delete it."* Deleted.
+
+`AudioEngine.horn()` and `AudioEngine.cue()` were called from nowhere at all, and
+`TimerProfile` carried a comment stating that the engine fired the window horns at
+the phase boundaries. It never did. The generated-schedule code in [I-34] was
+written against that promise, which is why generated rounds began in **total
+silence** — no launch signal, the one cue a heat cannot do without.
+
+A heat is driven entirely by `build_schedule()`, from the raw cue list. There is
+now exactly one playback path and the comments say so. The bucketed
+`prep`/`working`/`landing` tables stay, relabelled as what they actually are — an
+*index* by seconds-remaining, used to pin cue timings in tests. Rebuilding that in
+the test would mean duplicating the sign and phase handling.
+
+⚠ The same false claim had propagated into two test docstrings. Corrected — a
+wrong explanation in a passing test is how the next person re-learns it wrong.
+
+**Pinned by four new tests** asserting the open and close signals survive into the
+schedule `build_schedule()` actually dispatches, which is the level [I-34] broke;
+the existing tests only checked the cue list. Verified they fail against a
+reconstructed [I-34] (6 subtest failures). A fifth asserts `horn`/`cue` do not come
+back, naming the reason.
+
+---
+
+### I-45 · "3.5 mm has never produced sound" was stale, not open · FIXED (session 62 by [I-31]; confirmed session 66)
+`base_station/frontend/audio_control.py`
+
+Carried as an open item through sessions 62, 63 and 65, with the working theory
+that it was speaker-side. It was neither — it was [I-31], **already fixed in the
+same session it was raised in, and never retested on the jack.**
+
+Measured on the field Pi. The saved volume is 20, and on the jack's -102.39dB..+4dB
+control:
+
+```
+raw    20%  ->  -81.11dB     <- inaudible: the reported symptom, exactly
+mapped 20%  ->  -37.94dB     <- audible; what the -M fix already produces
+```
+
+Confirmed by ear at 60% (-9.31dB): the jack plays. Everything else measured
+healthy too — switch `on`, `aplay` exiting 0 at the correct duration,
+`output_device()` returning `plughw:0,0`.
+
+⚠ **The lesson is about the register, not the audio.** A fix and the symptom it
+cures can land in the same session and still leave the symptom recorded as open,
+because nobody re-ran the failing case. The "speaker-side" theory then made it
+look like it needed hardware nobody had to hand, so it was deferred three times.
+**Re-run the failing case before carrying an item forward.**
+
+Two things changed on the back of this:
+
+- Volume changes now open the playback switch (`_unmute`), as its own call so a
+  switchless control cannot fail the volume set. ⚠ **Defensive only — this was not
+  the cause**, and the docstring says so, because a muted card is otherwise a
+  perfect impostor: it consumes the stream in real time and `aplay` exits 0.
+- `apply_saved_volume()` falls back to the default instead of doing nothing when
+  no volume has been saved — that call is also what opens the switch, and a Pi
+  whose operator never touched the slider is the one that would come up muted.
 
 ---
 

@@ -95,7 +95,7 @@ class CountdownTimingTests(unittest.TestCase):
         self.assertIn("Remaining-20Secs.wav", _spoken(p.working, 20))
 
     def test_nothing_fires_as_the_window_opens(self):
-        """The engine owns the open horn; a profile cue there talks over it."""
+        """The open horn owns that second; a spoken cue there talks over it."""
         for name in WindowBoundaryTests.EXPECTED_CLOSE:
             with self.subTest(name=name):
                 p = _profile(name)
@@ -211,6 +211,67 @@ class GeneratedScheduleTests(unittest.TestCase):
         name = eng.select_profile("F3K", 600, 180, 30)
         self.assertEqual(name, "F3K-3m10m30s")
         self.assertFalse(eng.active_profile.generated)
+
+
+class ScheduleDeliversTheStartSignalTests(unittest.TestCase):
+    """The open horn must survive all the way into the dispatched schedule.
+
+    [I-34] was a round starting in silence, and the cue-list tests above would not
+    have caught it: a heat is driven by build_schedule(), which is the only
+    playback path there is. There is deliberately no second mechanism — an engine
+    method that fired horns at the phase boundaries is exactly what everyone
+    believed existed while generated rounds ran silent.
+    """
+
+    def _schedule(self, disc, work_s, prep_s=180, land_s=30):
+        eng = audio.AudioEngine()
+        eng.select_profile(disc, work_s, prep_s, land_s)
+        self.assertIsNotNone(eng.active_profile, "no profile selected at all")
+        return eng, eng.build_schedule(prep_s, land_s)
+
+    def _signals_at(self, sched, at):
+        """Cues dispatched at time `at` that make a noise loud enough to launch on:
+        the horn wav, or a tone of at least half a second."""
+        return [c for off, c in sched
+                if abs(off - at) < 0.001
+                and (c.get("wav") == "StartEndHorn.wav" or c.get("beepMs", 0) >= 500)]
+
+    def test_the_window_opens_with_a_signal_in_the_schedule(self):
+        """Real and generated alike, something must sound as the window opens."""
+        for disc, work_s in (("F3K", 180), ("F3K", 600), ("F3K", 240),
+                             ("F3K", 40), ("F5K", 420)):
+            with self.subTest(disc=disc, work_s=work_s):
+                _, sched = self._schedule(disc, work_s)
+                self.assertTrue(self._signals_at(sched, 180),
+                                "nothing sounds as the working window opens — "
+                                "the round would begin in silence [I-34]")
+
+    def test_the_open_signal_lands_on_the_start_broadcast(self):
+        """It anchors to prep_offset, not to the profile's own prep length —
+        the profile's prep and the competition's need not agree."""
+        for prep_s in (15, 60, 180, 300):
+            with self.subTest(prep_s=prep_s):
+                eng = audio.AudioEngine()
+                eng.select_profile("F3K", 240, prep_s, 30)
+                sched = eng.build_schedule(prep_s, 30)
+                self.assertTrue(self._signals_at(sched, prep_s))
+
+    def test_the_window_also_closes_with_a_signal(self):
+        for disc, work_s in (("F3K", 180), ("F3K", 240), ("F5K", 420)):
+            with self.subTest(disc=disc, work_s=work_s):
+                eng, sched = self._schedule(disc, work_s)
+                close = 180 + eng.active_profile._wt_close
+                self.assertTrue(self._signals_at(sched, close),
+                                "no close horn in the schedule")
+
+    def test_the_engine_has_no_second_playback_path(self):
+        """A method that looks like the horn mechanism but is called by nothing is
+        how [I-34] happened. build_schedule() is the only route to the speaker."""
+        for gone in ("horn", "cue"):
+            self.assertFalse(
+                hasattr(audio.AudioEngine, gone),
+                f"AudioEngine.{gone}() is back — if a cue must exist, put it in "
+                f"the cue list where build_schedule() will find it [I-34]")
 
 
 class WavResolutionTests(unittest.TestCase):

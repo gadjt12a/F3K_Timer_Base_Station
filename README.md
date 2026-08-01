@@ -63,7 +63,7 @@ setup/
 ├── f3k-server.service        # systemd unit, installed by install.sh (paths rewritten for the actual user/home)
 ├── migrate-to-git.sh         # One-time migration: SCP-copy Pi → git clone; installs git, clones repo, recreates venv, migrates data, updates systemd service
 ├── upgrade-to-dual-ap.sh     # One-time dual-AP bootstrap: hostapd (both SSIDs), dnsmasq, nftables captive portal, wlan0/wlan1 setup services. Rewrites those files wholesale and resets eth0 — run in person, not unattended
-├── apply-system-config.sh    # Idempotent OS config applied on every update: mt76 USB fix, hostapd ctrl_interface, dnsmasq bind-dynamic, wlan1 poll loop, hostapd watchdog. `--check` = read-only drift report. Bump CONFIG_VERSION when changing what it applies
+├── apply-system-config.sh    # Idempotent OS config applied on every update: mt76 USB fix, hostapd ctrl_interface, dnsmasq bind-dynamic, wlan1 poll loop, hostapd watchdog. `--check` = read-only drift report, including unmanaged systemd drop-ins (how [I-31] hid for three weeks). Bump CONFIG_VERSION when changing what it applies
 ├── timer-serial-logger.py    # Captures a USB-cabled timer's serial to ~/f3k_timer_serial.log. Holds the port open (opening it resets the ESP32) and reopens when the device re-enumerates on a flash — turns the base station into a remote lab. Dev aid; not enabled by install.sh
 └── f3k-timer-serial.service  # systemd unit for the logger: `sudo systemctl enable --now f3k-timer-serial`
 .githooks/

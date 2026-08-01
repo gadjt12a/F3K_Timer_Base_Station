@@ -429,8 +429,31 @@ async def get_volume() -> int | None:
     return int(m.group(1)) if m else None
 
 
+async def _unmute(dev: list[str], ctrl: str) -> None:
+    """Clear the playback switch on the selected output, if it has one.
+
+    Defensive, not a fix for anything observed: nothing here ever set the switch,
+    only the level, and a muted card is indistinguishable from a working one from
+    the outside — ALSA accepts the stream, consumes it in real time and `aplay`
+    exits 0. Every check we have would call that healthy.
+
+    ⚠ This is NOT what made the 3.5 mm jack silent. That was [I-31] (raw instead
+    of mapped percentages: the saved volume of 20 lands at -81dB raw and -37.9dB
+    mapped on the Pi's jack). The switch on the field Pi was measured `on` — do
+    not re-diagnose a jack problem as a mute without checking `amixer -c N sget`
+    first.
+
+    Run as its own call rather than a trailing `unmute` token on the volume line
+    so that a control without a playback switch cannot take the volume set down
+    with it. Failure is logged and ignored — a switchless control is normal.
+    """
+    rc, _, err = await _run(["amixer", *dev, "sset", ctrl, "unmute"])
+    if rc != 0:
+        log.debug("[AUDIO] no playback switch on %r (%s)", ctrl, err.strip())
+
+
 async def apply_volume(pct: int) -> bool:
-    """Set the speaker volume (0–100). Returns False if no BT mixer is present.
+    """Set the speaker volume (0–100). Returns False if the output has no mixer.
 
     Serialized against playback (bluealsa_lock) so a volume change never collides
     with an in-flight aplay on the same device.
@@ -442,6 +465,10 @@ async def apply_volume(pct: int) -> bool:
             return False
         dev, ctrl = mixer
         rc, _, _ = await _run(["amixer", *dev, "sset", ctrl, f"{pct}%"])
+        # Every route to a volume change comes through here — startup, the output
+        # selector and the slider — so this is the one place that guarantees the
+        # switch is open on whatever output is now selected.
+        await _unmute(dev, ctrl)
     return rc == 0
 
 

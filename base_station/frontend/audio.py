@@ -132,17 +132,26 @@ class TimerProfile:
             self.work_s = self._wt_close
             self.land_s = self._lt_close - self._wt_close
 
-        # Bucket cues by (phase-group, seconds-remaining-in-phase).
+        # An INDEX over the cues, by (phase-group, seconds-remaining-in-phase).
         # phase-group: "prep" (PT/TT/NF), "working" (WT), "landing" (LT).
+        #
+        # ⚠ This is NOT a playback path — nothing plays a heat from these tables.
+        # build_schedule() works from self.cues directly. They exist so a profile
+        # can be asked "what is called with N seconds left?", which is how the cue
+        # timings are pinned in tests/test_audio_cues.py; deriving that in the test
+        # would mean duplicating the sign and phase handling below. A comment here
+        # once claimed the engine fired horns at the phase boundaries, which was
+        # never true and is what caused [I-34].
         self.prep: dict[int, list[dict]] = {}
         self.working: dict[int, list[dict]] = {}
         self.landing: dict[int, list[dict]] = {}
         for c in self.cues:
             st = c["state"]
             t = c["t"]
-            # The window-open/close horns are fired explicitly by the engine at the
-            # WORKING/LANDING phase boundaries (robust to configured land length), so
-            # skip them here to avoid a double horn.
+            # The horns are excluded from the index because they mark the window
+            # boundaries rather than a countdown position — _wt_close is *derived*
+            # from the close horn, so indexing it by seconds-remaining would be
+            # circular. build_schedule() still plays them from self.cues.
             if c.get("wav") == "StartEndHorn.wav":
                 continue
             if st in (PT, TT, NF):
@@ -151,7 +160,7 @@ class TimerProfile:
             elif st == WT:
                 key = self._wt_close - t       # seconds of working time remaining
                 # Anything at or before the instant the window opens is not ours to
-                # play: the engine fires the open horn there. The 3m F3K profiles
+                # index: the open horn owns that second. The 3m F3K profiles
                 # carry "1/2/3" at t=1..3 which land here once the close is anchored
                 # correctly, and they would otherwise talk over the start.
                 if key >= self.work_s:
@@ -221,9 +230,10 @@ def _generate_profile(discipline: str, prep_s: int, work_s: int,
     # horn at all: the round simply began in silence, with only the close horn 60 s
     # later to say anything had happened.
     #
-    # It has to live in the cue list, not be fired by the engine at the phase
-    # boundary: `horn()` exists for that and is called from nowhere, and
-    # build_schedule() drives a heat from the RAW cues, not the bucketed tables.
+    # It has to live in the cue list: build_schedule() drives a heat from the RAW
+    # cues and there is no other playback path. (There was once a `horn()` method
+    # that appeared to fire this at the phase boundary. It was never called by
+    # anything, which is precisely how the open horn went missing.)
     cues.append({"state": WT, "t": 0, "wav": "", "beepHz": 1000, "beepMs": 1000})
 
     # Working: t runs forward from the open, so remaining r sits at work_s - r.
@@ -232,8 +242,9 @@ def _generate_profile(discipline: str, prep_s: int, work_s: int,
             cues.append({"state": WT, "t": work_s - secs, "wav": wav,
                          "beepHz": 0, "beepMs": 0})
 
-    # The close horn. The engine fires open/close itself and skips these, but the
-    # boundary derivation reads it to find where the working window ends. [I-24]
+    # The close horn. Kept out of the seconds-remaining index (see TimerProfile),
+    # but played from the cue list like everything else, and the boundary
+    # derivation reads it to find where the working window ends. [I-24]
     cues.append({"state": LT, "t": work_s, "wav": "StartEndHorn.wav",
                  "beepHz": 0, "beepMs": 0})
 
@@ -273,10 +284,17 @@ class AudioEngine:
         self._last_play_at: float = 0.0
 
     async def apply_saved_volume(self) -> None:
-        """Re-apply the operator's saved volume (call once at startup)."""
+        """Re-apply the operator's saved volume (call once at startup).
+
+        Falls back to the default rather than doing nothing when no volume has
+        been saved: this call is also what opens the output's playback switch, and
+        a Pi whose operator never touched the slider is exactly the one that would
+        otherwise come up muted.
+        """
         vol = audio_control.load_config().get("volume")
-        if vol is not None:
-            await audio_control.apply_volume(vol)
+        if vol is None:
+            vol = audio_control._DEFAULTS["volume"]
+        await audio_control.apply_volume(vol)
 
     def play_test(self) -> None:
         """Play a short sample (announcement + beep) to check output/volume.
@@ -362,31 +380,16 @@ class AudioEngine:
     def active_profile(self) -> TimerProfile | None:
         return self._active
 
-    # ------------------------------------------------------------------
-    # Cue playback (called from the state-machine tick loop)
-    # ------------------------------------------------------------------
-
-    def cue(self, phase: str, seconds_remaining: int) -> None:
-        """Play the GliderScore cue(s) for this instant, if the active profile has any.
-
-        ``phase`` is one of "prep", "working", "landing" (our state groups).
-        Non-blocking: cues are enqueued and played by the background worker.
-        """
-        if not self._active:
-            return
-        table = {
-            "prep": self._active.prep,
-            "working": self._active.working,
-            "landing": self._active.landing,
-        }.get(phase)
-        if not table:
-            return
-        for c in table.get(seconds_remaining, []):
-            self._enqueue(c)
-
-    def horn(self) -> None:
-        """Play the start/end working-window horn."""
-        self._enqueue({"wav": "StartEndHorn.wav", "beepHz": 0, "beepMs": 0})
+    # A heat's audio is driven ENTIRELY by start_schedule() below. There is no
+    # per-tick cue lookup and no phase-boundary horn call: the schedule is built
+    # once from the raw cue list and dispatched by the worker. [I-34]
+    #
+    # There used to be a cue()/horn() pair here that looked like the playback
+    # mechanism and was called from nowhere at all. That is what caused [I-34] —
+    # the generated-profile code was written against horn()'s promise to fire the
+    # window-open signal, so generated rounds began in total silence. Do not
+    # reintroduce a second playback path; if a cue needs to exist, put it in the
+    # cue list where build_schedule() will find it.
 
     # ------------------------------------------------------------------
     # Lead-compensated schedule (drives a whole heat's audio)
