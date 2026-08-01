@@ -353,6 +353,52 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(fields[7], "000.000", "the scratch must export as a zero time")
         self.assertEqual(fields[8], "056.000", "later flights must not shift up a slot")
 
+    # ── Task mode + WTSYNC on the wire [TF-10]/[TF-11]/[I-51] ─────────
+
+    def test_task_line_names_the_mode_and_its_parameters(self):
+        """[TF-10] The timer had no task letter at all, so it could not know it
+        was flying Poker. Params are APPENDED — wt and disc keep their places so a
+        pre-v31 timer reads exactly what it always did."""
+        self.sm._loaded = {"working_time_s": 600, "discipline": "F3K", "task": "D"}
+        line = self.sm._task_line(600)
+        self.assertTrue(line.startswith("TASK wt=600 disc=F3K "), line)
+        self.assertIn("task=D", line)
+        self.assertIn("mode=ladder", line)
+        self.assertIn("start=30", line)
+        self.assertIn("step=15", line)
+
+    def test_task_line_for_a_plain_task_carries_no_target_params(self):
+        self.sm._loaded = {"working_time_s": 600, "discipline": "F3K", "task": "A"}
+        line = self.sm._task_line(600)
+        self.assertIn("mode=plain", line)
+        for junk in ("start=", "step=", "targets="):
+            self.assertNotIn(junk, line)
+
+    def test_task_line_for_poker_carries_the_target_count(self):
+        self.sm._loaded = {"working_time_s": 600, "discipline": "F3K", "task": "E"}
+        self.assertIn("mode=poker", self.sm._task_line(600))
+        self.assertIn("targets=3", self.sm._task_line(600))
+
+    def test_catchup_syncs_the_working_clock_in_seconds(self):
+        """[I-51] This used to send `TASK wt=<rem>` + START. The firmware does
+        `g_wtMinutes = seconds / 60`, so a timer rejoining with 45 s left was told
+        ZERO, and one with 8:30 left was told 8:00."""
+        self.sm._loaded = {"working_time_s": 600, "discipline": "F3K", "task": "A",
+                           "pilot_id_names": [], "land_time_s": 30}
+        self.sm._state = "WORKING"
+        self.sm._wt_remaining = 45
+        sent = []
+
+        async def send(line):
+            sent.append(line)
+
+        import asyncio
+        asyncio.run(self.sm.send_catchup(send))
+        self.assertIn("WTSYNC t=45", sent)
+        # And the full working time on TASK, not the remainder — TASK configures
+        # the round, WTSYNC steers the clock.
+        self.assertTrue(any(x.startswith("TASK wt=600 ") for x in sent), sent)
+
     # ── Test mode [TF-16] ─────────────────────────────────────────────
 
     def _set_test_mode(self, on):

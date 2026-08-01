@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from frontend import scoring
 from frontend.audio import engine
 
 log = logging.getLogger("f3k")
@@ -218,6 +219,28 @@ class CompetitionStateMachine:
         await self._broadcast_ws({"type": "state_change", "state": "IDLE"})
         log.info("Heat aborted → IDLE")
 
+    def _task_line(self, wt_s: int) -> str:
+        """The TASK broadcast, carrying how the timer should run this task.
+
+        It used to be `TASK wt=… disc=…` and nothing more, so the timer could not
+        know it was flying Poker or a Ladder — it had no task letter at all. The
+        base now names the mode and its parameters and the timer executes them.
+
+        ⚠ Params are appended, never reordered or removed. Both sides already
+        ignore unknown params (the `fw=` precedent in JOIN), so a pre-v31 timer
+        reads the `wt`/`disc` it always did and runs exactly as before, and a
+        pre-v31 base sends no `mode=` — which the timer must default to `plain`.
+        Fail towards today's behaviour in both directions.
+        """
+        d = self._loaded
+        tm = scoring.target_mode(d["discipline"], d["task"])
+        parts = [f"TASK wt={wt_s}", f"disc={d['discipline']}",
+                 f"task={d['task']}", f"mode={tm['mode']}"]
+        for key in ("start", "step", "targets"):
+            if key in tm:
+                parts.append(f"{key}={tm[key]}")
+        return " ".join(parts)
+
     async def send_catchup(self, send_fn) -> None:
         """Resend protocol state to a timer that just reconnected mid-round."""
         d = self._loaded
@@ -231,8 +254,20 @@ class CompetitionStateMachine:
                 await send_fn(f"PREP t={self._prep_remaining}")
         elif self._state == "WORKING":
             rem = self._wt_remaining if self._wt_remaining > 0 else d["working_time_s"]
-            await send_fn(f"TASK wt={rem} disc={d['discipline']}")
+            # ⚠ This used to be `TASK wt=<rem>` + `START`, and it was wrong twice
+            # over. The firmware does `g_wtMinutes = seconds / 60` then
+            # `g_wt.begin(g_wtMinutes * 60)`, so a timer rejoining with 8:30 left
+            # was told 8:00 and one with 45 s left was told ZERO. And `START` is
+            # ignored unless the timer is IDLE/PILOT_SELECT/COUNTDOWN/PREP, so on
+            # an already-running timer the whole catch-up was a no-op — which is
+            # why nobody noticed. `_startRound()` also resets the local flight log.
+            #
+            # `WTSYNC` says exactly what is meant: this many seconds left, now.
+            # TASK still goes first so a rejoining timer learns the task and mode.
+            # [I-51]
+            await send_fn(self._task_line(d["working_time_s"]))
             await send_fn("START")
+            await send_fn(f"WTSYNC t={rem}")
         elif self._state == "LANDING":
             if self._land_remaining > 0:
                 await send_fn(f"LAND t={self._land_remaining}")
@@ -339,7 +374,7 @@ class CompetitionStateMachine:
 
         log.info("[AUDIO-T] prep loop ended at %.3f (expected %.3f)",
                  loop.time() - seq_t0, float(d["prep_time_s"]))
-        await self._server.broadcast(f"TASK wt={d['working_time_s']} disc={d['discipline']}")
+        await self._server.broadcast(self._task_line(d["working_time_s"]))
 
         # ── WORKING ──────────────────────────────────────────────────
         self._state = "WORKING"
@@ -354,20 +389,14 @@ class CompetitionStateMachine:
         self._skip_to = None
         remaining = d["working_time_s"]
         while remaining > 0:
-            # Test-mode fast-forward. [TF-16]
-            #
-            # ⚠ The timer is NOT re-synced here, deliberately. `TASK wt=` is the
-            # only message that carries a working time, and on the firmware it
-            # sets `g_wtMinutes` — whole minutes, used to configure a round, not
-            # to steer a running clock. Sending it mid-working would corrupt that
-            # value (15s becomes 0 minutes) without moving the display. The base's
-            # STOP is authoritative and still lands correctly, so a fast-forwarded
-            # working window ends properly; the timer's own display just will not
-            # have followed the jump. Acceptable, and test-only.
+            # Test-mode fast-forward. [TF-16]. The timers follow it: a
+            # fast-forward the watch ignores only tests half the system, which is
+            # the half that is not in a caller's hand. [I-51]
             if self._skip_to is not None:
                 if remaining > self._skip_to:
                     remaining = self._skip_to
                     engine.reanchor(d["prep_time_s"] + d["working_time_s"] - remaining)
+                    await self._server.broadcast(f"WTSYNC t={remaining}")
                 self._skip_to = None
                 deadline = loop.time() + 1.0
             self._wt_remaining = remaining

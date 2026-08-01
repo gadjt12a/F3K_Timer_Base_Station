@@ -10,6 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from base_station.frontend import scoring  # noqa: E402
 from base_station.frontend.scoring import (  # noqa: E402
     f5k_bonus, normalise, parse_task, score_task, standings,
 )
@@ -181,6 +182,49 @@ class TestF5KTasks(unittest.TestCase):
     def test_e_poker3(self):
         r = score_task("F5K", "E", s(100, 200, 150))
         self.assertEqual(r.raw_s, 450)
+
+
+class TestTargetMode(unittest.TestCase):
+    """What the timer is told to run. [TF-10]/[TF-11]
+
+    The timer used to get only `wt` and `disc`, so it could not know it was flying
+    Poker and had no way to offer a target. The base now names the mode; the rules
+    stay here, beside the scoring that has to agree with them.
+    """
+
+    def test_poker_carries_its_target_count(self):
+        m = scoring.target_mode("F3K", "E")
+        self.assertEqual(m["mode"], "poker")
+        self.assertEqual(m["targets"], 3)          # FAI 2025
+
+    def test_ladder_carries_start_and_step(self):
+        m = scoring.target_mode("F3K", "D")
+        self.assertEqual(m, {"mode": "ladder", "start": 30, "step": 15})
+
+    def test_variants_resolve(self):
+        self.assertEqual(scoring.target_mode("F3K", "E(1)")["mode"], "poker")
+
+    def test_f5k_poker_too(self):
+        self.assertEqual(scoring.target_mode("F5K", "E")["mode"], "poker")
+
+    def test_ordinary_tasks_are_plain(self):
+        for task in ("A", "B", "C", "F", "G", "L", "N"):
+            with self.subTest(task=task):
+                self.assertEqual(scoring.target_mode("F3K", task), {"mode": "plain"})
+
+    def test_sequence_tasks_are_not_ladders(self):
+        """K "Big Ladder" advances every launch whether reached or not, and M is a
+        fixed 3/5/7. Running them as a ladder would hold a pilot on a rung they
+        have already passed."""
+        for task in ("K", "M", "H"):
+            with self.subTest(task=task):
+                self.assertEqual(scoring.target_mode("F3K", task)["mode"], "plain")
+
+    def test_an_unknown_task_is_plain_not_a_guess(self):
+        """A timer that guessed `poker` would demand a target that does not exist
+        and block the round."""
+        self.assertEqual(scoring.target_mode("F3K", "ZZZ"), {"mode": "plain"})
+        self.assertEqual(scoring.target_mode("NOPE", "E"), {"mode": "plain"})
 
 
 class TestF5KBonus(unittest.TestCase):

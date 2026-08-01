@@ -145,6 +145,36 @@ def parse_task(task: str) -> tuple[str, int | None]:
     return m.group(1).upper(), int(m.group(2)) if m.group(2) else None
 
 
+def target_mode(discipline: str, task: str) -> dict:
+    """How the TIMER should run this task: `plain`, `poker` or `ladder`.
+
+    The timer used to be told only `wt` and `disc`, so it could not know it was
+    flying Poker and had no way to offer a target at all. Rather than teach it the
+    task catalogue, the base sends the mode and its parameters and the timer just
+    executes them — which keeps the rules here, next to the scoring that has to
+    agree with them, and means a custom task works without a firmware change.
+
+    ⚠ Anything unrecognised is `plain`. A timer that guessed `poker` for a task
+    that is not would demand a target that does not exist and block the round.
+    """
+    letter, variant = parse_task(task)
+    rules = DISCIPLINE_RULES.get(discipline) or {}
+    rule = rules.get((letter, variant)) or rules.get((letter, None))
+    if rule is None:
+        return {"mode": "plain"}
+    if rule.kind == "poker":
+        # `targets` is the count that can be scored; the timer only needs it to
+        # stop offering a picker once they are all achieved.
+        return {"mode": "poker", "targets": rule.n}
+    if rule.kind == "ladder":
+        return {"mode": "ladder", "start": rule.start_s, "step": rule.step_s}
+    # ⚠ `sequence` (F3K K "Big Ladder", M "Huge Ladder", F5K A/D) is NOT a ladder:
+    # its targets advance every launch whether or not they were reached, and they
+    # come from a fixed list rather than a step. It needs its own mode; until then
+    # it runs plain, which is what it does today. [TF-11]
+    return {"mode": "plain"}
+
+
 def _trunc(value: float, decimals: int) -> float:
     f = 10 ** decimals
     return math.floor(value * f) / f
