@@ -23,11 +23,16 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 66, 2026-08-01)
 
-**49 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**49 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 2 open.**
 
-[I-46]–[I-49] all came from the tester's field session on 2026-08-01 and are all
-closed. The remaining items from that session are feature work, tracked in
-`TESTER_FEEDBACK.md`.
+[I-46]–[I-49] all came from the tester's field session on 2026-08-01 and are
+closed. Open: **[I-50]** (Poker scores the flown time, not the announced one) and
+**[I-51]** (no way to sync a running working-time clock to a timer). The rest of
+that session's list is feature work, tracked in `TESTER_FEEDBACK.md`.
+
+⚠ Both open items were found by *checking the source of truth* rather than by
+review — [I-50] by reading the FAI clause, [I-51] by trying to make the
+fast-forward move the timer. Neither would have surfaced from the code alone.
 
 ⚠ **[I-46] and [I-49] are one idea, found twice.** A launch that happened counts
 as a launch and scores zero, whether the caller scratched it (land-out) or the
@@ -1382,6 +1387,97 @@ flight-number order, labelled `JUMPED` or `SCRATCH`.
 Pinned by five tests in `test_protocol.py` — stored and voided, consumes a flight
 number, reason distinguishes it from a scratch, repeats deduped, and `pilot=0`
 still stores nothing ([I-25]'s rule).
+
+---
+
+### I-50 · Poker scores the flown time, not the announced one · OPEN · P1
+`base_station/frontend/scoring.py` (`poker` rule)
+
+Found by looking up the FAI text for TF-10 rather than by review. **SC4 Vol. F3
+§5.7.11.5 Task E**: *"If the target is reached or exceeded, then **the target time
+is credited**."* The rulebook's worked example scores 45 s for a 46 s flight
+against a 45 s call, and totals **262 s** entirely from announced times.
+
+We do the opposite:
+
+```python
+elif rule.kind == "poker":
+    ranked = sorted(idx, key=lambda i: (-times[i], i))
+    for i in ranked[: rule.n]:
+        scores[i] = times[i]          # the FLOWN time
+```
+
+So every Poker round is scored wrongly — generously, and by a different amount for
+each pilot depending on how far they overflew their calls. It also ignores
+declarations entirely, so a pilot who never announced anything scores the same as
+one who called and hit every time.
+
+This was recorded as a known limitation in session 38 (*"declared targets are not
+recorded"*) and treated as a missing feature. It is not: it is a **wrong score**
+on a task GliderScore lists for both F3K and F5K.
+
+**Needs the declared target to be recorded per flight**, which means the timer
+side (TF-10) lands with it — the announcement is made to the timekeeper, so the
+timer is where it is captured.
+
+Rules that fall out of the same clause and must be implemented together:
+
+- A failed call **cannot be changed** — re-fly the same target until achieved.
+- **Launches are unlimited**; the limit is on *announcements* (5 in FAI, 3 in
+  GliderScore's `E(1)`/`E(2)` and F5K E). ⚠ Deliberately **not** enforced by us —
+  Kris's call: GliderScore takes the first 3 called lengths on sync.
+- A failed attempt scores 0 and costs nothing but time.
+- The target picker must not offer an open-ended "until the end of the working
+  time" — the clause forbids it explicitly.
+
+---
+
+### I-51 · No way to sync a running working-time clock to a timer · OPEN · P2
+`F3K_Timer_1/src/comms/TimerComms.cpp`, `src/timer/WorkingTime.h`, `src/main.cpp`,
+`base_station/frontend/state_machine.py`
+
+Three separate needs all want the same missing capability: **tell a timer the
+working time now remaining, mid-round, in seconds.**
+
+1. **The test-mode fast-forward** (TF-16). Kris: *"Timer should jump to shortened
+   WT time as this is what we are testing."* Correct — a fast-forward the watch
+   does not follow tests only half the system.
+2. **Late pilot/timer assignment** (TF-02). Kris: *"When timer is assigned to a
+   pilot late in WT, timer should jump to existing WT countdown, same place as
+   all other timers on the field."*
+3. **Reconnect mid-working** — and this one is already broken today, silently.
+
+⚠ **The existing reconnect path is wrong.** `send_catchup()` sends
+`TASK wt=<seconds remaining>` then `START`, but on the firmware:
+
+```c
+g_wtMinutes = g_comms.getTaskWtSeconds() / 60;   // integer division
+...
+g_wt.begin(g_wtMinutes * 60);                    // whole minutes only
+```
+
+So a timer rejoining with 8:30 left is told **8:00**, and one rejoining with 45 s
+left is told **zero**. `START` is also ignored unless the timer is in
+`IDLE`/`PILOT_SELECT`/`COUNTDOWN`/`PREP` (`main.cpp:402`), so on a timer that is
+already running the whole catch-up is a no-op — which is why nobody noticed.
+`_startRound()` additionally calls `g_log.reset()`, so a catch-up that *does* land
+wipes the timer's local flight log.
+
+**Fix: a new `WTSYNC t=<seconds>` message.** Firmware release, so it ships with
+the TF-10/TF-11 timer work rather than alone.
+
+- `WorkingTime` needs a `syncRemaining(int seconds)` that sets `_remainingMs`
+  without touching `_total`, the running state, the flight log or a running
+  flight. ⚠ It must also mark every alert above the new remaining as already
+  fired, or a jump from 10:00 to 0:15 fires the 2-minute, 1-minute and 30-second
+  calls all at once.
+- Accepted while `WORKING`; ignored otherwise.
+- Base sends it on fast-forward, on late assignment, and from `send_catchup()`
+  in place of the broken `TASK`+`START` pair.
+
+⚠ `LAND t=` already does exactly this job for the landing window, which is why a
+LANDING fast-forward re-syncs correctly today and a WORKING one does not. `WTSYNC`
+is the same idea, and should have existed from the start.
 
 ---
 
