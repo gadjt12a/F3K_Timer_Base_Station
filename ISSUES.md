@@ -1393,10 +1393,20 @@ still stores nothing ([I-25]'s rule).
 ### I-50 · Poker scores the flown time, not the announced one · OPEN · P1
 `base_station/frontend/scoring.py` (`poker` rule)
 
-Found by looking up the FAI text for TF-10 rather than by review. **SC4 Vol. F3
-§5.7.11.5 Task E**: *"If the target is reached or exceeded, then **the target time
-is credited**."* The rulebook's worked example scores 45 s for a 46 s flight
-against a 45 s call, and totals **262 s** entirely from announced times.
+Found by looking up the FAI text for TF-10 rather than by review. **`F3K.11.5`
+Task E, SC4 Vol. F3 `SOARING_25 V2`, effective 1 June 2025**: *"If the target is
+reached or exceeded, then **the target time is credited**."* The worked example
+scores 45 s for a 46 s flight against a 45 s call, and totals **142 s** entirely
+from announced times.
+
+⚠ **Quote the 2025 edition, not the 2011 mirror in `Spec_Sheet_URLS.md`.** Task E
+changed materially between them and the 2011 text is wrong on three points now:
+five targets became **three**, and the "end of working time" call went from
+*explicitly forbidden* to *explicitly permitted with a single attempt*. The 2025
+PDF is at
+<https://www.fai.org/sites/default/files/ciam_f3_soaring_2025v2_final.pdf> and is
+fetchable with a browser `User-Agent` — the "fai.org 403s scripted fetches" note
+in the spec sheet is only true of a bare request.
 
 We do the opposite:
 
@@ -1423,12 +1433,21 @@ timer is where it is captured.
 Rules that fall out of the same clause and must be implemented together:
 
 - A failed call **cannot be changed** — re-fly the same target until achieved.
-- **Launches are unlimited**; the limit is on *announcements* (5 in FAI, 3 in
-  GliderScore's `E(1)`/`E(2)` and F5K E). ⚠ Deliberately **not** enforced by us —
-  Kris's call: GliderScore takes the first 3 called lengths on sync.
+- **Launches are unlimited**; the limit is on *targets*, and 2025 puts it at
+  **three**. ⚠ Deliberately **not** enforced by us — Kris's call: GliderScore
+  takes the first 3 called lengths on sync.
 - A failed attempt scores 0 and costs nothing but time.
-- The target picker must not offer an open-ended "until the end of the working
-  time" — the clause forbids it explicitly.
+- **A "Window" target is permitted** (`"end of working time"`, written `W`) — the
+  rest of the working time, resolved to a concrete number when chosen.
+  ⚠ **It has ONLY ONE attempt**, the single exception to the retry rule, and is
+  for the competitor's last flight. Must be enforced on the timer.
+- **Announcing after the launch is explicitly allowed** — *"shown to the
+  timekeeper in written numbers immediately after the launch"* — which is why the
+  target picker has to show the running flight time.
+
+⚠ **Target count is unsettled**: `scoring.py` has `n=5`, GliderScore's base F3K E
+says *"5 flights to time count"* (its `E(1)`/`E(2)` variants say 3), and FAI 2025
+says three. Decide before implementing, since it changes the score.
 
 ---
 
