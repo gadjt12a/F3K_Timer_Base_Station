@@ -13,9 +13,11 @@ See docs/PROTOCOL_ACK.md.
 """
 
 import asyncio
+import collections
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 
@@ -595,6 +597,122 @@ class TimerNumberingTests(unittest.TestCase):
         self.db.commit()
         s._mac_to_id.pop("aa:aa")
         self.assertEqual(s.assign_id("cc:cc"), 1, "should fill the gap, not go to 3")
+
+
+class SilentTimerEvictionTests(unittest.TestCase):
+    """A timer that stops answering must be announced, not just removed. [I-48]
+
+    "If watch turned off run screen not updating." A powered-off watch sends no
+    FIN, so the socket stays open and only the missing PINGs give it away. It was
+    evicted at 90 s and then simply vanished from /api/timers — and a pill
+    disappearing is not a notification. Connect and JOIN both broadcast; eviction
+    did not.
+    """
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.s = srv.F3KServer.__new__(srv.F3KServer)
+        self.s.db = self.db
+        self.s._clients = {}
+        self.s._mac_to_id = {}
+        self.s._mac_to_pilot = {}
+        self.s.events = collections.deque(maxlen=40)
+        self.broadcasts = 0
+
+        async def counting_broadcast():
+            self.broadcasts += 1
+
+        self.s.broadcast_timers = counting_broadcast
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _client(self, timer_id, ping_age_s, rx_age_s=None):
+        now = time.monotonic()
+        c = types.SimpleNamespace(
+            timer_id=timer_id, mac=f"aa:{timer_id}", addr=("10.0.0.9", 5000),
+            last_ping_at=now - ping_age_s,
+            last_rx_at=now - (ping_age_s if rx_age_s is None else rx_age_s),
+            last_pilot_id=None, closed=False,
+        )
+        c.close = lambda: setattr(c, "closed", True)
+        self.s._clients[timer_id] = c
+        return c
+
+    def test_a_silent_timer_is_evicted_and_announced(self):
+        self._client(1, srv.PING_TIMEOUT_S + 10)
+        evicted = asyncio.run(self.s.evict_silent_timers())
+        self.assertEqual(len(evicted), 1)
+        self.assertEqual(self.s._clients, {})
+        self.assertEqual(self.broadcasts, 1,
+                         "eviction must tell the clients, or the CD is never told")
+
+    def test_a_healthy_timer_is_left_alone_and_nothing_is_broadcast(self):
+        """No spurious broadcast every 30s — it would fight the poll for no gain."""
+        self._client(1, 5)
+        self.assertEqual(asyncio.run(self.s.evict_silent_timers()), [])
+        self.assertEqual(self.broadcasts, 0)
+
+    def test_a_timer_one_ping_short_is_not_evicted(self):
+        """Timers ping every 30s and are evicted at 90s, so a single missed ping
+        must not drop a working timer off the field."""
+        self._client(1, 40)
+        self.assertEqual(asyncio.run(self.s.evict_silent_timers()), [])
+        self.assertIn(1, self.s._clients)
+
+    def test_eviction_closes_the_socket(self):
+        """A powered-off watch never sends FIN, so the socket leaks otherwise."""
+        c = self._client(1, srv.PING_TIMEOUT_S + 10)
+        asyncio.run(self.s.evict_silent_timers())
+        self.assertTrue(c.closed)
+
+    def test_rx_age_is_not_reset_by_our_own_keepalive_sends(self):
+        """The heart of [I-48], and the thing that made it invisible.
+
+        A powered-off watch never sends FIN, so the socket stays open and our
+        writes keep succeeding into the kernel buffer for minutes. `_keepalive()`
+        resets `last_ping_at` on every successful send, so a dead watch read as
+        healthy indefinitely — measured on the Pi as 150 s of total silence with
+        `last_ping_age_s` stuck between 7 s and 8 s, so the amber-at-45 s pill
+        could never fire.
+
+        A successful write proves nothing about the far end. `last_rx_age_s` moves
+        only when the timer actually speaks, which is why the UI judges on it.
+        """
+        c = self._client(1, 5)
+        c.last_rx_at = time.monotonic() - 300      # silent for five minutes
+        c.last_ping_at = time.monotonic()          # ...but our sends kept "working"
+        c.fw, c.connected_at = "fw-v30", time.time()
+        row = self.s.timers_info()[0]
+        self.assertLess(row["last_ping_age_s"], 45,
+                        "precondition: the keepalive makes this look healthy")
+        self.assertGreater(row["last_rx_age_s"], 290,
+                           "rx age must expose the silence the ping clock hides")
+
+    def test_a_silent_timer_is_evicted_even_while_our_sends_succeed(self):
+        """The residual half of [I-48]: with the ping clock reset by keepalives, a
+        powered-off watch was NEVER evicted — it held its timer ID and read as
+        bound to its pilot indefinitely. Measured live at 120 s of silence with the
+        ping age still under 8 s."""
+        self._client(1, ping_age_s=5, rx_age_s=srv.RX_TIMEOUT_S + 10)
+        self.assertEqual(len(asyncio.run(self.s.evict_silent_timers())), 1)
+        self.assertEqual(self.broadcasts, 1)
+
+    def test_rx_eviction_is_generous_enough_not_to_drop_a_working_timer(self):
+        """Six missed PINGs at the firmware's 30 s interval. Evicting mid-round
+        forces pilot re-selection, so the bias is toward waiting."""
+        self.assertGreaterEqual(srv.RX_TIMEOUT_S, 180)
+        self._client(1, ping_age_s=5, rx_age_s=120)
+        self.assertEqual(asyncio.run(self.s.evict_silent_timers()), [])
+
+    def test_one_broadcast_covers_several_evictions(self):
+        for i in (1, 2, 3):
+            self._client(i, srv.PING_TIMEOUT_S + 10)
+        self.assertEqual(len(asyncio.run(self.s.evict_silent_timers())), 3)
+        self.assertEqual(self.broadcasts, 1)
 
 
 class ScratchTests(unittest.TestCase):

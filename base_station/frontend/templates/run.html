@@ -57,6 +57,9 @@ function runner(initialState) {
         // design — dismissed by hand, never on a timer.
         recovered: [],
         timers: [],
+        // Timers that were connected and have since been evicted. Held so the
+        // strip shows a LOST pill rather than silently losing an entry. [I-48]
+        lostTimers: [],
         ws: null,
         wsOk: false,
         loadedGroupId: (initialState.loaded && initialState.loaded.group_id) || null,
@@ -122,7 +125,21 @@ function runner(initialState) {
             try {
                 const r = await fetch('/api/timers');
                 const data = await r.json();
-                this.timers = data.timers || [];
+                const fresh = data.timers || [];
+                // A timer that stops answering is EVICTED at 90s and then simply
+                // vanishes from this list. An entry disappearing is not a
+                // notification — the CD looking away sees nothing at all, which is
+                // exactly what was reported ("if watch turned off run screen not
+                // updating"). Keep it on screen, marked LOST, until it comes back
+                // or the next heat is loaded. [I-48]
+                const freshIds = new Set(fresh.map(t => t.id));
+                for (const prev of this.timers) {
+                    if (!freshIds.has(prev.id) && !this.lostTimers.some(l => l.id === prev.id)) {
+                        this.lostTimers.push({ ...prev, lost: true });
+                    }
+                }
+                this.lostTimers = this.lostTimers.filter(l => !freshIds.has(l.id));
+                this.timers = fresh;
             } catch (e) {}
         },
 
@@ -325,6 +342,9 @@ function runner(initialState) {
             this.altOpen = false;
             // Clear stale pilot bindings — timers re-announce via SELECT in the new heat
             this.timers = this.timers.map(t => ({...t, last_pilot_id: null, last_pilot_name: null}));
+            // LOST pills are per-heat: a timer that died in the last heat is not the
+            // new heat's problem, and leaving them would accumulate all day. [I-48]
+            this.lostTimers = [];
         },
 
         async toggleDone(groupId) {
@@ -699,13 +719,32 @@ function runner(initialState) {
                 <!-- A dead websocket used to fail silently: the page looked fine but
                      never received flights, ticks or timer updates -->
                 <span x-show="!wsOk" class="text-xs text-red-400 font-medium">⚠ Live link down</span>
+                <!-- Timers ping every 30s and are evicted at 90s. Amber from 45s means
+                     a ping has already been missed; the age is shown rather than a bare
+                     ⚠ so the CD can see it climbing towards eviction instead of guessing
+                     whether it is a blip. [I-48] -->
                 <template x-for="t in timers" :key="t.id">
                     <div class="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono"
-                         :class="t.last_ping_age_s < 45 ? 'bg-green-900/60 text-green-300' : 'bg-amber-900/60 text-amber-300'">
+                         :class="t.last_rx_age_s < 45 ? 'bg-green-900/60 text-green-300' : 'bg-amber-900/60 text-amber-300'"
+                         :title="t.last_rx_age_s >= 45
+                             ? 'No reply for ' + Math.round(t.last_rx_age_s) + 's — dropped at 90s'
+                             : 'Last reply ' + Math.round(t.last_rx_age_s) + 's ago'">
                         <span x-text="'T' + t.id"></span>
                         <span class="opacity-60 mx-0.5">·</span>
                         <span x-text="t.last_pilot_name ? t.last_pilot_name.split(' ')[0] : 'unbound'"></span>
-                        <span x-show="t.last_ping_age_s >= 45" class="ml-1 text-amber-400">⚠</span>
+                        <span x-show="t.last_rx_age_s >= 45" class="ml-1 text-amber-400"
+                              x-text="'⚠ ' + Math.round(t.last_rx_age_s) + 's'"></span>
+                    </div>
+                </template>
+                <!-- Evicted: kept visible so the CD sees the timer GO, not just find one
+                     fewer pill on the strip. Clears when it reconnects or on next heat. -->
+                <template x-for="t in lostTimers" :key="'lost' + t.id">
+                    <div class="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono bg-red-900/60 text-red-300"
+                         title="Stopped answering and was dropped. Check the watch is on and in range.">
+                        <span x-text="'T' + t.id"></span>
+                        <span class="opacity-60 mx-0.5">·</span>
+                        <span x-text="t.last_pilot_name ? t.last_pilot_name.split(' ')[0] : 'unbound'"></span>
+                        <span class="ml-1 font-semibold">LOST</span>
                     </div>
                 </template>
             </div>

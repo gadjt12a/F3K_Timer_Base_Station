@@ -23,9 +23,11 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 66, 2026-08-01)
 
-**48 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 1 open.**
+**49 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
-Open: [I-48], from the tester's field session on 2026-08-01.
+[I-46]–[I-49] all came from the tester's field session on 2026-08-01 and are all
+closed. The remaining items from that session are feature work, tracked in
+`TESTER_FEEDBACK.md`.
 
 ⚠ **[I-46] and [I-49] are one idea, found twice.** A launch that happened counts
 as a launch and scores zero, whether the caller scratched it (land-out) or the
@@ -1263,14 +1265,79 @@ all four recorded flights in its initial state, including the 4.047 s scratch.
 
 ---
 
-### I-48 · A timer powered off is not reflected on the Run page · OPEN · P3
-`base_station/frontend/templates/run.html`, `server.py`
+### I-48 · A timer powered off is not reflected on the Run page · FIXED (session 66) · P3
+`base_station/server.py` (`evict_silent_timers`), `frontend/templates/run.html`
 
 > *"If watch turned off run screen not updating"*
 
-Eviction is at 90 s, which is right for a dropped link but far too slow to tell a
-CD that a timekeeper's watch has actually gone. Needs a decision on how a timer
-that stops answering is presented, and how fast.
+A powered-off watch sends no FIN, so the socket stays open and only the missing
+PINGs give it away. Timers ping every 30 s and are evicted at 90 s.
+
+**The root cause was not what it looked like.** The amber-from-45 s pill already
+existed, so the first theory was that only the *eviction* went unannounced. A live
+test on the Pi disproved it:
+
+```
+silent for 150s, socket held open, no FIN
+  last_ping_age_s:  7.1 → 8.0        <- never moved
+```
+
+⚠ **`_keepalive()` resets `last_ping_at` on every successful *send*.** A
+powered-off watch never sends FIN, so the socket stays open and our writes keep
+succeeding into the kernel buffer for minutes. The ping clock was therefore reset
+continuously and **the amber pill could never fire for the one case it exists
+for**. Nor could the 90 s eviction.
+
+⚠ **A successful write proves nothing about the far end.** `last_ping_at` was
+carrying two different facts — "the timer spoke to us" and "our write did not
+error" — and conflating them made a dead watch indistinguishable from a healthy
+one. The reset itself is deliberate and correct (it stops the watchdog evicting a
+timer that is receiving keepalives but has not yet hit its 30 s PING interval), so
+it stays; a separate `last_rx_at` now records genuine receipt, exposed as
+`last_rx_age_s`, and the UI judges staleness on that.
+
+The second fault was real too: at eviction **nothing was announced.** `remove()`
+deleted the client and the pill simply vanished from the strip on the Run page's
+next 3 s poll.
+
+⚠ **An entry disappearing is not a notification.** A CD looking away sees nothing
+at all — which is precisely the report. Connect and JOIN both call
+`broadcast_timers()`; eviction never did.
+
+Four parts:
+
+- **A new `last_rx_at`, set on any received line** — not per command, so an
+  unrecognised message still counts as a sign of life. Exposed as `last_rx_age_s`
+  and used by the UI for staleness. `last_ping_at` and its keepalive reset are
+  untouched, so the earlier ping-timeout fix stands.
+- **Eviction also fires on receive silence** (`RX_TIMEOUT_S = 180`), because the
+  ping clock alone can never age out a dead-but-writable socket. Deliberately
+  generous — six missed PINGs — since a healthy timer keeps its rx age under 30 s
+  and evicting mid-round forces pilot re-selection.
+- **Eviction now broadcasts.** One broadcast per sweep, not per timer, and none at
+  all when nothing was evicted — a heartbeat broadcast every 30 s would fight the
+  poll for no gain.
+- **A lost timer stays on screen**, as a red `LOST` pill, until it reconnects or
+  the next heat is loaded. Per-heat, so they cannot accumulate all day.
+- **The amber pill shows the age** (`⚠ 52s`) instead of a bare `⚠`, so the CD can
+  watch it climb toward eviction rather than guess whether it is a blip.
+
+The watchdog's eviction step was split out as `evict_silent_timers()` so the
+notification could actually be tested — the whole defect was that nobody was told,
+and that is untestable inside a `while True: await sleep(30)` loop.
+
+Pinned by eight tests: evicted and announced, healthy timer untouched with **no**
+broadcast, a single missed ping does not drop a working timer, the socket is
+closed (a powered-off watch never sends FIN, so it would otherwise leak), one
+broadcast covers several evictions, rx age is not reset by our own keepalives, a
+silent timer is evicted even while our sends succeed, and the rx window stays
+generous.
+
+⚠ **The lesson, and it is the same one as [I-45]:** the first fix was written
+against a plausible theory and the live test disproved it. Watching `ping_age`
+sit at 7–8 s through 150 s of total silence is what found the real cause; no
+amount of reading would have. **Reproduce the failure before believing the
+diagnosis.**
 
 ---
 

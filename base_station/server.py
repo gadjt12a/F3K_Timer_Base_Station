@@ -47,6 +47,21 @@ def parse_params(parts):
 
 
 PING_TIMEOUT_S = 90       # evict if no PING received within this window
+
+# Second eviction condition, on genuine receipt rather than the ping clock.
+#
+# ⚠ PING_TIMEOUT_S alone cannot catch a powered-off watch. It measures
+# `last_ping_at`, which `_keepalive()` resets on every successful *send* — and a
+# dead watch sends no FIN, so the socket stays open and our writes keep succeeding
+# into the kernel buffer. Measured on the Pi: 120 s of total silence with the ping
+# age oscillating between 1.9 s and 8.0 s, never once approaching 90. The timer was
+# never evicted and never even went amber. [I-48]
+#
+# Deliberately generous — six missed PINGs at the firmware's 30 s interval. A
+# healthy timer keeps its rx age under 30 s, so this can only fire on one that has
+# genuinely stopped talking. Evicting mid-round forces pilot re-selection, so the
+# bias is strongly toward waiting.
+RX_TIMEOUT_S = 180
 KEEPALIVE_INTERVAL_S = 15  # proactively ping timers so the link never idles
 BT_RECONNECT_INTERVAL_S = 30  # re-check/reconnect the BT speaker this often
 
@@ -59,6 +74,19 @@ class TimerClient:
         self.timer_id = None
         self.addr = writer.get_extra_info("peername")
         self.last_ping_at = time.monotonic()
+        # Last time the TIMER actually said something to us. Deliberately separate
+        # from last_ping_at, which the keepalive resets on every successful *send*.
+        #
+        # ⚠ Those are not the same fact, and conflating them hid [I-48]. A
+        # powered-off watch never sends FIN, so the socket stays open and our
+        # writes keep succeeding into the kernel buffer for minutes — the keepalive
+        # therefore kept resetting last_ping_at and the timer read as healthy the
+        # whole time. Measured: 150 s of total silence with last_ping_age_s stuck
+        # between 7 s and 8 s.
+        #
+        # A successful write proves nothing about the far end. Only received bytes
+        # do, so staleness on the CD's screen is derived from this.
+        self.last_rx_at = time.monotonic()
         self.connected_at = time.time()
         self.last_pilot_id = None   # pilot of the most recent FLIGHT from this timer
         # Group of the most recent FLIGHT. The end-of-round resend lands AFTER the
@@ -83,6 +111,10 @@ class TimerClient:
         log.info(f"Connected: {self.addr}")
         try:
             async for raw in self.reader:
+                # Anything at all from the timer proves it is still there. Set here
+                # rather than per-command so a message we do not recognise still
+                # counts as a sign of life. [I-48]
+                self.last_rx_at = time.monotonic()
                 line = raw.decode().strip()
                 if line:
                     await self._dispatch(line)
@@ -471,6 +503,10 @@ class F3KServer:
                 "mac": c.mac,
                 "ip": c.addr[0] if c.addr else None,
                 "last_ping_age_s": round(now - c.last_ping_at, 1),
+                # What the UI must judge staleness on. last_ping_age_s is reset by
+                # our own keepalive sends and so stays low against a dead watch —
+                # this one only moves when the timer speaks. [I-48]
+                "last_rx_age_s": round(now - getattr(c, "last_rx_at", c.last_ping_at), 1),
                 "connected_at": c.connected_at,
                 "last_pilot_id": c.last_pilot_id,
                 "last_pilot_name": pilot_name,
@@ -485,15 +521,31 @@ class F3KServer:
         """Periodically evict connections that have stopped sending PINGs."""
         while True:
             await asyncio.sleep(30)
-            now = time.monotonic()
-            stale = [c for c in list(self._clients.values())
-                     if now - c.last_ping_at > PING_TIMEOUT_S]
-            for c in stale:
-                log.warning(f"PING timeout — evicting id={c.timer_id} {c.addr}")
-                self.log_event("ping_timeout", c.mac, c.timer_id,
-                               f"no PING for >{PING_TIMEOUT_S}s")
-                self.remove(c)
-                c.close()
+            await self.evict_silent_timers()
+
+    async def evict_silent_timers(self) -> list:
+        """Drop timers that have stopped answering, and say so. Returns those evicted.
+
+        Split out of the watchdog loop so the notification can actually be tested —
+        the whole of [I-48] was that nobody was told.
+        """
+        now = time.monotonic()
+        stale = [c for c in list(self._clients.values())
+                 if now - c.last_ping_at > PING_TIMEOUT_S
+                 or now - getattr(c, "last_rx_at", c.last_ping_at) > RX_TIMEOUT_S]
+        for c in stale:
+            log.warning(f"PING timeout — evicting id={c.timer_id} {c.addr}")
+            self.log_event("ping_timeout", c.mac, c.timer_id,
+                           f"no PING for >{PING_TIMEOUT_S}s")
+            self.remove(c)
+            c.close()
+        if stale:
+            # Connect and JOIN both broadcast; eviction did not. So a timer that
+            # died was announced to nobody — the Run page learned of it only on
+            # its next 3 s poll, and then only as a pill that had quietly
+            # disappeared. A CD looking away missed it entirely. [I-48]
+            await self.broadcast_timers()
+        return stale
 
     async def _bt_reconnect(self):
         """Reconnect the configured Bluetooth speaker if it drops (idle/out of range)."""
