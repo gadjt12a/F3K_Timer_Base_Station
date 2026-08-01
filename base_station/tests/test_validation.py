@@ -353,6 +353,79 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(fields[7], "000.000", "the scratch must export as a zero time")
         self.assertEqual(fields[8], "056.000", "later flights must not shift up a slot")
 
+    # ── Test mode [TF-16] ─────────────────────────────────────────────
+
+    def _set_test_mode(self, on):
+        cfg = app_mod.audio_control.load_config()
+        cfg["test_mode"] = on
+        app_mod.audio_control.save_config(cfg)
+        self.addCleanup(self._clear_test_mode)
+
+    def _clear_test_mode(self):
+        cfg = app_mod.audio_control.load_config()
+        cfg.pop("test_mode", None)
+        app_mod.audio_control.save_config(cfg)
+
+    def test_fast_forward_is_refused_when_test_mode_is_off(self):
+        """[TF-16] Cutting a working window short falsifies the round, so this must
+        never be reachable by accident. The server refuses; hiding the button is
+        only so a CD never sees it."""
+        self._set_test_mode(False)
+        self.client.post(f"/api/run/load?round_id={self.ids['round']}"
+                         f"&group_id={self.ids['group']}")
+        self.sm._state = "WORKING"
+        r = self.client.post("/api/run/fast-forward?to=15")
+        self.assertEqual(r.status_code, 403)
+        self.assertFalse(r.json()["ok"])
+        self.assertIsNone(self.sm._skip_to, "the clock must not have moved")
+
+    def test_fast_forward_works_in_every_running_phase_with_test_mode_on(self):
+        self._set_test_mode(True)
+        for phase in ("PREP", "WORKING", "LANDING"):
+            with self.subTest(phase=phase):
+                self.sm._state = phase
+                self.sm._skip_to = None
+                r = self.client.post("/api/run/fast-forward?to=15")
+                self.assertEqual(r.status_code, 200, r.text)
+                self.assertEqual(self.sm._skip_to, 15)
+
+    def test_fast_forward_refuses_when_nothing_is_running(self):
+        """[I-10]'s rule: report the refusal rather than claiming success."""
+        self._set_test_mode(True)
+        self.sm._state = "IDLE"
+        r = self.client.post("/api/run/fast-forward?to=15")
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("IDLE", r.json()["error"])
+
+    def test_test_mode_needs_the_passcode(self):
+        r = self.client.post("/testmode", data={"passcode": "wrong", "enable": "true"})
+        self.assertEqual(r.status_code, 403)
+        self.assertFalse(app_mod.test_mode_on())
+
+    def test_the_passcode_turns_it_on_and_off_again(self):
+        self.addCleanup(self._clear_test_mode)
+        pc = app_mod._TEST_PASSCODE
+        self.assertTrue(self.client.post(
+            "/testmode", data={"passcode": pc, "enable": "true"}).json()["test_mode"])
+        self.assertTrue(app_mod.test_mode_on())
+        self.client.post("/testmode", data={"passcode": pc, "enable": "false"})
+        self.assertFalse(app_mod.test_mode_on(), "must be switchable back off")
+
+    def test_the_run_page_shows_no_trace_of_test_mode_when_it_is_off(self):
+        """[TF-16] "Invisible until activated" is stronger than "password
+        protected" — a greyed-out control on a competition screen is still one a
+        CD can find and ask about."""
+        self._set_test_mode(False)
+        body = self.client.get("/run").text
+        self.assertNotIn("TEST MODE", body)
+        self.assertNotIn("fast-forward", body)
+
+    def test_the_run_page_warns_loudly_when_test_mode_is_on(self):
+        """A round that ends early must never leave a CD wondering why."""
+        self._set_test_mode(True)
+        body = self.client.get("/run").text
+        self.assertIn("TEST MODE", body)
+
     def test_api_docs_are_not_exposed(self):
         """[I-21] /docs is a POST console for run control on the public AP.
 

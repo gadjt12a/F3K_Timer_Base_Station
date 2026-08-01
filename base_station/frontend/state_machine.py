@@ -165,12 +165,43 @@ class CompetitionStateMachine:
     def skip_prep_to(self, seconds: int) -> bool:
         """CD control: during PREP, jump the countdown to ``seconds`` remaining
         (e.g. 60 = "1 minute to start" when everyone is ready). No-op outside PREP
-        or if the countdown is already at/below that point."""
+        or if the countdown is already at/below that point.
+
+        ⚠ Legitimate competition control, and deliberately NOT gated behind test
+        mode — shortening prep when everyone is ready changes nothing about the
+        round. Skipping WORKING or LANDING is a different matter entirely and goes
+        through ``skip_phase_to`` below.
+        """
         if self._state != "PREP":
             return False
         self._skip_to = max(0, int(seconds))
         log.info("Prep skip requested → %ds remaining", self._skip_to)
         return True
+
+    # Phases whose clock the test-mode fast-forward may move.
+    _SKIPPABLE = ("PREP", "WORKING", "LANDING")
+
+    def skip_phase_to(self, seconds: int) -> tuple[bool, str]:
+        """TEST ONLY: jump the *current* phase to ``seconds`` remaining. [TF-16]
+
+        Exists because verifying end-of-phase behaviour meant sitting through the
+        phase. A 10-minute working window costs ten minutes to reach its last ten
+        seconds, every time, and that is where the countdown, the horn and the
+        phase transition all live. The whole `ZZ-ACK-TEST` competition (30s prep /
+        60s WT / 15s land) exists only to make that wait shorter.
+
+        ⚠ **Cutting WORKING short falsifies the round**, so unlike `skip_prep_to`
+        this is refused unless test mode is on — see `/api/run/skip`.
+
+        Returns (ok, reason) so the caller can say why, rather than claiming
+        success. [I-10]
+        """
+        if self._state not in self._SKIPPABLE:
+            return False, f"Nothing to skip — state is {self._state}"
+        self._skip_to = max(0, int(seconds))
+        log.warning("[TEST] Fast-forward requested: %s → %ds remaining",
+                    self._state, self._skip_to)
+        return True, ""
 
     async def abort(self) -> None:
         engine.stop_schedule()
@@ -320,10 +351,29 @@ class CompetitionStateMachine:
         log.info("[AUDIO-T] START sent at %.3f — working clock anchored here",
                  loop.time() - seq_t0)
         deadline = loop.time() + 1.0
-        for remaining in range(d["working_time_s"], 0, -1):
+        self._skip_to = None
+        remaining = d["working_time_s"]
+        while remaining > 0:
+            # Test-mode fast-forward. [TF-16]
+            #
+            # ⚠ The timer is NOT re-synced here, deliberately. `TASK wt=` is the
+            # only message that carries a working time, and on the firmware it
+            # sets `g_wtMinutes` — whole minutes, used to configure a round, not
+            # to steer a running clock. Sending it mid-working would corrupt that
+            # value (15s becomes 0 minutes) without moving the display. The base's
+            # STOP is authoritative and still lands correctly, so a fast-forwarded
+            # working window ends properly; the timer's own display just will not
+            # have followed the jump. Acceptable, and test-only.
+            if self._skip_to is not None:
+                if remaining > self._skip_to:
+                    remaining = self._skip_to
+                    engine.reanchor(d["prep_time_s"] + d["working_time_s"] - remaining)
+                self._skip_to = None
+                deadline = loop.time() + 1.0
             self._wt_remaining = remaining
             await self._broadcast_tick(remaining)
             deadline = await self._tick_sleep(deadline)
+            remaining -= 1
         self._wt_remaining = 0
 
         await self._server.broadcast("STOP")
@@ -334,10 +384,24 @@ class CompetitionStateMachine:
         await self._server.broadcast(f"LAND t={d['land_time_s']}")
 
         deadline = loop.time() + 1.0
-        for remaining in range(d["land_time_s"], 0, -1):
+        self._skip_to = None
+        remaining = d["land_time_s"]
+        while remaining > 0:
+            # Test-mode fast-forward. [TF-16]. Unlike WORKING, the timer CAN be
+            # re-synced here: `LAND t=` is a pure display countdown, the same
+            # message the loop opened with and the one send_catchup() uses.
+            if self._skip_to is not None:
+                if remaining > self._skip_to:
+                    remaining = self._skip_to
+                    engine.reanchor(d["prep_time_s"] + d["working_time_s"]
+                                    + d["land_time_s"] - remaining)
+                    await self._server.broadcast(f"LAND t={remaining}")
+                self._skip_to = None
+                deadline = loop.time() + 1.0
             self._land_remaining = remaining
             await self._broadcast_tick(remaining)
             deadline = await self._tick_sleep(deadline)
+            remaining -= 1
         self._land_remaining = 0
 
         # ── Done ─────────────────────────────────────────────────────

@@ -1222,6 +1222,8 @@ async def run_get(request: Request, comps: str = None):
         "sel_ids": sel_ids,
         "initial_state": json.dumps(sm.get_status()),
         "tasks": merged_tasks(db),
+        # Nothing test-related renders unless this is true. [TF-16]
+        "test_mode": test_mode_on(),
     })
 
 
@@ -1265,6 +1267,60 @@ async def api_run_skip(to: int = 60):
     """CD control: during PREP, skip the countdown to `to` seconds remaining."""
     ok = app.state.state_machine.skip_prep_to(to)
     return {"ok": ok}
+
+
+# ---------------------------------------------------------------------------
+# Test mode — fast-forward the round clock. [TF-16]
+#
+# Verifying end-of-phase behaviour used to mean sitting through the phase: a
+# 10-minute working window costs ten minutes to reach its last ten seconds, and
+# that is exactly where the countdown, the horn and the phase transition live.
+#
+# ⚠ Invisible until activated, which is a stronger requirement than
+# password-protected. A greyed-out "Test mode" control on a competition screen is
+# still a control a CD can find and ask about, so nothing renders and the skip
+# endpoint 403s until the passcode has been entered. `/testmode` is deliberately
+# unlinked from every page and absent from the nav.
+# ---------------------------------------------------------------------------
+
+# Not a security boundary — the base station sits on its own closed networks and
+# anyone who can reach this can already drive the whole competition. It exists so
+# a CD cannot stumble into it. Override per-site with F3K_TEST_PASSCODE.
+_TEST_PASSCODE = os.environ.get("F3K_TEST_PASSCODE", "f3k-test-2026")
+
+
+def test_mode_on() -> bool:
+    return bool(audio_control.load_config().get("test_mode"))
+
+
+@app.post("/testmode")
+async def api_test_mode(passcode: str = Form(""), enable: bool = Form(True)):
+    """Turn test mode on or off. Unlinked by design — see the note above."""
+    if passcode != _TEST_PASSCODE:
+        log.warning("[TEST] rejected test-mode activation (bad passcode)")
+        return JSONResponse({"ok": False, "error": "Wrong passcode"}, status_code=403)
+    cfg = audio_control.load_config()
+    cfg["test_mode"] = bool(enable)
+    audio_control.save_config(cfg)
+    log.warning("[TEST] test mode %s", "ENABLED" if enable else "disabled")
+    return {"ok": True, "test_mode": bool(enable)}
+
+
+@app.post("/api/run/fast-forward")
+async def api_run_fast_forward(to: int = 15, response: Response = None):
+    """TEST ONLY: jump the current phase to `to` seconds remaining.
+
+    Refuses with 403 unless test mode is on. Cutting a working window short
+    falsifies the round, so this must never be reachable by accident — unlike
+    /api/run/skip, which only shortens prep and is a legitimate CD control.
+    """
+    if not test_mode_on():
+        return JSONResponse(
+            {"ok": False, "error": "Test mode is not enabled"}, status_code=403)
+    ok, reason = app.state.state_machine.skip_phase_to(to)
+    if not ok:
+        return JSONResponse({"ok": False, "error": reason}, status_code=409)
+    return {"ok": True, "to": to}
 
 
 async def _set_completed(group_id: int, completed: int, response: Response) -> dict:

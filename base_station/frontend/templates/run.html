@@ -72,6 +72,7 @@ function runner(initialState) {
         cdTime: { m: '', s: '', c: '' },
         cdAlt: '',
         cdError: '',
+        ffError: '',
 
         init() {
             // Timer polling must not depend on the websocket. connect() used to run
@@ -142,6 +143,21 @@ function runner(initialState) {
                 this.timers = fresh;
             } catch (e) {}
         },
+
+        {% if test_mode %}
+        // TEST ONLY. Server-rendered away entirely when test mode is off, so the
+        // page carries no trace of it — not even the endpoint name in view-source.
+        // The real gate is still server-side (/api/run/fast-forward 403s on its
+        // own); removing this is so a CD never encounters it at all. [TF-16]
+        async fastForward(seconds) {
+            this.ffError = '';
+            try {
+                const r = await fetch('/api/run/fast-forward?to=' + seconds, {method: 'POST'});
+                const d = await r.json();
+                if (!d.ok) this.ffError = d.error || 'Could not fast-forward';
+            } catch (e) { this.ffError = 'Request failed'; }
+        },
+        {% endif %}
 
         isPilotBound(name) {
             return this.timers.some(t => t.last_pilot_name === name);
@@ -710,6 +726,26 @@ function runner(initialState) {
 
         <!-- Pilot timer status + Flight log -->
         <div class="flex-shrink-0 bg-gray-800 rounded-lg p-4">
+
+            {% if test_mode %}
+            <!-- TEST MODE. Renders only when the flag is on, so a competition screen
+                 has no trace of it — see the note on /testmode in app.py. Loud on
+                 purpose: a round that ends early must never leave a CD wondering
+                 why. [TF-16] -->
+            <div class="mb-3 flex flex-wrap items-center gap-3 rounded border-2 border-amber-500 bg-amber-950/70 px-3 py-2">
+                <span class="text-sm font-bold tracking-wide text-amber-300">⚠ TEST MODE</span>
+                <span class="text-xs text-amber-200/90">
+                    The round clock can be fast-forwarded. Do not use during a real competition.
+                </span>
+                <button type="button" @click="fastForward(15)"
+                        :disabled="!['PREP','WORKING','LANDING'].includes(state)"
+                        class="rounded bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white
+                               hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40">
+                    ⏩ Skip to last 15s
+                </button>
+                <span x-show="ffError" x-text="ffError" class="text-xs font-medium text-red-300"></span>
+            </div>
+            {% endif %}
 
             <!-- Timer connection status strip -->
             <div class="flex flex-wrap gap-1.5 mb-3">
