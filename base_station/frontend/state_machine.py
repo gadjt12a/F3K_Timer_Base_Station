@@ -251,6 +251,9 @@ class CompetitionStateMachine:
             await send_fn(f"PILOTS {pilots_str}")
         if self._state == "PREP":
             if self._prep_remaining > 0:
+                # TASK first, same reason as at prep start: a timer joining mid-prep
+                # must know the mode before it can offer a Poker picker. [TF-10]
+                await send_fn(self._task_line(d["working_time_s"]))
                 await send_fn(f"PREP t={self._prep_remaining}")
         elif self._state == "WORKING":
             rem = self._wt_remaining if self._wt_remaining > 0 else d["working_time_s"]
@@ -353,6 +356,13 @@ class CompetitionStateMachine:
 
         remaining = d["prep_time_s"]
         self._prep_remaining = remaining
+        # ⚠ TASK goes out BEFORE prep, not only at the window open. A Poker call may
+        # be declared during prep — prep is when the caller actually has time to
+        # think — and the timer cannot offer a picker for a task it has not been
+        # told about yet. It used to learn the mode only after the prep loop ended,
+        # so L during prep did nothing at all. Re-sent at the window open below,
+        # which is harmless: TASK only updates the stored task/mode. [TF-10]
+        await self._server.broadcast(self._task_line(d["working_time_s"]))
         # Timers run the prep countdown locally from this; COUNT re-syncs the last 10s
         await self._server.broadcast(f"PREP t={remaining}")
         deadline = loop.time() + 1.0

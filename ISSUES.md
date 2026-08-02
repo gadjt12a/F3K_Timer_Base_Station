@@ -21,9 +21,22 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ---
 
-## Status (session 66, 2026-08-01)
+## Status (session 67, 2026-08-02)
 
-**51 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**58 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+
+[I-52]–[I-58] are the Poker picker's first contact with a human thumb. Every one
+of them was invisible to the code and to the test suite, and four of the first five made
+the feature **unusable rather than wrong** — the picker was shipped in session 66
+marked "not yet pressed by a human", and that label turned out to be the only
+honest thing in the entry.
+
+⚠ **The lesson is about what "done" means.** [I-52] was written, correct, and
+listed as Done in `SESSION_STATE.md` — it just never reached the glass, because
+only the *full-redraw* path used it and the in-air path is *incremental*. That is
+the third defect in this project of exactly that shape ([I-37]/[I-38] were the
+others). **A render helper that is not called from `_updateRunningInc()` is not
+running during a flight.**
 
 [I-46]–[I-51] all came out of the tester's 2026-08-01 session and are all closed.
 The rest of that list is feature work, tracked in `TESTER_FEEDBACK.md`.
@@ -1500,6 +1513,199 @@ the TF-10/TF-11 timer work rather than alone.
 ⚠ `LAND t=` already does exactly this job for the landing window, which is why a
 LANDING fast-forward re-syncs correctly today and a WORKING one does not. `WTSYNC`
 is the same idea, and should have existed from the start.
+
+---
+
+### I-52 · The flight clock never counted down to the target · FIXED (session 67, fw-v32) · P2
+`F3K_Timer_1/src/display/UI.cpp` (`_updateRunningInc`)
+
+Found by the tester on the first Poker round ever flown: *"FT timer was counting
+up not down."*
+
+`_flightShowMs()` — which counts the flight **down** to the declared target and
+turns it orange past it — was correct, tested, and used by every full-redraw path.
+It was not used by `_updateRunningInc()`, which drew `ft.elapsed()` raw in green.
+
+⚠ **`_updateRunningInc()` is the only path that redraws the flight clock while a
+glider is in the air.** It runs every 50 ms; the full-redraw paths run on state
+*changes*. So the countdown was live for exactly the frames where nothing was
+flying, and absent for the entire flight — the one time it exists to be read.
+
+This is the third instance of the family that produced [I-37] and [I-38]. The rule
+is now explicit: **if a render helper is not called from the incremental path, it
+does not run during a flight.**
+
+---
+
+### I-53 · R was dead on "---", so a sub-minute call was unreachable · FIXED (session 67, fw-v32) · P2
+`F3K_Timer_1/src/main.cpp` (`STATE_TARGET_SET`)
+
+Reported as *"you can not set a sub 1 minute flight"*, and the serial log shows
+exactly how it felt from the outside:
+
+```
+19:41:38  [BTN] A clicked          ← L opens the picker, on "---"
+19:41:40  [BTN] B clicked          ← R … nothing
+19:41:41  [BTN] B clicked          ← R … nothing
+19:41:42  [BTN] B clicked          ← R … nothing
+19:41:45  [MAIN] Target picker cancelled
+```
+
+The picker opens on `---` and R was guarded by `if (!g_pickNone && !g_pickWindow)`,
+so **the timekeeper's first three presses did nothing at all.** Reaching `0:45`
+required knowing to press L exactly once first — and L only moves forward, so
+overshooting meant cycling the whole minute range to get back.
+
+Fixed by letting R leave `---` the same way it leaves any other value: first click
+gives `0:05`. Sub-minute calls are now the *shortest* path in the picker rather
+than the least reachable.
+
+⚠ Confirming `0:00` is now refused and logged. It stores as `TARGET_NONE_S`, so it
+would have looked like a declared call and behaved like no call at all.
+
+---
+
+### I-54 · The +1 s fine adjust could never be reached · FIXED (session 67, fw-v32) · P2
+`F3K_Timer_1/src/input/Buttons.cpp`, `main.cpp` (`STATE_TARGET_SET`)
+
+Found by reading the button thresholds while investigating [I-53], not by pressing.
+
+`+1 s` was bound to R **very-long** (2000 ms) and confirm to R **hold** (800 ms).
+Both fire *while the button is still down*, so the 800 ms confirm always ran first
+and left `STATE_TARGET_SET` before 2000 ms could arrive. **The fine adjust was
+unreachable by construction**, which meant the picker could only express multiples
+of five seconds — and the rulebook's own worked example call is **2:38**.
+
+Fixed by adding `btnBLongClicked()`, classified **on release** (pressed 800–2000 ms
+and let go). Confirm moved to the 2 s hold, `+1 s` to the medium press.
+
+⚠ **Accepted trade-off, do not "fix" it back.** Kris: *"+1 is on R release which
+feels strange, but is really the only way we will get +1s in there and they are
+not used very often."* Acting on release is the only way to distinguish two hold
+lengths on one button — anything that fires while held commits to the shorter one.
+
+---
+
+### I-55 · A Poker call could not be made during prep, twice over · FIXED (session 67, fw-v32) · P2
+`F3K_Timer_1/src/main.cpp` (`STATE_PREP`), `base_station/frontend/state_machine.py`
+
+Requested by the tester — *"needs to have L available through full prep time"* —
+because prep is the only part of a round when the caller has time to think and
+write the call down. It was blocked at both ends:
+
+1. **Firmware:** `STATE_PREP` had no `btnL` handler at all.
+2. **Base:** `TASK … mode=poker` was broadcast *after* the prep loop ended, so for
+   the whole of prep the timer did not know it was flying Poker and
+   `_pokerCanDeclare()` was false regardless. Fixing only the firmware would have
+   changed nothing visible.
+
+Also fixed, and each would have been its own defect:
+
+- `_startRound()` reset `g_targetS` unconditionally, so a call made in prep was
+  **discarded the instant the window opened** — the exact thing being asked for.
+  Now guarded by `g_prepDeclared`.
+- The prep clock, its beeps and the no-START fallback all lived inside
+  `case STATE_PREP`, so opening the picker **froze the countdown behind it** and
+  the window would never have opened. Extracted to `_tickPrepClock()`.
+- `START` and `COUNT` were ignored in `STATE_TARGET_SET`, so a caller still
+  holding the picker open at zero would never have started the round.
+- `W` resolves against `g_wt.getRemaining()`, which is zero during prep. In prep it
+  now resolves to the full working time — the rest of a window that has not opened
+  is the whole window.
+
+⚠ R stays locked until `PREP_UNLOCK_S` (2 s) exactly as before, so this cannot
+turn into an accidental launch.
+
+---
+
+### I-56 · W was the slowest call to enter, and it is the one that decays · FIXED (session 67, fw-v32) · P2
+`F3K_Timer_1/src/main.cpp` (`STATE_TARGET_SET`)
+
+Raised by the tester mid-test. The L cycle ran `--- → 0 → 1 → … → max → W`, putting
+`W` **last** — up to eleven presses away on a ten-minute window.
+
+Kris: *"if the pilot does a quick turn around and calls window you want to select
+it quickly. Selecting any other FT does not matter as we are counting down from
+the started time, but W is getting shorter while you are selecting the time."*
+
+That is the whole argument: every numeric call is worth the same whenever it is
+entered, but `W` resolves to *the working time remaining at the moment of confirm*,
+so time spent dialling it is time taken off the call. It is also the natural
+quick-turn-around call, i.e. the one made under the most time pressure.
+
+Cycle is now `--- → W → 0 → 1 → … → max → ---`. **W is one press from opening.**
+
+---
+
+### I-57 · A W call resolved at the call, so it could not be flown · FIXED (session 67, fw-v33) · P1
+`F3K_Timer_1/src/main.cpp` (`_confirmTargetPicker`, `_resolveWindowTarget`, `_judgeTarget`)
+
+Found by the tester on the second press-through: *"there is an interesting thing
+that happens with W — when you select it but do not launch straight away, you are
+not able to fly the window."* Exactly right, and it is a **scoring** defect.
+
+`W` was converted to a concrete number of seconds the instant it was confirmed —
+"the working time remaining right now". But the working clock keeps running while
+the pilot walks to the line, so the target was always longer than the window that
+was actually left to fly. Measured on the old build:
+
+```
+19:22:53  Target declared: W (58s remaining)
+19:23:52  Target 58s (W) vs flight 55.7s -> MISSED     ← flew the whole window
+```
+
+The pilot flew to the horn — the literal definition of the call — and was scored
+zero. **A W was unflyable unless the glider was launched in the same second it was
+called**, and it gets one attempt only, so the pilot could not even retry.
+
+Fixed by keeping `W` unresolved (`g_targetWindowPending`) until the glider leaves
+the hand, then resolving against the clock at that moment. Verified on the same
+hardware minutes later:
+
+```
+19:36:19  Target declared: W (292s now; resolves at launch)
+19:36:27  W resolved at launch: 284s to the end of the window
+19:41:11  Target 284s (W) vs flight 284.5s -> ACHIEVED
+```
+
+Three consequences, all deliberate:
+
+- **The screen shows `TGT W m:ss`, ticking down** while the pilot walks up — what
+  the call is worth *if thrown now*, which is the number the timekeeper needs.
+- **A W is judged on still being airborne when the window shuts**, not on
+  arithmetic. Its resolved target is the time left at launch, so the flight ends
+  within milliseconds of it and the truncating `(int)(durMs/1000) >= target`
+  compare could put it one second under — failing the one call that can be flown
+  perfectly.
+- **A W called while already flying resolves immediately**: the launch has
+  happened, so there is nothing left to wait for.
+
+⚠ `g_windowUsed` survives `_startRound()` alongside a prep-declared W, or the
+one-attempt-only rule would be silently lost at the window opening.
+
+---
+
+### I-58 · The screen blanked mid-flight · FIXED (session 67, fw-v34) · P1
+`F3K_Timer_1/src/main.cpp` (`_screenMaySleep`)
+
+Seen live: *"watch went to sleep in flight, we can't have that."* The log agrees —
+`Screen asleep (state=2)` twice during a single 284-second flight, `state=2` being
+`STATE_FLIGHT_RUNNING`.
+
+`_screenMaySleep()` refuses to blank a live round **unless** `_benchMode()` is
+true, which it is whenever a USB cable is attached. The rule was written to stop an
+unattended simulated round burning the AMOLED. But **the timer is permanently
+wired to the Pi for development**, so bench mode is true for every round anyone
+actually tests — the protection was active in exactly the situation it was never
+meant for.
+
+Now: a live round with the base station connected never blanks, cable or not. Bench
+blanking applies only to a *standalone* round, and a round the base is driving is by
+definition attended.
+
+⚠ This is the second defect caused by `_benchMode()` being true on the test rig.
+Anything gated on it needs asking: *is this true of the test setup, and is that
+what I meant?*
 
 ---
 

@@ -15,13 +15,29 @@ A single asyncio process runs two servers in one event loop:
   is reported as "behind" rather than guessed at), PING/PONG keepalive (base sends PONG every 15s; a successful
   send resets the ping clock so freshly reconnected timers aren't evicted before their
   first 30s PING), and the round protocol (PREP / TASK / START / STOP / LAND / PILOTS /
-  COUNT / SCREEN / FLIGHT / JUMPED / SCRATCH / ALTITUDE). Timers run the prep and landing countdowns locally
-  from `PREP t=` / `LAND t=`; COUNT re-syncs the last 10s of prep. JUMPED (launch before
-  the start horn) is surfaced to the CD only — never recorded. SCRATCH (the caller
-  discarded a flight already reported) **flags** the row rather than deleting it: the
-  timer re-reports the round from NVS at the end, so a deleted row would find no dedup
-  match and be re-inserted seconds later. Scratched flights are excluded from scoring and
-  from the GliderScore export, and shown struck through on Results. FLIGHT, JUMPED,
+  COUNT / SCREEN / WTSYNC / FLIGHT / JUMPED / SCRATCH / ALTITUDE). Timers run the prep and landing countdowns locally
+  from `PREP t=` / `LAND t=`. ⚠ `TASK` goes out **before** `PREP`, not only at the window
+  open: a Poker call may be declared during prep, and a timer cannot offer a picker for a
+  task it has not been told about yet — it used to learn the mode only after prep ended,
+  so the button did nothing for the whole countdown. It is re-sent at the window open and
+  on a mid-prep rejoin. COUNT re-syncs the last 10s of prep, and `WTSYNC t=<seconds>`
+  does the same for a *running* working-time clock — the base is the master clock, and
+  before it existed a timer reconnecting mid-working was told a time truncated to whole
+  minutes (45 s left became zero).
+  `TASK` also carries `task=` and `mode=` (`plain` / `poker` / `ladder`) with the rule's
+  parameters: the timer had no task letter at all, so it could not know it was flying a
+  target task. Anything unrecognised, or absent, is `plain`.
+  **A launch that happened always counts as a launch and scores zero**, however it was
+  voided — several tasks limit launches, so a voided flight that vanished would buy the
+  pilot a free extra attempt. That covers both SCRATCH (the caller discarded it — a
+  land-out) and JUMPED (launched before the window opened); `void_reason` records which,
+  because a dispute turns on it. The row is flagged rather than deleted: the timer
+  re-reports the round from NVS at the end, so a deleted row would find no dedup match
+  and be re-inserted seconds later. Both export to GliderScore as a zero **in their own
+  slot** — omitting them would shift every later flight up one.
+  FLIGHT carries `target=` (and `tw=1` for an "end of working time" call) when the flight
+  was flown against a declared target, which is what makes Poker scoreable: FAI credits
+  the **announced** time, never the flown one. FLIGHT, JUMPED,
   SCRATCH, ALTITUDE,
   and SELECT are acknowledged (`ACK <line>`) — **always**, including duplicates and
   messages the base deliberately discards. The timer holds each one until ACKed, so a
@@ -112,6 +128,7 @@ Two conventions came out of that pass and are worth keeping:
 | `/reports/flight_cards/{id}` | Printable pilot flight cards (A4 landscape, 2×2 per page) — one card per pilot per discipline for the full comp; pre-filled from draw with Rd.Grp, full task name, and blank flight columns; F5K cards include paired Alt columns (blue tint); MIXED comps produce separate F3K and F5K cards per pilot; "🖨 Cards" button on Rounds page |
 | `/pilot` | Mobile read-only pilot view — state, live countdown, current heat + pilots, leaderboard link; captive-portal landing page for phones on F3K_OPS |
 | `/health` | JSON status (timers connected) |
+| `/testmode` | **Unlinked by design.** POST a passcode to enable the round-clock fast-forward (`F3K_TEST_PASSCODE`, default in code — this is not a security boundary, it exists so a CD cannot stumble into it). Nothing test-related renders on `/run` until it is on, not even the endpoint name in view-source; `POST /api/run/fast-forward?to=N` 403s independently. Jumps the current phase (PREP/WORKING/LANDING) to N seconds and re-anchors the audio and the timers with it. ⚠ Distinct from `/api/run/skip`, which shortens **prep** only and is a legitimate CD control |
 
 Tailwind and Alpine are vendored under `frontend/static/` and served by the Pi — no
 internet needed at the field. Competitions list newest-first everywhere; archived
