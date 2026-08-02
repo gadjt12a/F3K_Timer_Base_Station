@@ -150,6 +150,32 @@
     </div>
     <p x-show="renumberMsg" class="text-xs text-yellow-400 mb-2" x-text="renumberMsg"></p>
 
+    <!-- Firmware is pushed automatically, so this panel only appears when a timer
+         is behind and the push is being HELD. The automatic sweep refuses while a
+         heat is loaded, and a heat only unloads when a round runs to completion —
+         so an aborted or abandoned heat blocks updates until someone says do it
+         anyway. Found by testing the safety gate. -->
+    <div x-show="timersBehind.length"
+         class="mb-4 rounded border border-sky-600 bg-sky-900/30 px-3 py-2 text-sm">
+      <p class="font-semibold text-sky-300">
+        <span x-text="timersBehind.length"></span>
+        timer(s) waiting to update to <span class="font-mono" x-text="otaVersion || '—'"></span>
+      </p>
+      <p class="text-sky-200/90 text-xs mt-1">
+        Updates are pushed automatically, but only when no heat is loaded — an update
+        reboots the timer. A heat stays loaded until its round finishes, so an
+        abandoned heat holds them here.
+      </p>
+      <div class="mt-2 flex items-center gap-2">
+        <button @click="updateTimersNow()"
+                class="rounded border border-sky-600 px-2 py-1 text-xs text-sky-200 hover:bg-sky-900/50">
+          Update now
+        </button>
+        <span class="text-sky-200/60 text-xs">refuses while a round is running</span>
+      </div>
+      <p x-show="updateMsg" x-text="updateMsg" class="text-xs mt-2 text-sky-200"></p>
+    </div>
+
     <!-- The base station is the stale one here: somebody updated the timers and
          not the Pi. Worth a banner rather than a tooltip, because the failure it
          prevents is a CD "updating" a timer straight back to an older build. -->
@@ -311,6 +337,8 @@ function settings() {
     audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0, output: 'jack', jack_card: null, usb_card: null, usb_name: null, device_override: null },
     discovered: [], scanBusy: false, msg: '',
     timers: [], events: [], baseFwStale: false, otaVersion: null, downgradeMsg: '',
+    updateMsg: '',
+    get timersBehind() { return this.timers.filter(t => t.fw_state === 'behind'); },
     restoreBusy: false, restoreError: '',
     sysInfo: { git: false }, updateBusy: false, updateMsg: '', updateOutput: '', updateOk: null,
 
@@ -391,6 +419,17 @@ function settings() {
       const r = await (await fetch('/api/timers')).json();
       this.timers = r.timers; this.events = r.events;
       this.baseFwStale = r.base_firmware_stale; this.otaVersion = r.ota_version;
+    },
+    async updateTimersNow() {
+      const res = await fetch('/api/timers/update-now', { method: 'POST' });
+      const r = await res.json();
+      this.updateMsg = r.ok
+        ? ((r.pushed || []).length
+             ? ('Updating timer(s) ' + r.pushed.join(', ') + ' to ' + r.to +
+                ' — they will reboot and rejoin.')
+             : 'Every connected timer is already up to date.')
+        : (r.error || 'update refused');
+      this.loadTimers();
     },
     async downgradeTimers() {
       if (!confirm('Flash every connected timer BACKWARDS to ' + (this.otaVersion || '?') +

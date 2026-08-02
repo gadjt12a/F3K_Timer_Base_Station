@@ -1770,6 +1770,30 @@ Verified end to end on hardware, with no human in the loop:
 `OTAPUSH` — a genuine older build ignores the command. Build with `FW_VERSION`
 backdated and the current code.
 
+⚠ **And it needs `otadata` cleared.** A device that has just taken an OTA is
+running from `ota_1`, so the wired `write_flash 0x10000` lands in the slot that is
+**not** running: esptool says `Hash of data verified`, the device reboots, and
+rejoins on the version you were trying to replace. Hit during this very test —
+the timer came back as fw-v37 when it had just been flashed with fw-v36. This is
+trap 1 in the flashing notes, and taking an OTA is exactly what makes it fire.
+
+**The gate was then tested properly, and the second half found a gap:**
+
+```
+21:39:25  JOIN fw=fw-v36
+21:39:44  [OTA] holding push of fw-v37 to T1 — a heat is loaded and about to run
+```
+
+Held correctly. But `abort` does **not** clear `_loaded` — only a round running to
+completion does (`state_machine.py:454`). So a CD who loads a heat and aborts it,
+or just leaves one loaded over lunch, blocks every firmware update indefinitely.
+The automatic gate was left conservative and an explicit override added instead:
+`POST /api/timers/update-now`, surfaced as an **Update now** panel on Settings that
+appears only while a timer is behind, and which says why the push is waiting.
+
+⚠ The override skips the *loaded* check only. A live round still refuses, on both
+it and the downgrade — verified: `409 Not now — a round is PREP`.
+
 ---
 
 ### I-62 · The whole suite could pass against an app that dies on boot · FIXED (session 67) · P2

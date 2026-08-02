@@ -1587,6 +1587,44 @@ async def api_timers():
     }
 
 
+@app.post("/api/timers/update-now")
+async def api_timers_update_now(response: Response = None):
+    """Push firmware now, overriding the 'a heat is loaded' hold.
+
+    The automatic sweep refuses while a heat is loaded, because a loaded heat means
+    the CD is about to press Start. But `_loaded` is only cleared by a round running
+    to **completion** — an aborted or abandoned heat stays loaded indefinitely, so a
+    CD who loads a heat and walks away blocks every update until the next full
+    round. Found by testing the gate, not by review.
+
+    ⚠ This overrides the *loaded* check only. A live round still refuses: nothing
+    reboots a timer with a glider in the air.
+    """
+    sm = app.state.state_machine
+    if sm.state != "IDLE":
+        response.status_code = 409
+        return {"ok": False, "error": f"Not now — a round is {sm.state}"}
+
+    ota_ver = _ota_version()
+    ota_n = _fw_num(ota_ver)
+    if ota_n is None:
+        response.status_code = 409
+        return {"ok": False, "error": "This base station has no firmware to serve"}
+
+    srv = app.state.server
+    sent = []
+    for t in srv.timers_info():
+        if _fw_num(t.get("fw")) is not None and _fw_num(t.get("fw")) >= ota_n:
+            continue
+        log.warning("[OTA] manual push of %s to T%s (on %s)",
+                    ota_ver, t.get("id"), t.get("fw") or "?")
+        _ota_pushed[t["mac"]] = ota_ver
+        _ota_held.pop(t["mac"], None)
+        await srv.send_to(t["id"], "OTAPUSH")
+        sent.append(t.get("id"))
+    return {"ok": True, "pushed": sent, "to": ota_ver}
+
+
 @app.post("/api/timers/downgrade")
 async def api_timers_downgrade(timer_id: int = None, response: Response = None):
     """Flash a timer BACKWARDS to the build this base station is serving.
@@ -2443,6 +2481,7 @@ def _ota_version() -> str | None:
 # Timers we have already told to update, so a timer that takes 30 s to download and
 # reboot is not pushed again on every sweep. Cleared when it rejoins on a new build.
 _ota_pushed: dict[str, str] = {}          # mac -> version we pushed
+_ota_held: dict[str, str] = {}            # mac -> why we last declined to push
 
 
 def _ota_push_is_safe() -> tuple[bool, str]:
@@ -2484,8 +2523,14 @@ async def _ota_autopush() -> None:
         if _ota_pushed.get(mac) == ota_ver:
             continue                        # already told, still downloading
         if not safe:
-            log.debug("[OTA] holding push to T%s — %s", t.get("id"), why)
+            # Logged at INFO, but only when the reason CHANGES — a sweep every 20 s
+            # would otherwise bury the log all day. "Why has my timer not updated?"
+            # is a question the log has to be able to answer.
+            if _ota_held.get(mac) != why:
+                _ota_held[mac] = why
+                log.info("[OTA] holding push of %s to T%s — %s", ota_ver, t.get("id"), why)
             continue
+        _ota_held.pop(mac, None)
         log.warning("[OTA] pushing %s to T%s (on %s)", ota_ver, t.get("id"), fw or "?")
         _ota_pushed[mac] = ota_ver
         await srv.send_to(t["id"], "OTAPUSH")
