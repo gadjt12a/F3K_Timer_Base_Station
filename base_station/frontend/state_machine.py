@@ -236,7 +236,7 @@ class CompetitionStateMachine:
         tm = scoring.target_mode(d["discipline"], d["task"])
         parts = [f"TASK wt={wt_s}", f"disc={d['discipline']}",
                  f"task={d['task']}", f"mode={tm['mode']}"]
-        for key in ("start", "step", "targets"):
+        for key in ("start", "step", "targets", "rungs"):
             if key in tm:
                 parts.append(f"{key}={tm[key]}")
         return " ".join(parts)

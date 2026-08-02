@@ -118,19 +118,32 @@ class TestF3KTasks(unittest.TestCase):
         r = score_task("F3K", "J", s(200, 100, 110, 120))
         self.assertEqual(r.flight_scores, [0, 100, 110, 120])
 
-    def test_k_big_ladder_in_order(self):
-        # targets 1:00 1:30 2:00 2:30 3:00, capped per slot
+    def test_k_big_ladder_advances_only_when_reached(self):
+        """Rungs 1:00 1:30 2:00 2:30 3:00, and the rung rises ONLY on success — a
+        missed rung is re-flown against the same time. Kris ruled on this 2026-08-02:
+        Ladder and Big Ladder run the same way.
+
+        The second flight here (85 s against the 90 s rung) is the whole difference:
+        as a sequence it scored 85 and moved on; as a ladder it scores 0 and the
+        pilot flies 1:30 again."""
         r = score_task("F3K", "K", s(75, 85, 130, 160, 200))
-        self.assertEqual(r.flight_scores, [60, 85, 120, 150, 180])
-        self.assertEqual(r.raw_s, 595)
+        self.assertEqual(r.flight_scores, [60, 0, 90, 120, 150])
+        self.assertEqual(r.raw_s, 420)
+
+    def test_k_big_ladder_stops_after_the_last_rung(self):
+        """Five rungs and no more: a sixth flight scores nothing even if it is long."""
+        r = score_task("F3K", "K", s(65, 95, 125, 155, 185, 300))
+        self.assertEqual(r.flight_scores, [60, 90, 120, 150, 180, 0])
 
     def test_l_one_flight(self):
         r = score_task("F3K", "L", s(605, 300))
         self.assertEqual(r.flight_scores, [599, 0])
 
     def test_m_huge_ladder(self):
+        """Rungs 3:00 / 5:00 / 7:00, advancing only when reached. The 400 s flight
+        misses the 420 s rung and scores nothing — as a sequence it scored 400."""
         r = score_task("F3K", "M", s(190, 320, 400))
-        self.assertEqual(r.flight_scores, [180, 300, 400])
+        self.assertEqual(r.flight_scores, [180, 300, 0])
 
     def test_n_best_flight(self):
         r = score_task("F3K", "N", s(300, 550, 200))
@@ -267,13 +280,22 @@ class TestTargetMode(unittest.TestCase):
             with self.subTest(task=task):
                 self.assertEqual(scoring.target_mode("F3K", task), {"mode": "plain"})
 
-    def test_sequence_tasks_are_not_ladders(self):
-        """K "Big Ladder" advances every launch whether reached or not, and M is a
-        fixed 3/5/7. Running them as a ladder would hold a pilot on a rung they
-        have already passed."""
-        for task in ("K", "M", "H"):
-            with self.subTest(task=task):
-                self.assertEqual(scoring.target_mode("F3K", task)["mode"], "plain")
+    def test_big_and_huge_ladders_are_ladders(self):
+        """Kris, 2026-08-02: "Ladder and Big ladder run the same way." The rung rises
+        only when it is reached, so K and M are ladders — they were scored as
+        sequences (advance every launch regardless) until that ruling. Sent as an
+        explicit rung list, because they do not climb by a fixed step.
+
+        ⚠ `rungs`, not `targets`: `targets` already carries Poker's target COUNT."""
+        self.assertEqual(scoring.target_mode("F3K", "K"),
+                         {"mode": "ladder", "rungs": "60,90,120,150,180"})
+        self.assertEqual(scoring.target_mode("F3K", "M"),
+                         {"mode": "ladder", "rungs": "180,300,420"})
+
+    def test_matched_target_tasks_are_still_plain(self):
+        """H matches flights to targets in any order, so there is no rung to show a
+        pilot before a throw and nothing for the timer to count down to."""
+        self.assertEqual(scoring.target_mode("F3K", "H"), {"mode": "plain"})
 
     def test_an_unknown_task_is_plain_not_a_guess(self):
         """A timer that guessed `poker` would demand a target that does not exist

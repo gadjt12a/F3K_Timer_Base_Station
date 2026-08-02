@@ -56,6 +56,21 @@
 </div>
 {% endif %}
 
+{# A GliderScore-imported competition is scored in GliderScore. Ours still runs so
+   the CD has live standings during the day, but the page must say which number the
+   pilots are actually given — two totals for one pilot is only a hazard unlabelled. #}
+{% if unofficial and comp %}
+<div class="mb-4 rounded-lg border border-amber-600/60 bg-amber-950/40 px-4 py-3">
+    <p class="{% if kiosk %}text-lg{% else %}text-sm{% endif %} font-semibold text-amber-300">
+        UNOFFICIAL — GliderScore is the official scorer for this competition
+    </p>
+    <p class="{% if kiosk %}text-base{% else %}text-xs{% endif %} text-amber-200/80 mt-0.5">
+        Imported from GliderScore (comp #{{ comp.gliderscore_comp_no }}). These standings are a live
+        guide only. Export the times and recalculate in GliderScore for the result of record.
+    </p>
+</div>
+{% endif %}
+
 {% if not comp %}
 <p class="text-gray-400">No competitions yet. Set up a competition and add rounds first.</p>
 {% elif not data.standings %}

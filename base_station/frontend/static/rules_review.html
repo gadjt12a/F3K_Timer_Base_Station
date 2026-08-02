@@ -970,18 +970,64 @@
     </div>
   </div>
 
-  <div class="rule" data-s="gap">
+  <div class="rule" data-s="ok">
     <div class="rid">R-19</div>
     <div class="rule-body">
-      <span class="chip">Known gap</span>
-      <p class="claim"><strong>Poker is not really implemented.</strong> A declared target is central
-      to the task, and the system never records a declaration. It simply takes the achieved times and
-      scores the best few. A pilot who declares 3:00 and flies 2:30 should score nothing for that
-      flight; here they score 2:30.</p>
-      <div class="note challenge"><span class="note-label">The single biggest known gap</span>
-        <p>It needs either a way for the timekeeper to enter a declaration on the timer before the
-        launch, or an explicit decision that Poker is scored by the CD in GliderScore and the timer
-        only records times.</p></div>
+      <span class="chip">Verified</span>
+      <p class="claim"><strong>Poker is implemented, declarations and all.</strong> This was the
+      system's largest known gap until August 2026 and is now closed end to end: the timekeeper
+      calls the target on the timer, the target travels with the flight, and the score is the
+      <em>announced</em> time — never the flown one.</p>
+      <p class="claim">The call can be made before the launch, immediately after it (which
+      <strong>F3K.11.5</strong> explicitly permits), or during the prep window before the round even
+      opens. A missed call stays armed and is re-flown against the same time, because the rulebook
+      says a call that was not reached <em>"cannot be changed"</em>. The one exception is the
+      end-of-working-time call <strong>W</strong>, which gets a single attempt.</p>
+      <div class="note"><span class="note-label">Flown on hardware</span>
+        <p>Three targets per pilot, per the 2025 edition. A pilot who calls 3:00 and flies 2:30 now
+        scores <strong>zero</strong> for that flight, which is the case this entry was originally
+        written about.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-19a</div>
+    <div class="rule-body">
+      <span class="chip">For the moderators</span>
+      <p class="claim"><strong>A Poker flight longer than the call scores the call, not zero.</strong>
+      Fly 1:03 against a 1:00 announcement and you are credited 1:00. Overrunning costs you the
+      surplus airtime but does not void the flight.</p>
+      <div class="note challenge"><span class="note-label">Please confirm this reading</span>
+        <p>This is how the system behaves, and it comes straight from <strong>F3K.11.5</strong>,
+        SC4 Vol. F3 <code>SOARING_25 V2</code>, effective 1 June 2025: <em>"if the target is reached
+        or exceeded, then the target time is credited."</em> The worked example in the rulebook
+        scores 45 s for a 46 s flight against a 45 s call.</p>
+        <p>It was queried during testing on the expectation that overrunning should fail, so we would
+        like it confirmed by people who run these competitions rather than settled by us reading the
+        clause. <strong>If overrunning should fail, say so</strong> — it is a one-line change, but it
+        would change scores.</p></div>
+      <div class="note"><span class="note-label">⚠ Quote the 2025 edition</span>
+        <p>Task E changed materially since the 2011 text that is still widely mirrored: five targets
+        became <strong>three</strong>, and the W call went from <em>explicitly forbidden</em> to
+        <em>explicitly permitted, one attempt</em>. Any challenge to the above should cite the 2025
+        PDF.</p></div>
+    </div>
+  </div>
+
+  <div class="rule" data-s="warn">
+    <div class="rid">R-19b</div>
+    <div class="rule-body">
+      <span class="chip">For the moderators</span>
+      <p class="claim"><strong>Ladder, Big Ladder and Huge Ladder all advance only when the target is
+      reached.</strong> A missed rung is re-flown against the same time; the target rises solely on
+      success.</p>
+      <div class="note challenge"><span class="note-label">Please confirm this reading</span>
+        <p>The alternative reading — that the targets in K and M advance on every launch whether or
+        not they were reached, so a missed rung is simply lost — was what the scoring engine assumed
+        until August 2026. The two produce different scores for the same flights, so this needs to be
+        right.</p>
+        <p>Task D rises 15 s at a time from 30 s. Big Ladder (K) is 1:00 / 1:30 / 2:00 / 2:30 / 3:00
+        and Huge Ladder (M) is 3:00 / 5:00 / 7:00.</p></div>
     </div>
   </div>
 
@@ -1306,7 +1352,7 @@
   for challenge — better you tell us which of these matters than a CD discovers one mid-competition.</p>
   <ul class="omit">
     <li><strong>No landing scoring or bonus.</strong></li>
-    <li><strong>No Poker declarations</strong> — the largest gap (R-19).</li>
+    <li><s>No Poker declarations</s> — <strong>closed August 2026</strong>, see R-19.</li>
     <li><strong>No penalties of any kind.</strong> No airframe, safety or late-landing penalties.
       There is a penalty field in the database and nothing writes to it.</li>
     <li><strong>No fly-off handling.</strong> A fly-off is run as ordinary extra rounds.</li>

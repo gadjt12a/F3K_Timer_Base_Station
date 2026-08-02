@@ -1680,6 +1680,12 @@ async def leaderboard_get(request: Request, comp_id: int = None, discipline: str
         "discipline": discipline or "",
         "data": data,
         "kiosk": kiosk,
+        # A competition imported from GliderScore is scored IN GliderScore — it owns
+        # the drops, the normalisation and the penalties, and it is the result the
+        # pilots are given. Our engine still runs, because a CD wants live standings
+        # during the day, but the page has to say plainly which number is the real
+        # one. Two numbers for the same pilot is only a hazard if nobody labels them.
+        "unofficial": bool(comp and comp["gliderscore_comp_no"]),
     })
 
 

@@ -18,6 +18,13 @@ _GS_CLASS = {
     "F5K": "F5K",
 }
 
+# The standard F3K timing profile — GliderScore's own `F3K-3m10m30s`. Used when an
+# imported competition brings no timings of its own, which is every one of them:
+# see the note in create_competition().
+GS_DEFAULT_PREP_S = 180   # 3:00
+GS_DEFAULT_WT_S   = 600   # 10:00
+GS_DEFAULT_LAND_S = 30    # 0:30
+
 # Working time in seconds for F3K task strings that aren't 10 min
 _F3K_WT_S: dict[str, int] = {
     "A(2)": 420, "B(2)": 420,   # 7-min variants
@@ -51,8 +58,8 @@ def _mdb_export(mdb_path: str, table: str) -> list[dict]:
 
 def _working_time_s(discipline: str, task: str) -> int:
     if discipline == "F3K":
-        return _F3K_WT_S.get(task, 600)
-    return _F5K_WT_S.get(task, 600)
+        return _F3K_WT_S.get(task, GS_DEFAULT_WT_S)
+    return _F5K_WT_S.get(task, GS_DEFAULT_WT_S)
 
 
 def _task_letter(task_str: str) -> str:
@@ -168,11 +175,25 @@ def import_competition(mdb_path: str, gs_comp_no: int, db: sqlite3.Connection) -
 
     db.commit()
 
-    # Create competition
+    # Create competition.
+    #
+    # ⚠ Prep and landing times are NOT in the .mdb in any usable form. GliderScore
+    # does encode them — its `TimerNames` profiles are named `F3K-3m10m30s`, i.e.
+    # PT 3m / WT 10m / LT 30s — but `Comps.AudioProfileDT` holds a loose string
+    # (`AudioProfileDT1`) with no mapping table, and it is empty on nearly every
+    # competition. Checked against the real GliderScore6 database rather than
+    # assumed. So an import falls back to the standard F3K profile, which is what
+    # `F3K-3m10m30s` describes: PT 3:00, WT 10:00, LT 0:30.
+    #
+    # Working time is the exception and is better than a default: GliderScore does
+    # carry the task per round, and the task determines the window (A(2) is 7 min,
+    # E(2) and M are 15). See _working_time_s().
     cur = db.execute(
-        """INSERT INTO competitions (name, discipline, date, gliderscore_comp_no)
-           VALUES (?, ?, ?, ?)""",
-        (comp_row["CompName"], discipline, comp_date, gs_comp_no),
+        """INSERT INTO competitions (name, discipline, date, gliderscore_comp_no,
+                                     prep_time_s, land_time_s)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (comp_row["CompName"], discipline, comp_date, gs_comp_no,
+         GS_DEFAULT_PREP_S, GS_DEFAULT_LAND_S),
     )
     comp_id = cur.lastrowid
 

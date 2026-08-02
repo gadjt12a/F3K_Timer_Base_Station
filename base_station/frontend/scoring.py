@@ -32,9 +32,16 @@ class Rule:
       last_n    — last n flights count, each capped at cap_s
       best_n    — n longest flights count (after capping), each capped at cap_s
       first_n   — first n flights count (all-up / launch-limited tasks)
-      ladder    — chronological; flight >= target scores the target, then target += step_s
+      ladder    — chronological; flight >= target scores the target, then the target
+                  advances. Rungs come from start_s/step_s (D, unbounded) or from an
+                  explicit targets_s list (K "Big Ladder", M "Huge Ladder"). ⚠ The
+                  target advances ONLY on success — a missed rung is re-flown against
+                  the same time. Kris, 2026-08-02: Ladder and Big Ladder run the same
+                  way. This is the whole difference between `ladder` and `sequence`.
       targets   — len(targets_s) flights matched to targets (any order), scored min(flight, target)
-      sequence  — i-th flight capped at targets_s[i] (in-order ladder, all flights count)
+      sequence  — i-th flight capped at targets_s[i]; the target advances every launch
+                  whether or not it was reached. No FAI task uses this any more — it is
+                  kept for custom tasks, which offer it as "Fixed targets, in order".
       poker     — n longest flights count, no cap (declared targets are not recorded;
                   the achieved/CD-entered times are taken as the scored times)
       all       — every flight counts, no cap
@@ -78,9 +85,14 @@ F3K_RULES: dict[tuple, Rule] = {
     ("H", None): Rule("targets", targets_s=(60, 120, 180, 240)),
     ("I", None): Rule("best_n", n=3, cap_s=200),
     ("J", None): Rule("last_n", n=3, cap_s=180),
-    ("K", None): Rule("sequence", targets_s=(60, 90, 120, 150, 180)),
+    # ⚠ K and M are LADDERS, not sequences: the rung rises only when it is reached,
+    # and a missed rung is re-flown against the same time. They were scored as
+    # sequences (advance every launch regardless) until Kris ruled on it 2026-08-02:
+    # "Ladder and Big ladder run the same way." Raised for the rules moderators as
+    # R-19b, because the two readings give different scores for the same flights.
+    ("K", None): Rule("ladder", targets_s=(60, 90, 120, 150, 180)),
     ("L", None): Rule("first_n", n=1, cap_s=599),
-    ("M", None): Rule("sequence", targets_s=(180, 300, 420)),
+    ("M", None): Rule("ladder", targets_s=(180, 300, 420)),   # Huge Ladder — see K
     ("N", None): Rule("best_n", n=1, cap_s=600),
     ("U10", None): Rule("all"),
     ("U15", None): Rule("all"),
@@ -167,11 +179,17 @@ def target_mode(discipline: str, task: str) -> dict:
         # stop offering a picker once they are all achieved.
         return {"mode": "poker", "targets": rule.n}
     if rule.kind == "ladder":
+        if rule.targets_s:
+            # Big/Huge Ladder: explicit rungs, so the timer walks a list instead of
+            # adding a step. ⚠ Sent as `rungs=`, NOT `targets=` — `targets=` already
+            # means "how many targets Poker can score", and one key cannot be a count
+            # in one mode and a list in another.
+            return {"mode": "ladder",
+                    "rungs": ",".join(str(int(t)) for t in rule.targets_s)}
         return {"mode": "ladder", "start": rule.start_s, "step": rule.step_s}
-    # ⚠ `sequence` (F3K K "Big Ladder", M "Huge Ladder", F5K A/D) is NOT a ladder:
-    # its targets advance every launch whether or not they were reached, and they
-    # come from a fixed list rather than a step. It needs its own mode; until then
-    # it runs plain, which is what it does today. [TF-11]
+    # ⚠ `sequence` advances its target every launch whether or not it was reached, so
+    # it is not a ladder and the timer has no mode for it. Custom tasks can still be
+    # built on it, and they run `plain` — the timer times them, the CD scores them.
     return {"mode": "plain"}
 
 
@@ -264,11 +282,22 @@ def score_task(discipline: str, task: str, flights_ms: Sequence[int],
         for i in idx:
             scores[i] = times[i]
     elif rule.kind == "ladder":
-        target = rule.start_s
+        # Two shapes of ladder, one behaviour: the rung rises only when it is reached.
+        # D climbs by a fixed step forever; K and M walk an explicit list and stop
+        # scoring once it is exhausted (five rungs on K, three on M).
+        rungs = list(rule.targets_s)
+        target = rungs[0] if rungs else rule.start_s
+        rung_i = 0
         for i in idx:
+            if target is None:
+                break                       # explicit ladder finished; nothing left to score
             if times[i] >= target:
                 scores[i] = target
-                target += rule.step_s
+                if rungs:
+                    rung_i += 1
+                    target = rungs[rung_i] if rung_i < len(rungs) else None
+                else:
+                    target += rule.step_s
     elif rule.kind == "sequence":
         for slot, i in enumerate(idx[: len(rule.targets_s)]):
             scores[i] = min(times[i], rule.targets_s[slot])

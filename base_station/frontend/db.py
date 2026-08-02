@@ -34,7 +34,7 @@ def init_db(path: str) -> sqlite3.Connection:
             discipline          TEXT NOT NULL CHECK(discipline IN ('F3K', 'F5K', 'MIXED')),
             date                TEXT NOT NULL,
             gliderscore_comp_no INTEGER,
-            prep_time_s         INTEGER NOT NULL DEFAULT 120,
+            prep_time_s         INTEGER NOT NULL DEFAULT 180,
             land_time_s         INTEGER NOT NULL DEFAULT 30,
             heat_gap_s          INTEGER NOT NULL DEFAULT 30,
             round_gap_s         INTEGER NOT NULL DEFAULT 30,
