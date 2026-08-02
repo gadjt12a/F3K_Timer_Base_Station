@@ -90,5 +90,39 @@ class FwStateTests(unittest.TestCase):
         self.assertEqual(self._state("fw-v9", "fw-v28"), "behind")
 
 
+class OtaPushSafetyTests(unittest.TestCase):
+    """Firmware is base-managed and pushed automatically (Kris, 2026-08-02), so the
+    gate that decides *when* is the only thing standing between an update and a
+    timer rebooting with a glider in the air. It is worth more than the push."""
+
+    def _safe(self, state, loaded):
+        from frontend import app as appmod
+
+        class _SM:
+            pass
+        sm = _SM()
+        sm.state = state
+        sm.loaded = loaded
+        real = appmod.app.state.state_machine if hasattr(appmod.app.state, "state_machine") else None
+        appmod.app.state.state_machine = sm
+        try:
+            return appmod._ota_push_is_safe()[0]
+        finally:
+            if real is not None:
+                appmod.app.state.state_machine = real
+
+    def test_idle_with_nothing_loaded_is_safe(self):
+        self.assertTrue(self._safe("IDLE", False))
+
+    def test_a_loaded_heat_blocks_the_push(self):
+        """IDLE but loaded means the CD is about to press Start."""
+        self.assertFalse(self._safe("IDLE", True))
+
+    def test_every_live_phase_blocks_the_push(self):
+        for state in ("PREP", "WORKING", "LANDING"):
+            with self.subTest(state=state):
+                self.assertFalse(self._safe(state, False))
+
+
 if __name__ == "__main__":
     unittest.main()

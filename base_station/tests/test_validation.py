@@ -95,6 +95,32 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(_parse_altitude(" 47 "), 47.0)
 
 
+class StartupTests(unittest.TestCase):
+    """⚠ `TestClient(app)` without a `with` block never runs the startup hooks, so
+    every test in this file could pass against an app that dies on boot. It did
+    exactly that once: the OTA auto-push task was added with no `import asyncio`,
+    the suite went green, and the service crash-looped on the Pi.
+
+    Entering the context manager runs them. Anything registered with
+    `@app.on_event("startup")` is covered by this one test."""
+
+    def test_the_app_actually_starts(self):
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        db = init_db(path)
+        _seed(db)
+        server = _FakeServer(db)
+        app.state.server = server
+        app.state.state_machine = CompetitionStateMachine(server)
+        server.state_machine = app.state.state_machine
+        try:
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/api/run/state").status_code, 200)
+        finally:
+            db.close()
+            os.unlink(path)
+
+
 class EndpointTests(unittest.TestCase):
     def setUp(self):
         fd, self.path = tempfile.mkstemp(suffix=".db")

@@ -29,6 +29,12 @@ class CompetitionStateMachine:
     def state(self) -> str:
         return self._state
 
+    @property
+    def loaded(self) -> bool:
+        """A heat is loaded, i.e. the CD is about to start one. Used by the firmware
+        auto-push to decide that rebooting a timer would be a bad idea."""
+        return self._loaded is not None
+
     def get_status(self) -> dict:
         d = self._loaded
         return {

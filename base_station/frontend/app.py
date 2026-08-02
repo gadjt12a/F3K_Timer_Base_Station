@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import datetime
 import io
@@ -1444,6 +1445,11 @@ async def _apply_saved_volume():
     await engine.apply_saved_volume()
 
 
+@app.on_event("startup")
+async def _start_ota_autopush():
+    asyncio.create_task(_ota_autopush_loop())
+
+
 @app.get("/settings")
 async def settings_get(request: Request):
     return templates.TemplateResponse(request, "settings.html", {"active": "settings"})
@@ -1579,6 +1585,44 @@ async def api_timers():
         "ota_version": ota_ver,
         "base_firmware_stale": base_stale,
     }
+
+
+@app.post("/api/timers/downgrade")
+async def api_timers_downgrade(timer_id: int = None, response: Response = None):
+    """Flash a timer BACKWARDS to the build this base station is serving.
+
+    The only thing in the system that sends `force=1`, and the only way past the
+    timer's own refusal to flash backwards ([I-41]). A timer ahead of the base means
+    somebody updated the timers and not the Pi, so the honest first answer is
+    "update the Pi" — this exists for when the CD has decided otherwise, in the
+    field, with no way to update the Pi before the next round.
+
+    ⚠ Refuses while a round is live for the same reason the auto-push waits: it
+    reboots the timer.
+    """
+    safe, why = _ota_push_is_safe()
+    if not safe:
+        response.status_code = 409
+        return {"ok": False, "error": f"Not now — {why}"}
+
+    ota_ver = _ota_version()
+    if ota_ver is None:
+        response.status_code = 409
+        return {"ok": False, "error": "This base station has no firmware to serve"}
+
+    srv = app.state.server
+    targets = [t for t in srv.timers_info()
+               if timer_id is None or t.get("id") == timer_id]
+    if not targets:
+        response.status_code = 404
+        return {"ok": False, "error": "No such timer is connected"}
+
+    for t in targets:
+        log.warning("[OTA] CD-confirmed DOWNGRADE of T%s from %s to %s",
+                    t.get("id"), t.get("fw") or "?", ota_ver)
+        _ota_pushed[t["mac"]] = ota_ver
+        await srv.send_to(t["id"], "OTAPUSH force=1")
+    return {"ok": True, "downgraded": [t.get("id") for t in targets], "to": ota_ver}
 
 
 @app.post("/api/timers/screen")
@@ -2394,6 +2438,66 @@ def _ota_version() -> str | None:
         return json.loads(ver_path.read_text()).get("version") if ver_path.exists() else None
     except Exception:
         return None
+
+
+# Timers we have already told to update, so a timer that takes 30 s to download and
+# reboot is not pushed again on every sweep. Cleared when it rejoins on a new build.
+_ota_pushed: dict[str, str] = {}          # mac -> version we pushed
+
+
+def _ota_push_is_safe() -> tuple[bool, str]:
+    """Whether a firmware push could not possibly interrupt flying.
+
+    Firmware is base-managed (Kris, 2026-08-02), but an update reboots the timer,
+    so the base has to be certain first. It is only safe with the round machine
+    idle and no heat even loaded — a loaded heat means the CD is about to start.
+    ⚠ The timer checks its own state again on arrival; this is the outer gate, not
+    the only one.
+    """
+    sm = app.state.state_machine
+    if sm.state != "IDLE":
+        return False, f"round machine is {sm.state}"
+    if sm.loaded:
+        return False, "a heat is loaded and about to run"
+    return True, ""
+
+
+async def _ota_autopush() -> None:
+    """Push the base's firmware to any timer running an older build.
+
+    Only ever upgrades. A timer that is AHEAD of us is not touched — that means
+    somebody updated the timers and not the Pi, and the base is the stale one
+    ([I-41]). It says so on Settings and offers the CD a deliberate downgrade,
+    which is the only thing that sends force=1.
+    """
+    ota_ver = _ota_version()
+    ota_n = _fw_num(ota_ver)
+    if ota_n is None:
+        return
+    safe, why = _ota_push_is_safe()
+    srv = app.state.server
+    for t in srv.timers_info():
+        mac, fw = t.get("mac"), t.get("fw")
+        if _fw_num(fw) is not None and _fw_num(fw) >= ota_n:
+            _ota_pushed.pop(mac, None)      # it arrived; stop tracking it
+            continue
+        if _ota_pushed.get(mac) == ota_ver:
+            continue                        # already told, still downloading
+        if not safe:
+            log.debug("[OTA] holding push to T%s — %s", t.get("id"), why)
+            continue
+        log.warning("[OTA] pushing %s to T%s (on %s)", ota_ver, t.get("id"), fw or "?")
+        _ota_pushed[mac] = ota_ver
+        await srv.send_to(t["id"], "OTAPUSH")
+
+
+async def _ota_autopush_loop() -> None:
+    while True:
+        try:
+            await _ota_autopush()
+        except Exception:
+            log.exception("[OTA] autopush sweep failed")
+        await asyncio.sleep(20)
 
 
 def _fw_num(ver: str | None) -> int | None:

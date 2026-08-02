@@ -159,10 +159,24 @@
       <p class="text-orange-200/90 text-xs mt-1">
         A connected timer is running a newer build than the
         <span class="font-mono" x-text="otaVersion || 'none'"></span>
-        cached here. Timers will not offer to install it, so nothing will be
-        downgraded — but this base station cannot update anything until it is
-        refreshed. Run <span class="font-semibold">Update from GitHub</span> below.
+        cached here. Nothing has been downgraded — the automatic push only ever
+        moves a timer forwards. Run <span class="font-semibold">Update from
+        GitHub</span> below to bring this base station up to date; that is almost
+        always the right answer.
       </p>
+      <!-- The escape hatch, deliberately made to look like one. A CD in a field
+           with no way to update the Pi before the next round may want every timer
+           on one build even if that build is older. Nothing else in the system
+           sends force=1. -->
+      <div class="mt-2 flex items-center gap-2">
+        <button @click="downgradeTimers()"
+                class="rounded border border-orange-600 px-2 py-1 text-xs text-orange-300 hover:bg-orange-900/50">
+          Downgrade timers to <span class="font-mono" x-text="otaVersion || '—'"></span>
+        </button>
+        <span class="text-orange-200/60 text-xs">only if you cannot update the base</span>
+      </div>
+      <p x-show="downgradeMsg" x-text="downgradeMsg"
+         class="text-xs mt-2 text-orange-200"></p>
     </div>
 
     <table class="w-full text-sm">
@@ -296,7 +310,7 @@ function settings() {
   return {
     audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0, output: 'jack', jack_card: null, usb_card: null, usb_name: null, device_override: null },
     discovered: [], scanBusy: false, msg: '',
-    timers: [], events: [], baseFwStale: false, otaVersion: null,
+    timers: [], events: [], baseFwStale: false, otaVersion: null, downgradeMsg: '',
     restoreBusy: false, restoreError: '',
     sysInfo: { git: false }, updateBusy: false, updateMsg: '', updateOutput: '', updateOk: null,
 
@@ -377,6 +391,18 @@ function settings() {
       const r = await (await fetch('/api/timers')).json();
       this.timers = r.timers; this.events = r.events;
       this.baseFwStale = r.base_firmware_stale; this.otaVersion = r.ota_version;
+    },
+    async downgradeTimers() {
+      if (!confirm('Flash every connected timer BACKWARDS to ' + (this.otaVersion || '?') +
+                   '?\n\nUpdating this base station is almost always the better fix. ' +
+                   'Only do this if you cannot, and you need all timers on one build.')) return;
+      const res = await fetch('/api/timers/downgrade', { method: 'POST' });
+      const r = await res.json();
+      this.downgradeMsg = r.ok
+        ? ('Downgrading timer(s) ' + (r.downgraded || []).join(', ') + ' to ' + r.to +
+           ' — they will reboot and rejoin.')
+        : (r.error || 'downgrade refused');
+      this.loadTimers();
     },
     async setVolume() {
       const r = await (await fetch('/api/audio/volume?level=' + this.audio.volume, { method: 'POST' })).json();

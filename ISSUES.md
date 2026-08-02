@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 67, 2026-08-02)
 
-**58 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**62 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 [I-52]–[I-58] are the Poker picker's first contact with a human thumb. Every one
 of them was invisible to the code and to the test suite, and four of the first five made
@@ -1682,6 +1682,113 @@ Three consequences, all deliberate:
 
 ⚠ `g_windowUsed` survives `_startRound()` alongside a prep-declared W, or the
 one-attempt-only rule would be silently lost at the window opening.
+
+---
+
+### I-59 · The timer's log silently dropped everything past ten flights · FIXED (session 67, fw-v36) · P1
+`F3K_Timer_1/include/config.h` (`MAX_FLIGHTS`)
+
+Found while answering a display question, which is the only reason it was found at
+all: *"we need to record up to 20 flights (can be normal to fly 8-10 for learners)."*
+
+`MAX_FLIGHTS` was **10**. `addFlight()` returns false past the cap and the caller
+does not check, so an 11th flight vanished from the timer's live log **and** from
+the NVS round history. It fails **silently and only on a long round** — exactly the
+learner's round nobody stress-tests, and exactly the pilot least able to tell you
+their times were wrong.
+
+⚠ The base station was never affected: each flight is reported as it happens, so
+the database and the export always had all of them. This was the timer's own
+record — the failsafe you reach for when the base station is the thing that died.
+
+Now 20. NVS is keyed per flight (`r0f19`), not a fixed-size blob, so raising the
+cap does not invalidate history already written. The ACK-pending queue went 32 → 64
+with it: an end-of-round `resendRound()` can now queue 20 flights plus 20
+altitudes, and overflowing it drops precisely the messages the resend exists to
+protect.
+
+---
+
+### I-60 · Nothing stopped the settings chain being used on the base · FIXED (session 67, fw-v37) · P2
+`F3K_Timer_1/src/main.cpp` (`STATE_IDLE`)
+
+Raised by the tester: *"when connected to base I can still hold R at home and
+change WT / category type / time history / OTA."*
+
+`STATE_IDLE` + R-hold opened `STATE_SETTINGS` unconditionally — the connection was
+never tested. Working time and discipline both arrive with the next `TASK`, so
+changing them on the watch is pointless at best, and at worst the CD watches a
+value they just set revert mid-round with no explanation.
+
+The rule now: **the base owns everything the base sends.** Connected, R-hold goes
+straight to Round Recall and nowhere else.
+
+⚠ Round Recall deliberately survives, and is the reason R-hold still does
+anything. It is the timer's own record of what it flew, and the moment you most
+need it is when the base station is the thing that has failed. It lost its other
+entry point in the same session — L on the Time Up screen now pages the flight
+list ([I-59]) — so this is its only door.
+
+---
+
+### I-61 · Firmware was watch-managed, so timers went stale in the field · FIXED (session 67, fw-v37) · P2
+`F3K_Timer_1/src/main.cpp`, `src/ota/OtaUpdater.cpp`, `base_station/frontend/app.py`
+
+Kris: *"OTA should not be watch managed, it should be base managed. If base has
+newer firmware all timers should be pushed up to that FW."*
+
+Updating a timer took four R-holds through the settings chain, on each timer, with
+somebody who knew the sequence. So in practice timers ran whatever they were last
+flashed with, and a fleet drifted apart — which matters because the protocol is
+versioned and a mixed fleet is a mixed protocol.
+
+Now the base pushes: `OTAPUSH` over the existing socket, swept every 20 s.
+
+⚠ **The safety gate is worth more than the feature.** An update reboots the timer,
+so the base only pushes with the round machine `IDLE` **and no heat even loaded** —
+a loaded heat means the CD is about to press Start. The timer re-checks its own
+state on arrival and refuses unless it is idle, because a push can be in flight
+when a round begins. Pinned by `OtaPushSafetyTests`.
+
+**Downgrades are the interesting half.** A timer *ahead* of the base means somebody
+updated the timers and not the Pi, so the auto-push never moves a timer backwards —
+it only ever upgrades. The base says it is the stale one and offers the CD a
+deliberate downgrade button, which is the only thing in the system that sends
+`force=1`, and `forceUpdate()` is the only path past the timer's own refusal to
+flash backwards ([I-41]).
+
+Verified end to end on hardware, with no human in the loop:
+
+```
+21:26:35  JOIN fw=fw-v36
+21:26:54  [OTA] pushing fw-v37 to T1 (on fw-v36)
+21:26:54  RX: OTAPUSH -> accepted -> AVAILABLE -> downloading
+21:27:09  JOIN fw=fw-v37
+```
+
+⚠ Testing this needs a timer that reports an old version but understands
+`OTAPUSH` — a genuine older build ignores the command. Build with `FW_VERSION`
+backdated and the current code.
+
+---
+
+### I-62 · The whole suite could pass against an app that dies on boot · FIXED (session 67) · P2
+`base_station/tests/test_validation.py`
+
+Found by causing it. The OTA auto-push task was added with no `import asyncio`;
+230 tests went green and the service crash-looped on the Pi, restarting every 7
+seconds.
+
+`TestClient(app)` **without** a `with` block never runs the startup hooks. Every
+test in `test_validation.py` was built that way, so nothing registered with
+`@app.on_event("startup")` had ever been executed by a test — a growing list that
+now includes the audio volume restore, the system-config apply and the OTA sweep.
+
+One test, `StartupTests`, enters the context manager. It covers every startup hook
+that exists and every one added later.
+
+⚠ The tell that it is working: the suite now prints `sudo` usage noise from the
+audio hook. That noise is the hooks actually running.
 
 ---
 
