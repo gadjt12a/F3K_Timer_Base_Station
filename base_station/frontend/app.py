@@ -1287,6 +1287,15 @@ async def api_run_start(response: Response):
     return {"ok": ok, "error": reason}
 
 
+@app.post("/api/run/unload")
+async def api_run_unload(response: Response):
+    """Clear the loaded heat. Refuses (409) unless IDLE, like every run control."""
+    ok, reason = await app.state.state_machine.unload()
+    if not ok:
+        response.status_code = 409
+    return {"ok": ok, "error": reason}
+
+
 @app.post("/api/run/abort")
 async def api_run_abort():
     await app.state.state_machine.abort()

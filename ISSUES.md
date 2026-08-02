@@ -1794,6 +1794,25 @@ appears only while a timer is behind, and which says why the push is waiting.
 ⚠ The override skips the *loaded* check only. A live round still refuses, on both
 it and the downgrade — verified: `409 Not now — a round is PREP`.
 
+**Kris ruled on the root cause rather than patching it:** *"If you are aborting a
+round you may be doing it to restart the round due to an issue. So no, it should
+not unload the round."* An abort keeps the heat, deliberately. What was missing was
+a way to say **done with it** — and the honest admission that there never was one:
+*"I have just been loading a different heat until now."*
+
+So there are three answers, not one, and they are different intents:
+
+- **`POST /api/run/unload`** and a **✕ Clear** button on Run — put the heat down
+  without running it. IDLE only, 409 with a reason otherwise, same contract as
+  every other run control ([I-01]). No confirm: nothing is lost and the heat is one
+  click away on the queue.
+- **The Run page banner** — *"N timer(s) need a firmware update"*, on the page the
+  CD actually lives on, saying whether they will update on their own or are being
+  held. Kris: *"just flag a banner across the run window."* ⚠ It ignores `LOST`
+  timers: nagging about a watch that is switched off would train the CD to ignore
+  the banner.
+- **Update now**, on both Run and Settings, for when the CD wants it regardless.
+
 ---
 
 ### I-62 · The whole suite could pass against an app that dies on boot · FIXED (session 67) · P2

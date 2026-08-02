@@ -121,6 +121,53 @@ class StartupTests(unittest.TestCase):
             os.unlink(path)
 
 
+class UnloadTests(unittest.TestCase):
+    """Clearing a loaded heat. Distinct from abort, which keeps it loaded so a CD
+    can restart a round that went wrong (Kris, 2026-08-02). Until this existed the
+    only way to put a heat down was to load a different one — and a loaded heat
+    holds off firmware pushes, because `_loaded` is otherwise cleared only by a
+    round running to completion."""
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.ids = _seed(self.db)
+        self.server = _FakeServer(self.db)
+        self.sm = CompetitionStateMachine(self.server)
+        app.state.server = self.server
+        app.state.state_machine = self.sm
+        self.server.state_machine = self.sm
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def _load(self):
+        return self.client.post(f"/api/run/load?round_id={self.ids['round']}"
+                                f"&group_id={self.ids['group']}")
+
+    def test_unload_clears_the_heat(self):
+        self._load()
+        self.assertIsNotNone(self.client.get("/api/run/state").json()["loaded"])
+        r = self.client.post("/api/run/unload")
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(self.client.get("/api/run/state").json()["loaded"])
+
+    def test_unload_with_nothing_loaded_is_not_an_error(self):
+        self.assertEqual(self.client.post("/api/run/unload").status_code, 200)
+
+    def test_unload_refused_while_a_round_runs(self):
+        """Same 409-with-a-reason contract as every other run control [I-01]."""
+        self._load()
+        self.client.post("/api/run/start")
+        r = self.client.post("/api/run/unload")
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.json()["error"])
+        self.assertIsNotNone(self.client.get("/api/run/state").json()["loaded"])
+
+
 class EndpointTests(unittest.TestCase):
     def setUp(self):
         fd, self.path = tempfile.mkstemp(suffix=".db")

@@ -60,6 +60,7 @@ function runner(initialState) {
         // Timers that were connected and have since been evicted. Held so the
         // strip shows a LOST pill rather than silently losing an entry. [I-48]
         lostTimers: [],
+        fwMsg: '',
         ws: null,
         wsOk: false,
         loadedGroupId: (initialState.loaded && initialState.loaded.group_id) || null,
@@ -432,6 +433,27 @@ function runner(initialState) {
             if (!confirm('ABORT this round for all pilots?')) return;
             await fetch('/api/run/abort', {method:'POST'});
         },
+        // Only genuinely-connected timers: a LOST one cannot be updated, and
+        // nagging about a watch that is switched off would train the CD to ignore
+        // the banner. fw_state is computed server-side (/api/timers).
+        timersBehind() { return this.timers.filter(t => t.fw_state === 'behind' && !t.lost); },
+        async unloadHeat() {
+            // No confirm: it runs only when IDLE, nothing is lost, and the heat is
+            // one click away on the queue again. ABORT confirms because it kills a
+            // round in progress; this does not.
+            const r = await (await fetch('/api/run/unload', {method:'POST'})).json();
+            if (!r.ok) this.err = r.error || 'could not clear the heat';
+            this.pollState();
+        },
+        async updateTimersNow() {
+            const r = await (await fetch('/api/timers/update-now', {method:'POST'})).json();
+            this.fwMsg = r.ok
+                ? ((r.pushed || []).length
+                     ? ('Updating timer(s) ' + r.pushed.join(', ') + ' — they will reboot and rejoin.')
+                     : 'Every connected timer is already up to date.')
+                : (r.error || 'update refused');
+            this.loadTimers();
+        },
         async skipTo1Min() { await fetch('/api/run/skip?to=60', {method:'POST'}); },
 
         openCdOverride() {
@@ -519,6 +541,35 @@ function runner(initialState) {
 
 <div x-data="runner(INITIAL_STATE)" x-init="init()"
      class="flex gap-6 h-[calc(100vh-8rem)]">
+
+    <!-- Firmware banner. Updates are pushed automatically, but only when no heat is
+         loaded — and a heat only unloads when its round COMPLETES, so a heat that
+         was aborted or simply left sitting holds every timer back indefinitely.
+         The CD lives on this page, so this is where they have to be told. Kris:
+         "just flag a banner across the run window that there are timers that need
+         firmware updated." -->
+    <div x-show="timersBehind().length"
+         class="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[36rem] max-w-[90vw]">
+        <div class="bg-sky-900/95 border border-sky-500 rounded-lg px-4 py-2.5 shadow-lg flex items-center gap-3">
+            <span class="text-sky-300 text-lg leading-none">&#8681;</span>
+            <div class="flex-1 text-sm">
+                <div class="font-semibold text-sky-200">
+                    <span x-text="timersBehind().length"></span>
+                    timer(s) need a firmware update
+                    <span class="font-normal text-sky-300/80"
+                          x-text="'(T' + timersBehind().map(t => t.id).join(', T') + ')'"></span>
+                </div>
+                <div class="text-[11px] text-sky-300/70"
+                     x-text="loaded ? 'Held because a heat is loaded — clear it, or update now.'
+                                    : 'They will update on their own within 20 seconds.'"></div>
+                <div x-show="fwMsg" x-text="fwMsg" class="text-[11px] text-sky-200 mt-1"></div>
+            </div>
+            <button x-show="state === 'IDLE'" @click="updateTimersNow()"
+                    class="flex-shrink-0 rounded border border-sky-500 px-2 py-1 text-xs text-sky-100 hover:bg-sky-800">
+                Update now
+            </button>
+        </div>
+    </div>
 
     <!-- Recovered-data alerts. A flight or altitude that never arrived during the
          round and was caught by the timer's end-of-round resend. Fixed overlay so
@@ -693,6 +744,16 @@ function runner(initialState) {
                     class="flex-1 bg-red-700 hover:bg-red-600 disabled:opacity-40
                            disabled:cursor-not-allowed py-3 rounded-lg font-bold text-lg transition-colors">
                 ABORT
+            </button>
+            <!-- Put the heat down without running it. Distinct from ABORT, which
+                 keeps it loaded so the CD can restart a round that went wrong.
+                 Until this existed the only way to clear a heat was to load a
+                 different one — and a loaded heat also holds off firmware pushes. -->
+            <button @click="unloadHeat()"
+                    x-show="state === 'IDLE' && loaded"
+                    class="px-4 py-3 rounded-lg font-bold text-lg bg-gray-700 hover:bg-gray-600 transition-colors"
+                    title="Clear the loaded heat without running it">
+                ✕ Clear
             </button>
             <!-- Mark Done shortcut: available when IDLE and a heat is loaded -->
             <button @click="toggleDone(loadedGroupId)"

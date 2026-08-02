@@ -225,6 +225,29 @@ class CompetitionStateMachine:
         await self._broadcast_ws({"type": "state_change", "state": "IDLE"})
         log.info("Heat aborted → IDLE")
 
+    async def unload(self) -> tuple[bool, str]:
+        """Put the heat down without running it. IDLE only.
+
+        ⚠ Deliberately NOT what `abort` does. Kris, 2026-08-02: "if you are
+        aborting a round you may be doing it to restart the round due to an issue",
+        so an abort keeps the heat loaded and ready to go again. This is the other
+        intent — done with it — and until now the only way to express it was to load
+        some other heat instead.
+
+        It matters beyond tidiness: a loaded heat holds off firmware pushes, and
+        `_loaded` is otherwise cleared only by a round running to completion.
+        """
+        if self._state != "IDLE":
+            return False, f"a round is {self._state}"
+        if self._loaded is None:
+            return True, ""                      # already clear; not an error
+        log.info("Heat unloaded: round=%s heat=%s",
+                 self._loaded.get("round_no"), self._loaded.get("heat"))
+        self._loaded = None
+        self._task = None
+        await self._broadcast_ws({"type": "state_change", "state": "IDLE"})
+        return True, ""
+
     def _task_line(self, wt_s: int) -> str:
         """The TASK broadcast, carrying how the timer should run this task.
 
