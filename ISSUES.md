@@ -23,7 +23,7 @@ are no broken buttons. Everything below is input validation or state guards.
 
 ## Status (session 67, 2026-08-02)
 
-**62 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
+**63 fixed · 1 WONTFIX ([I-18], misfiled — see its entry) · 0 open.**
 
 [I-52]–[I-58] are the Poker picker's first contact with a human thumb. Every one
 of them was invisible to the code and to the test suite, and four of the first five made
@@ -1682,6 +1682,55 @@ Three consequences, all deliberate:
 
 ⚠ `g_windowUsed` survives `_startRound()` alongside a prep-declared W, or the
 one-attempt-only rule would be silently lost at the window opening.
+
+---
+
+### I-63 · The other half of [I-01]: a HEALTHY socket left the page stale · FIXED (session 68) · P2
+`base_station/frontend/templates/run.html`
+
+Reported from the field: *"If you enable callup in settings then go to run, load a
+heat and turn callup off, then load another heat it does not reactivate callup…
+the default does not look like it does anything unless it reverts once a heat has
+run."*
+
+The server was resetting the per-heat override on **every** load, exactly as
+designed — verified against the API before this was reported. The **button was
+lying**. `pollState()` opens with `if (this.wsOk) return;`, so it refreshes only
+while the live link is **down**. With a healthy websocket, `callup` was read once
+at page load and never again.
+
+⚠ **This is [I-01] and [I-13] a third time, from the opposite direction.** Those
+were a *dead* socket leaving client gates reading `IDLE` for ever, and the fix was
+"poll whenever `wsOk` is false". That fix is silent about a *healthy* socket —
+where the poll never runs at all, and any field the tick stream does not carry
+simply stops updating. The page takes state from three sources that cover
+different fields:
+
+| source | carries |
+|---|---|
+| `tick` | `state`, `secondsRemaining`, a rebuilt `loaded` |
+| `state_change` | `state` |
+| `pollState` | everything — but only while the socket is down |
+
+The tester's own diagnosis contained the tell: *"unless it reverts once a heat has
+run"* — a heat running triggers the other refresh paths, which is why it appeared
+to work then and only then.
+
+**Fixed in two layers, deliberately.**
+
+1. `/api/run/load` and `/api/run/unload` now return the authoritative status, and
+   the page takes the value from the response that changed it rather than hoping
+   a poll arrives. This is the real fix.
+2. A slow `reconcile()` runs **regardless of `wsOk`** and refreshes only what the
+   tick cannot supply. A safety net, not a data path — if it is ever the only
+   thing keeping a field right, the mutation that changed it should be returning
+   it instead.
+
+**The rule, now pinned by `RunControlContractTests` rather than left to memory:**
+a run-control endpoint that changes what the page must display returns the
+authoritative status; the client never re-derives it. Three tests hold the three
+halves — `/api/run/state` carries every non-tick field, mutations return status,
+and refusals are 409 **with a reason**.
 
 ---
 

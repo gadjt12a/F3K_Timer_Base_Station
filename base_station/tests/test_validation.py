@@ -121,6 +121,74 @@ class StartupTests(unittest.TestCase):
             os.unlink(path)
 
 
+class RunControlContractTests(unittest.TestCase):
+    """The [I-01] / [I-13] family, pinned as a rule rather than case by case.
+
+    Three bugs now share one shape: the page believed something the server never
+    confirmed. [I-01] and [I-13] were a DEAD socket leaving client gates reading
+    IDLE for ever. The 2026-08-03 callup bug was the mirror — a HEALTHY socket, so
+    the fallback poll never ran and any field the tick stream does not carry went
+    stale instead.
+
+    Both halves reduce to the same rule, which these tests enforce:
+
+      A run-control endpoint that changes what the page must display returns the
+      authoritative status in its response. The client never re-derives it.
+    """
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.ids = _seed(self.db)
+        self.server = _FakeServer(self.db)
+        self.sm = CompetitionStateMachine(self.server)
+        app.state.server = self.server
+        app.state.state_machine = self.sm
+        self.server.state_machine = self.sm
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def test_state_carries_every_field_the_page_cannot_derive(self):
+        """The tick stream carries state, seconds and a rebuilt `loaded` — nothing
+        else. Anything the page shows beyond that must be here, or it is only
+        correct while the websocket is broken."""
+        s = self.client.get("/api/run/state").json()
+        for field in ("state", "loaded", "flights", "callup", "callup_overridden"):
+            with self.subTest(field=field):
+                self.assertIn(field, s)
+
+    def test_mutations_return_the_new_status(self):
+        """load and unload both change what the page must show. Returning `ok`
+        alone forces the client to guess, and it guessed wrong for a whole
+        afternoon."""
+        r = self.client.post(f"/api/run/load?round_id={self.ids['round']}"
+                             f"&group_id={self.ids['group']}").json()
+        self.assertIn("status", r)
+        self.assertIsNotNone(r["status"]["loaded"])
+        u = self.client.post("/api/run/unload").json()
+        self.assertIn("status", u)
+        self.assertIsNone(u["status"]["loaded"])
+
+    def test_refusals_say_why_and_do_not_pretend_to_succeed(self):
+        """[I-01]: client-side gating cannot be the lock, so the server refuses
+        with 409 and a reason the CD can act on — never a silent {"ok": true}."""
+        self.client.post(f"/api/run/load?round_id={self.ids['round']}"
+                         f"&group_id={self.ids['group']}")
+        self.client.post("/api/run/start")
+        for path in ("/api/run/unload",
+                     f"/api/run/load?round_id={self.ids['round']}&group_id={self.ids['group']}",
+                     "/api/run/callup?on=true"):
+            with self.subTest(path=path):
+                r = self.client.post(path)
+                self.assertEqual(r.status_code, 409)
+                self.assertFalse(r.json()["ok"])
+                self.assertTrue(r.json().get("error"), "a refusal must say why")
+
+
 class UnloadTests(unittest.TestCase):
     """Clearing a loaded heat. Distinct from abort, which keeps it loaded so a CD
     can restart a round that went wrong (Kris, 2026-08-02). Until this existed the
@@ -157,6 +225,33 @@ class UnloadTests(unittest.TestCase):
 
     def test_unload_with_nothing_loaded_is_not_an_error(self):
         self.assertEqual(self.client.post("/api/run/unload").status_code, 200)
+
+    def test_load_and_unload_report_the_callup_state(self):
+        """⚠ The Run page CANNOT re-derive this. pollState() returns early while
+        the websocket is healthy, so callup is refreshed only by what these two
+        responses carry. Without it the button kept whatever the last manual
+        toggle set for ever, and the Settings default looked like it did nothing —
+        reported from the field, same family as [I-01]/[I-13].
+        """
+        r = self._load().json()
+        self.assertIn("callup", r["status"])
+        self.assertIn("callup_overridden", r["status"])
+        u = self.client.post("/api/run/unload").json()
+        self.assertIn("callup", u["status"])
+        self.assertIn("callup_overridden", u["status"])
+
+    def test_a_per_heat_callup_override_dies_with_the_heat(self):
+        """Kris: whichever way the default is set, loading a different heat returns
+        to it — whether or not the last heat was actually run."""
+        self._load()
+        base = self.client.get("/api/run/state").json()["callup"]
+        r = self.client.post(f"/api/run/callup?on={str(not base).lower()}").json()
+        self.assertEqual(r["callup"], not base)
+        self.assertTrue(r["overridden"])
+        # A different heat, without running the first one
+        after = self._load().json()["status"]
+        self.assertEqual(after["callup"], base)
+        self.assertFalse(after["callup_overridden"])
 
     def test_unload_refused_while_a_round_runs(self):
         """Same 409-with-a-reason contract as every other run control [I-01]."""

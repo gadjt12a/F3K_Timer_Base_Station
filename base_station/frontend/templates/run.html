@@ -89,7 +89,43 @@ function runner(initialState) {
             // down it froze at whatever it last saw — usually IDLE — which left
             // ABORT permanently disabled with a round actually running. [I-13]
             setInterval(() => this.pollState(), 3000);
+            // Slow, and deliberately NOT gated on wsOk — see reconcile().
+            setInterval(() => this.reconcile(), 5000);
             this.connectSafe();
+        },
+
+        // Reconcile the fields the live stream does NOT carry.
+        //
+        // ⚠ Read this before adding anything to pollState(). The page takes state
+        // from three places — the tick stream, state_change, and the poll — and
+        // they cover different fields:
+        //
+        //   tick          state, secondsRemaining, and a rebuilt `loaded`
+        //   state_change  state
+        //   pollState     everything, but ONLY while the socket is down
+        //
+        // So any field the tick does not carry is refreshed only when the link is
+        // broken. `callup` was exactly that: the server reset it on every heat
+        // load, the page never asked again, and the button showed a stale value
+        // all afternoon. [I-01] made the page survive a DEAD socket; this is the
+        // opposite hole — a healthy one, where the poll never runs.
+        //
+        // This runs regardless, on a slow cadence, and touches only what the tick
+        // cannot supply. It is a safety net, not a data path: if it is the only
+        // thing keeping a field correct, the mutation that changed it should be
+        // returning it instead.
+        async reconcile() {
+            try {
+                const s = await (await fetch('/api/run/state')).json();
+                this.callup = !!s.callup;
+                this.callupOverridden = !!s.callup_overridden;
+                // Only while nothing is running — during a round the tick stream
+                // owns `loaded` and this would fight it.
+                if (s.state === 'IDLE') {
+                    this.loaded = s.loaded;
+                    this.loadedGroupId = (s.loaded && s.loaded.group_id) || null;
+                }
+            } catch (e) {}
         },
 
         async pollState() {
@@ -352,6 +388,16 @@ function runner(initialState) {
             }
             this.loaded = data.status.loaded;
             this.loadedGroupId = groupId;
+            // ⚠ Take the callup from the LOAD RESPONSE. pollState() is the only
+            // other thing that refreshes it and it returns early while the
+            // websocket is healthy, so with a live link this button kept whatever
+            // the last manual toggle set — for ever. The server was resetting the
+            // override on every load exactly as intended; the page just never
+            // asked again, so the Settings default looked like it did nothing.
+            // Same family as [I-01]/[I-13]: the UI believing something the server
+            // never confirmed.
+            this.callup = !!data.status.callup;
+            this.callupOverridden = !!data.status.callup_overridden;
             this.secondsRemaining = 0;
             this.liveSeconds = 0;
             this._tickAt = 0;
@@ -456,6 +502,12 @@ function runner(initialState) {
             // round in progress; this does not.
             const r = await (await fetch('/api/run/unload', {method:'POST'})).json();
             if (!r.ok) this.err = r.error || 'could not clear the heat';
+            if (r.status) {
+                this.loaded = r.status.loaded;
+                this.loadedGroupId = null;
+                this.callup = !!r.status.callup;
+                this.callupOverridden = !!r.status.callup_overridden;
+            }
             this.pollState();
         },
         async updateTimersNow() {

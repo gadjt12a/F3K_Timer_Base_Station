@@ -1457,10 +1457,14 @@ async def api_run_start(response: Response):
 @app.post("/api/run/unload")
 async def api_run_unload(response: Response):
     """Clear the loaded heat. Refuses (409) unless IDLE, like every run control."""
-    ok, reason = await app.state.state_machine.unload()
+    sm = app.state.state_machine
+    ok, reason = await sm.unload()
     if not ok:
         response.status_code = 409
-    return {"ok": ok, "error": reason}
+    # Status comes back for the same reason /api/run/load returns it: the page
+    # cannot re-derive callup from pollState(), which no-ops while the websocket
+    # is healthy. Anything the client must know has to come back in the response.
+    return {"ok": ok, "error": reason, "status": sm.get_status()}
 
 
 @app.post("/api/run/callup")
