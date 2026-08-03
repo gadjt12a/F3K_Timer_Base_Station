@@ -56,6 +56,9 @@ class CompetitionStateMachine:
         self._wt_remaining: int = 0        # live seconds remaining during WORKING (for reconnect)
         self._prep_remaining: int = 0      # live seconds remaining during PREP (for reconnect)
         self._land_remaining: int = 0      # live seconds remaining during LANDING (for reconnect)
+        # Per-heat callup override: None = follow the global setting. Cleared on
+        # every load_heat(), so it never outlives the heat it was set for.
+        self._callup_override: bool | None = None
 
     @property
     def state(self) -> str:
@@ -71,6 +74,11 @@ class CompetitionStateMachine:
         d = self._loaded
         return {
             "state": self._state,
+            # What WILL happen for the heat now loaded, and whether that is the
+            # global default or a one-heat override. The Run page needs both: a
+            # toggle that cannot say which way it is currently set is a trap.
+            "callup": self._callup_enabled(),
+            "callup_overridden": self._callup_override is not None,
             "loaded": {
                 "comp_name": d["comp_name"],
                 "discipline": d["discipline"],
@@ -155,6 +163,19 @@ class CompetitionStateMachine:
             (group_id,),
         ).fetchall()
 
+        # Draw order, for the callup only. ⚠ Deliberately a SECOND list rather than
+        # a change to the one above: that one feeds the PILOTS broadcast, and
+        # reordering it would shift the selection indices on every connected timer.
+        # NULLS LAST so a competition drawn before draw_order existed still calls
+        # up in a stable, sensible order instead of an empty one.
+        drawn = db.execute(
+            """SELECT p.id, p.name FROM pilots p
+               JOIN group_pilots gp ON gp.pilot_id = p.id
+               WHERE gp.group_id = ?
+               ORDER BY gp.draw_order IS NULL, gp.draw_order, p.name""",
+            (group_id,),
+        ).fetchall()
+
         pilot_names = [r["name"] for r in real_pilots] + ["— TBD —"] * grp["dummy_count"]
         heat_letter = chr(64 + grp["group_no"])
 
@@ -174,7 +195,12 @@ class CompetitionStateMachine:
             "heat": heat_letter,
             "pilots": pilot_names,
             "pilot_id_names": [(r["id"], r["name"]) for r in real_pilots],
+            "pilot_draw_order": [(r["id"], r["name"]) for r in drawn],
         }
+        # A new heat always starts from the global setting. Kris: a per-heat toggle
+        # applies to THAT heat only, and the next one loads back at the default —
+        # both ways round, so an override can never quietly persist all afternoon.
+        self._callup_override = None
         engine.select_profile(rnd["discipline"], rnd["working_time_s"],
                               rnd["prep_time_s"], rnd["land_time_s"])
 
@@ -415,10 +441,22 @@ class CompetitionStateMachine:
     # the audio. Only regenerating the pack in GliderScore from clean names fixes
     # that.
 
-    @staticmethod
-    def _callup_enabled() -> bool:
+    def _callup_enabled(self) -> bool:
+        """Global default, unless this heat has been overridden.
+
+        The override is cleared by load_heat(), so it lasts exactly one heat in
+        either direction: forced on for a heat when the default is off, or skipped
+        for a heat when the default is on.
+        """
         from frontend import audio_control
+        if self._callup_override is not None:
+            return self._callup_override
         return audio_control.get_callup()
+
+    def set_callup_override(self, on: bool | None) -> bool:
+        """Override the callup for the loaded heat. None returns it to the default."""
+        self._callup_override = on
+        return self._callup_enabled()
 
     def _callup_sequence(self) -> list[str]:
         """The audio files for the pilot callup, in order.
@@ -442,7 +480,7 @@ class CompetitionStateMachine:
         have = {audio_name_key(p.stem): p.name for p in engine.wav_dir().iterdir()
                 if p.is_file() and p.suffix.lower() in (".wav", ".mp3")} \
                if engine.wav_dir().is_dir() else {}
-        for _pid, name in d["pilot_id_names"]:
+        for _pid, name in d.get("pilot_draw_order") or d["pilot_id_names"]:
             key = pilot_name_key(name)
             if key and key in have:
                 seq.append(have[key])

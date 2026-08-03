@@ -61,6 +61,8 @@ function runner(initialState) {
         // strip shows a LOST pill rather than silently losing an entry. [I-48]
         lostTimers: [],
         fwMsg: '',
+        callup: false,
+        callupOverridden: false,
         ws: null,
         wsOk: false,
         loadedGroupId: (initialState.loaded && initialState.loaded.group_id) || null,
@@ -106,6 +108,8 @@ function runner(initialState) {
                 // are in that list since [I-49], so nothing is client-only any
                 // more and there is nothing to carry across. [I-47]
                 this.flights = s.flights || [];
+                this.callup = !!s.callup;
+                this.callupOverridden = !!s.callup_overridden;
             } catch (e) {}
         },
 
@@ -437,6 +441,15 @@ function runner(initialState) {
         // nagging about a watch that is switched off would train the CD to ignore
         // the banner. fw_state is computed server-side (/api/timers).
         timersBehind() { return this.timers.filter(t => t.fw_state === 'behind' && !t.lost); },
+        async toggleCallup() {
+            // Sends the opposite of what is currently effective, so one click
+            // always does the visible thing. Returning to "follow the default"
+            // happens on its own when the next heat loads.
+            const q = '?on=' + (this.callup ? 'false' : 'true');
+            const r = await (await fetch('/api/run/callup' + q, {method:'POST'})).json();
+            if (r.ok) { this.callup = r.callup; this.callupOverridden = r.overridden; }
+            else { this.err = r.error || 'could not change the callup'; }
+        },
         async unloadHeat() {
             // No confirm: it runs only when IDLE, nothing is lost, and the heat is
             // one click away on the queue again. ABORT confirms because it kills a
@@ -744,6 +757,20 @@ function runner(initialState) {
                     class="flex-1 bg-red-700 hover:bg-red-600 disabled:opacity-40
                            disabled:cursor-not-allowed py-3 rounded-lg font-bold text-lg transition-colors">
                 ABORT
+            </button>
+            <!-- Callup for THIS heat. The global default lives on Settings; this
+                 flips one heat and the next load returns to the default, both
+                 ways round. The dot shows when the heat is not following it. -->
+            <button @click="toggleCallup()"
+                    x-show="state === 'IDLE' && loaded"
+                    :class="callup ? 'bg-sky-700 hover:bg-sky-600' : 'bg-gray-700 hover:bg-gray-600'"
+                    class="relative px-4 py-3 rounded-lg font-bold text-lg transition-colors"
+                    :title="(callup ? 'Callup ON for this heat' : 'Callup OFF for this heat')
+                            + (callupOverridden ? ' (overridden — next heat returns to the default)'
+                                                : ' (following the Settings default)')">
+                <span x-text="callup ? '🔊 Callup' : '🔇 Callup'"></span>
+                <span x-show="callupOverridden"
+                      class="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-400"></span>
             </button>
             <!-- Put the heat down without running it. Distinct from ABORT, which
                  keeps it loaded so the CD can restart a round that went wrong.

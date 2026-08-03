@@ -112,8 +112,27 @@ def init_db(path: str) -> sqlite3.Connection:
     _migrate_pilots(db)
     _migrate_competitions(db)
     _migrate_rounds(db)
+    _migrate_group_pilots(db)
 
     return db
+
+
+def _migrate_group_pilots(db: sqlite3.Connection) -> None:
+    """Position within the group, as drawn.
+
+    The pilot callup reads the group in draw order (Kris, 2026-08-03), and until
+    now nothing recorded one. Insertion order was NOT a safe stand-in: the Draw
+    button writes from `assignment.items()`, a dict keyed by pilot, so the rows
+    land in pilot-id order rather than the order the draw produced. Only the Draw
+    Wizard happened to insert in a meaningful sequence.
+
+    NULL on rows written before this existed — readers sort NULLs last and fall
+    back to name, so an old competition still calls up in a stable order.
+    """
+    existing = {row[1] for row in db.execute("PRAGMA table_info(group_pilots)")}
+    if "draw_order" not in existing:
+        db.execute("ALTER TABLE group_pilots ADD COLUMN draw_order INTEGER")
+        db.commit()
 
 
 def _migrate_competitions(db: sqlite3.Connection) -> None:

@@ -88,6 +88,23 @@
         latency. Increase until the countdown &amp; horns land on the beat.</p>
     </div>
 
+    <!-- Pilot callup. The default for every heat; the Run page can flip a single
+         heat either way, and the next heat comes back to whatever is set here. -->
+    <div class="mb-5">
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" class="w-4 h-4" x-model="audio.callup" @change="setCallup()">
+        <span class="text-gray-300">Pilot callup before prep</span>
+      </label>
+      <p class="text-xs text-gray-500 mt-1">
+        Announces the group before the prep clock starts:
+        <span class="font-mono">attention → round → group → each pilot → task</span>.
+        Names come from GliderScore's audio pack — sync it with the GS Sync tool, or
+        upload the Audio folder as a zip on <a href="/import" class="underline">Import</a>.
+        A pilot with no name file is skipped silently, so check coverage first.
+      </p>
+      <p x-show="callupMsg" x-text="callupMsg" class="text-xs mt-1 text-sky-300"></p>
+    </div>
+
     <!-- Paired speakers -->
     <h3 class="text-sm font-semibold text-gray-400 mb-2">Paired speakers</h3>
     <table class="w-full text-sm mb-4">
@@ -337,6 +354,7 @@ function settings() {
     audio: { powered: false, paired: [], connected_mac: null, active_device: '', volume: null, saved_volume: null, lead_s: 0, output: 'jack', jack_card: null, usb_card: null, usb_name: null, device_override: null },
     discovered: [], scanBusy: false, msg: '',
     timers: [], events: [], baseFwStale: false, otaVersion: null, downgradeMsg: '',
+    callupMsg: '',
     updateMsg: '',
     get timersBehind() { return this.timers.filter(t => t.fw_state === 'behind'); },
     restoreBusy: false, restoreError: '',
@@ -446,6 +464,13 @@ function settings() {
     async setVolume() {
       const r = await (await fetch('/api/audio/volume?level=' + this.audio.volume, { method: 'POST' })).json();
       this.msg = r.ok ? ('Volume set to ' + r.volume + '%') : (r.error || 'volume error');
+    },
+    async setCallup() {
+      const r = await (await fetch('/api/audio/callup?on=' + (this.audio.callup ? 'true' : 'false'),
+                                   { method: 'POST' })).json();
+      this.callupMsg = r.callup
+        ? 'Callup on — every heat is announced before prep.'
+        : 'Callup off.';
     },
     async setLead() {
       const r = await (await fetch('/api/audio/lead?seconds=' + this.audio.lead_s, { method: 'POST' })).json();

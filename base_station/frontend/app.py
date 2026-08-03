@@ -1463,6 +1463,23 @@ async def api_run_unload(response: Response):
     return {"ok": ok, "error": reason}
 
 
+@app.post("/api/run/callup")
+async def api_run_callup(on: bool = None, response: Response = None):
+    """Override the callup for the LOADED heat only.
+
+    `on` omitted returns the heat to the global Settings default. The override is
+    cleared by the next load_heat(), so it can never quietly persist all afternoon
+    — which is the whole point of having it separate from the global switch.
+    """
+    sm = app.state.state_machine
+    if sm.state != "IDLE":
+        response.status_code = 409
+        return {"ok": False, "error": f"a round is {sm.state}"}
+    effective = sm.set_callup_override(on)
+    return {"ok": True, "callup": effective,
+            "overridden": on is not None}
+
+
 @app.post("/api/run/abort")
 async def api_run_abort():
     await app.state.state_machine.abort()
@@ -1641,6 +1658,7 @@ async def api_audio_status():
         status["volume"] = await audio_control.get_volume()
         status["saved_volume"] = audio_control.load_config().get("volume")
         status["lead_s"] = audio_control.get_lead()
+        status["callup"] = audio_control.get_callup()
         status["ok"] = True
         return status
     except Exception as exc:
@@ -2035,9 +2053,16 @@ async def round_autodraw(round_id: int):
     group_by_no = {i + 1: g["id"] for i, g in enumerate(groups)}
     for g in groups:
         db.execute("DELETE FROM group_pilots WHERE group_id = ?", (g["id"],))
+    # ⚠ `assignment` is keyed by pilot, so iterating it gives pilot-id order, not
+    # draw order. Number each group's pilots as they land so the callup has a real
+    # sequence to read rather than an accident of dict ordering.
+    seq: dict[int, int] = {}
     for pid, gno in assignment.items():
-        db.execute("INSERT INTO group_pilots (group_id, pilot_id) VALUES (?, ?)",
-                   (group_by_no[gno], pid))
+        gid = group_by_no[gno]
+        seq[gid] = seq.get(gid, 0) + 1
+        db.execute(
+            "INSERT INTO group_pilots (group_id, pilot_id, draw_order) VALUES (?, ?, ?)",
+            (gid, pid, seq[gid]))
     db.commit()
     return RedirectResponse("/rounds", status_code=303)
 
@@ -2525,9 +2550,12 @@ async def api_draw_accept(request: Request):
         for gno, pids in enumerate(rd["groups"], start=1):
             db.execute("INSERT INTO groups (round_id, group_no) VALUES (?, ?)", (rid, gno))
             gid = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-            for pid in pids:
-                db.execute("INSERT INTO group_pilots (group_id, pilot_id) VALUES (?, ?)",
-                           (gid, int(pid)))
+            # The wizard's list IS the draw order — record it rather than relying
+            # on insertion order surviving a later edit.
+            for pos, pid in enumerate(pids, start=1):
+                db.execute(
+                    "INSERT INTO group_pilots (group_id, pilot_id, draw_order) VALUES (?, ?, ?)",
+                    (gid, int(pid), pos))
     db.commit()
     return {"ok": True, "rounds_written": len(new_rounds)}
 
