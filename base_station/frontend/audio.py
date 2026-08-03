@@ -620,6 +620,38 @@ class AudioEngine:
             await self._aplay(self._beep_wav(int(cue.get("beepHz", 0)), int(cue["beepMs"])))
             self._last_play_at = time.monotonic()
 
+    def wav_dir(self):
+        """Where the GliderScore audio library lives. Exposed so the callup can see
+        which pilot names actually exist without reaching for a private name."""
+        return _WAV_DIR
+
+    async def play_sequence(self, wavs: list[str]) -> int:
+        """Play files back to back, each waiting for the last. Returns how many played.
+
+        The pilot callup needs this and the scheduled-cue path cannot give it: cues
+        are dispatched against a clock and preempt one another, which is right for
+        "10 seconds remaining" and exactly wrong for a list of names, where the
+        third pilot must not cut off the second. Names also vary in length, so
+        there is no schedule to write in advance.
+
+        ⚠ A missing file is skipped and logged, never fatal. A pilot whose name was
+        never generated must not silence the rest of the callup — the CD needs the
+        other five names far more than they need to know about the gap, which the
+        coverage report tells them about beforehand anyway.
+        """
+        played = 0
+        for wav in wavs:
+            if not wav:
+                continue
+            path = _WAV_DIR / wav
+            if not path.exists():
+                log.warning("[AUDIO] callup: missing %s", wav)
+                continue
+            await self._aplay(str(path))
+            self._last_play_at = time.monotonic()
+            played += 1
+        return played
+
     async def _aplay(self, path: str) -> None:
         args = ["aplay", "-q", "-D", audio_control.output_device(),
                 *audio_control.buffer_args(), path]

@@ -815,3 +815,44 @@ class ScratchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PilotNameAudioKeyTests(unittest.TestCase):
+    """Matching a pilot to the .wav GliderScore generated for them.
+
+    GliderScore writes `Surname_Firstname.wav` from the name as stored, so the key
+    is derived, not held. ⚠ /api/audio/pilot-coverage MUST use these same two
+    functions: if the report and the callup key differently, the report says a
+    pilot is covered and the callup silently skips them — a lie that only shows up
+    at the ready box.
+    """
+
+    def test_matches_with_the_zz_marker_on_either_side(self):
+        """ZZ prefixes test and duplicate roster entries; it is nobody's name. A
+        roster cleaned up to 'Chris Barrenger' must still find ZZBarrenger_Chris."""
+        from frontend.state_machine import audio_name_key, pilot_name_key
+        for name, stem in (
+            ("David ZZPratley", "ZZPratley_David"),   # marker on both
+            ("David Pratley", "ZZPratley_David"),     # marker on the file only
+            ("David ZZPratley", "Pratley_David"),     # marker on the pilot only
+            ("Mike ZZO'Reilly", "ZZO'Reilly_Mike"),   # punctuation survives
+        ):
+            with self.subTest(name=name, stem=stem):
+                self.assertEqual(pilot_name_key(name), audio_name_key(stem))
+
+    def test_a_real_name_starting_zz_is_not_eaten(self):
+        """Requires literal ZZ + a CAPITAL, which is how the marker is written.
+        An earlier case-insensitive version turned 'Zzap' into 'ap'."""
+        from frontend.state_machine import pilot_name_key
+        self.assertEqual(pilot_name_key("Jo Zzap"), "zzap_jo")
+
+    def test_multi_word_first_names_keep_all_their_parts(self):
+        from frontend.state_machine import pilot_name_key
+        self.assertEqual(pilot_name_key("Mary Jane Smith"), "smith_mary_jane")
+
+    def test_a_single_word_name_has_no_key(self):
+        """No surname means no GliderScore filename to match — reported as missing
+        rather than guessed at."""
+        from frontend.state_machine import pilot_name_key
+        self.assertEqual(pilot_name_key("Madonna"), "")
+        self.assertEqual(pilot_name_key(""), "")

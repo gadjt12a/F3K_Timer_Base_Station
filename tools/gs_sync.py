@@ -458,6 +458,109 @@ def _run_sync(comp_id: int, round_no: int, mdb: str, base: str, dry_run: bool) -
 
 
 # ---------------------------------------------------------------------------
+# Audio library sync
+#
+# GliderScore generates the audio pack — pilot names as `Surname_Firstname.wav`
+# from the system synthesizer, plus Round/Group/task files — into the `Audio`
+# folder beside GliderScoreData.mdb. Pilot names are regenerated PER COMPETITION,
+# so a base station that was current last weekend is missing everyone who has
+# joined since.
+#
+# This tool is the right place to fix that: it is the one thing that sees both
+# machines. It runs on the CD's laptop with the GliderScore folder on disk and the
+# base station on the network, so it can diff the two libraries and push the gap.
+# The base owns the speaker, so the files must end up there — the laptop is not in
+# the audio path at all.
+# ---------------------------------------------------------------------------
+
+AUDIO_EXT = (".wav", ".mp3")
+
+
+def _audio_dir_for(mdb: str) -> Path:
+    """GliderScore's rule: Audio is a sub-folder of the folder holding the exe."""
+    return Path(mdb).parent / "Audio"
+
+
+def _post_files(url: str, paths: list[Path]) -> dict:
+    """multipart/form-data upload, hand-rolled to keep this dependency-free.
+
+    ⚠ This ships as a double-clickable .exe for a CD who will not be installing
+    packages, so `requests` is not available and must not become required.
+    """
+    boundary = "----f3kaudio7f3c1e"
+    body = bytearray()
+    for p in paths:
+        body += (f"--{boundary}\r\n"
+                 f'Content-Disposition: form-data; name="files"; filename="{p.name}"\r\n'
+                 f"Content-Type: application/octet-stream\r\n\r\n").encode()
+        body += p.read_bytes()
+        body += b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        url, data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read())
+
+
+def sync_audio(mdb: str, base: str, dry_run: bool = False) -> None:
+    """Copy every GliderScore audio file the base station does not already have."""
+    audio_dir = _audio_dir_for(mdb)
+    if not audio_dir.is_dir():
+        print(f"No audio folder at {audio_dir} — skipping audio sync.")
+        return
+
+    local = {p.name: p for p in audio_dir.iterdir()
+             if p.is_file() and p.suffix.lower() in AUDIO_EXT}
+    if not local:
+        print(f"No .wav/.mp3 files in {audio_dir} — skipping audio sync.")
+        return
+
+    url = f"{base.rstrip('/')}/api/audio/library"
+    print(f"\nAudio: {len(local)} file(s) in {audio_dir}")
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            remote = json.loads(resp.read()).get("files", {})
+    except urllib.error.URLError as exc:
+        print(f"  WARN: cannot read the base station's audio library ({exc}) — skipped")
+        return
+
+    # Size is the change signal as well as the presence one: a name the CD
+    # re-recorded keeps its filename, and matching on name alone would leave the
+    # correction sitting on the laptop for ever.
+    todo = [p for n, p in sorted(local.items())
+            if remote.get(n) != p.stat().st_size]
+    if not todo:
+        print(f"  Base station already has all {len(local)} — nothing to send.")
+        return
+
+    print(f"  {len(todo)} new or changed; base has {len(remote)}")
+    for p in todo[:10]:
+        print(f"    + {p.name}")
+    if len(todo) > 10:
+        print(f"    … and {len(todo) - 10} more")
+
+    if dry_run:
+        print("  Dry run — nothing sent.")
+        return
+
+    # Batched: 200+ files in one request is a big body and an all-or-nothing
+    # failure, and a CD on a field AP does not want to start again from zero.
+    sent = 0
+    for i in range(0, len(todo), 25):
+        batch = todo[i:i + 25]
+        try:
+            res = _post_files(url, batch)
+            sent += len(res.get("written", []))
+            for s in res.get("skipped", []):
+                print(f"    ! skipped {s.get('name')}: {s.get('why')}")
+        except urllib.error.URLError as exc:
+            print(f"  WARN: upload failed after {sent} file(s): {exc}")
+            return
+    print(f"  Sent {sent} file(s) to the base station.")
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -468,10 +571,17 @@ def main() -> None:
     ap.add_argument("--mdb", default=MDB_DEFAULT)
     ap.add_argument("--round", type=int, default=0, help="Sync one round only (0 = all)")
     ap.add_argument("--dry-run", action="store_true", help="Print rows, don't write")
+    ap.add_argument("--no-audio", action="store_true",
+                    help="Skip copying new GliderScore audio to the base station")
     args = ap.parse_args()
 
     try:
         _run_sync(args.comp_id, args.round, args.mdb, args.base, args.dry_run)
+        # After the scores, because the scores are why the CD ran this. Audio is
+        # housekeeping and must never be the reason a score sync did not happen —
+        # sync_audio() reports its own problems and never raises.
+        if not args.no_audio:
+            sync_audio(args.mdb, args.base, args.dry_run)
     except RuntimeError as exc:
         sys.exit(f"ERROR: {exc}")
 
@@ -725,6 +835,12 @@ class SyncApp:
         sys.stdout = _LogRedirect(self._log_q)
         try:
             _run_sync(comp_id, round_no, mdb, base, dry_run)
+            # Audio is housekeeping and must never cost the CD their score sync,
+            # so it runs after and swallows its own failures.
+            try:
+                sync_audio(mdb, base, dry_run)
+            except Exception as exc:
+                self._log_q.put(f"Audio sync skipped: {exc}")
         except RuntimeError as exc:
             self._log_q.put(f"ERROR: {exc}")
         except Exception as exc:

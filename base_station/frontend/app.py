@@ -940,7 +940,7 @@ async def results_flight_delete(flight_id: int = Form(...)):
 # ---------------------------------------------------------------------------
 
 @app.get("/import")
-async def import_get(request: Request, error: str = None):
+async def import_get(request: Request, error: str = None, msg: str = None):
     from frontend import gs_import as gsi
     competitions: list = []
     upload_exists = os.path.exists(GS_UPLOAD_PATH)
@@ -950,11 +950,17 @@ async def import_get(request: Request, error: str = None):
             competitions = gsi.list_competitions(GS_UPLOAD_PATH)
         except Exception as exc:
             read_error = str(exc)
+    audio_count = 0
+    if AUDIO_LIB_DIR.is_dir():
+        audio_count = sum(1 for p in AUDIO_LIB_DIR.iterdir()
+                          if p.is_file() and p.suffix.lower() in _AUDIO_EXT)
     return templates.TemplateResponse(request, "import.html", {
         "active": "import",
         "competitions": competitions,
         "upload_exists": upload_exists,
         "error": error or read_error,
+        "msg": msg,
+        "audio_count": audio_count,
     })
 
 
@@ -964,6 +970,50 @@ async def import_upload(file: UploadFile = File(...)):
     with open(GS_UPLOAD_PATH, "wb") as f:
         f.write(content)
     return RedirectResponse("/import", status_code=303)
+
+
+@app.post("/import/audio")
+async def import_audio(file: UploadFile = File(...)):
+    """Take a zip of the CD's GliderScore Audio folder.
+
+    The offline twin of the live sync in `tools/gs_sync.py`: same destination,
+    same rules, for a CD whose laptop is not on the network. Only new or changed
+    files are written, so re-uploading the whole folder every event is cheap and
+    is the expected way to use it.
+    """
+    import zipfile
+    AUDIO_LIB_DIR.mkdir(parents=True, exist_ok=True)
+    data = await file.read()
+    added = updated = skipped = 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for info in z.infolist():
+                if info.is_dir():
+                    continue
+                name = _safe_audio_name(info.filename)
+                if name is None or info.file_size > _AUDIO_MAX_BYTES:
+                    skipped += 1
+                    continue
+                dest = AUDIO_LIB_DIR / name
+                # Same rule as the live sync: size is the change signal, so a
+                # re-recorded name replaces the old one instead of being ignored.
+                if dest.exists() and dest.stat().st_size == info.file_size:
+                    skipped += 1
+                    continue
+                existed = dest.exists()
+                dest.write_bytes(z.read(info))
+                if existed:
+                    updated += 1
+                else:
+                    added += 1
+    except zipfile.BadZipFile:
+        return RedirectResponse(
+            f"/import?error={urllib.parse.quote('That file is not a zip archive')}",
+            status_code=303)
+
+    log.info("[AUDIO] zip import: %d added, %d updated, %d skipped", added, updated, skipped)
+    msg = f"Audio: {added} added, {updated} updated, {skipped} already current"
+    return RedirectResponse(f"/import?msg={urllib.parse.quote(msg)}", status_code=303)
 
 
 @app.post("/import/create")
@@ -976,6 +1026,123 @@ async def import_create(comp_no: int = Form(...)):
             f"/import?error={urllib.parse.quote(str(exc))}", status_code=303
         )
     return RedirectResponse("/setup", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Audio library sync — GliderScore generates the .wav files, the base plays them
+#
+# GliderScore builds an audio pack per competition: pilot names as
+# `Surname_Firstname.wav` (TTS from the system synthesizer, or recorded, or typed
+# phonetically), plus Round1-30, Group1-20 and the task descriptions. They live in
+# `C:\GliderScore6\Audio` on the CD's laptop.
+#
+# ⚠ Pilot name files are regenerated PER COMPETITION, so a base station that was
+# current last weekend is missing every pilot who has joined since. The base owns
+# the speaker, so the files have to be here — the laptop is not in the audio path
+# at all.
+#
+# Two routes in, both landing here: `tools/gs_sync.py` diffs the folders live for
+# a CD whose laptop is on the network, and `/import` takes a zip for one who is
+# working offline.
+# ---------------------------------------------------------------------------
+
+AUDIO_LIB_DIR = Path(__file__).resolve().parent / "data" / "audio"
+_AUDIO_EXT = {".wav", ".mp3"}
+_AUDIO_MAX_BYTES = 8 * 1024 * 1024      # a spoken name is ~30 KB; 8 MB is absurdly safe
+
+
+def _safe_audio_name(name: str) -> str | None:
+    """Filename only, known extension, nothing that can escape the directory.
+
+    ⚠ These names come off another machine's filesystem. `os.path.basename` alone
+    is not enough on a POSIX server receiving Windows paths, so backslashes are
+    normalised first — otherwise `..\\..\\etc\\x.wav` arrives as one long
+    "filename" that basename happily keeps whole.
+    """
+    if not name:
+        return None
+    name = name.replace("\\", "/").split("/")[-1].strip()
+    if not name or name.startswith("."):
+        return None
+    if Path(name).suffix.lower() not in _AUDIO_EXT:
+        return None
+    return name
+
+
+@app.get("/api/audio/library")
+async def api_audio_library():
+    """What the base already has, as {filename: size}.
+
+    Size is included so the caller can spot a file that was re-recorded or
+    regenerated under the same name — matching on filename alone would leave a
+    corrected pronunciation sitting on the laptop forever.
+    """
+    files: dict[str, int] = {}
+    if AUDIO_LIB_DIR.is_dir():
+        for p in AUDIO_LIB_DIR.iterdir():
+            if p.is_file() and p.suffix.lower() in _AUDIO_EXT:
+                files[p.name] = p.stat().st_size
+    return {"count": len(files), "files": files}
+
+
+@app.post("/api/audio/library")
+async def api_audio_library_upload(files: list[UploadFile] = File(...)):
+    """Accept audio files from the CD's GliderScore folder."""
+    AUDIO_LIB_DIR.mkdir(parents=True, exist_ok=True)
+    written, skipped = [], []
+    for up in files:
+        name = _safe_audio_name(up.filename or "")
+        if name is None:
+            skipped.append({"name": up.filename, "why": "not a .wav/.mp3 filename"})
+            continue
+        data = await up.read()
+        if not data:
+            skipped.append({"name": name, "why": "empty"})
+            continue
+        if len(data) > _AUDIO_MAX_BYTES:
+            skipped.append({"name": name, "why": f"too large ({len(data)} bytes)"})
+            continue
+        (AUDIO_LIB_DIR / name).write_bytes(data)
+        written.append(name)
+    if written:
+        log.info("[AUDIO] library received %d file(s): %s", len(written),
+                 ", ".join(written[:8]) + ("…" if len(written) > 8 else ""))
+    return {"ok": True, "written": written, "skipped": skipped}
+
+
+@app.get("/api/audio/pilot-coverage")
+async def api_audio_pilot_coverage(comp_id: int = None):
+    """Which pilots have no name audio — the report that saves a CD at 08:00.
+
+    GliderScore names the files `Surname_Firstname.wav`, and our pilot rows hold a
+    single display name, so the match is derived rather than stored. Anything that
+    does not resolve is reported rather than guessed at: a silent gap in a callup
+    is worse than a name read slightly wrong, because nobody notices it until the
+    pilot is not at the line.
+    """
+    db = _db()
+    if comp_id:
+        rows = db.execute(
+            """SELECT p.id, p.name FROM pilots p
+               JOIN competition_pilots cp ON cp.pilot_id = p.id
+               WHERE cp.competition_id = ? ORDER BY p.name""", (comp_id,)).fetchall()
+    else:
+        rows = db.execute("SELECT id, name FROM pilots ORDER BY name").fetchall()
+
+    # ⚠ Same keying as the callup itself (state_machine.pilot_name_key). If these
+    # two ever drift, the report says a pilot is covered and the callup skips them
+    # — a lie that only shows up at the ready box.
+    from frontend.state_machine import audio_name_key, pilot_name_key
+
+    have = {audio_name_key(p.stem): p.name for p in AUDIO_LIB_DIR.iterdir()
+            if p.is_file() and p.suffix.lower() in _AUDIO_EXT} if AUDIO_LIB_DIR.is_dir() else {}
+
+    covered, missing = [], []
+    for r in rows:
+        hit = have.get(pilot_name_key(r["name"]))
+        (covered if hit else missing).append(
+            {"id": r["id"], "name": r["name"], "file": hit})
+    return {"covered": len(covered), "missing": missing}
 
 
 # ---------------------------------------------------------------------------
@@ -1507,6 +1674,31 @@ async def api_audio_volume(level: int):
 async def api_audio_lead(seconds: float):
     """Set the audio lead (seconds cues fire early to offset output latency)."""
     return audio_control.set_lead(seconds)
+
+
+@app.post("/api/audio/callup")
+async def api_audio_callup(on: bool):
+    """Turn the pre-prep pilot callup on or off."""
+    return audio_control.set_callup(on)
+
+
+@app.post("/api/audio/callup/preview")
+async def api_audio_callup_preview(round_id: int, group_id: int):
+    """Play the callup for a heat without running it — so a CD can hear what the
+    pilots will hear, and catch a missing or badly-pronounced name at 08:00
+    instead of at the ready box."""
+    sm = app.state.state_machine
+    if sm.state != "IDLE":
+        return {"ok": False, "error": f"a round is {sm.state}"}
+    prev = sm._loaded
+    try:
+        if not await sm.load_heat(round_id, group_id):
+            return {"ok": False, "error": "no such heat"}
+        seq = sm._callup_sequence()
+        played = await engine.play_sequence(seq)
+        return {"ok": True, "files": seq, "played": played}
+    finally:
+        sm._loaded = prev
 
 
 @app.post("/api/audio/test")

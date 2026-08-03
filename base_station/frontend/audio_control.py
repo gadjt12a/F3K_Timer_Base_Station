@@ -31,7 +31,11 @@ bluealsa_lock = asyncio.Lock()
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "audio_config.json"
 # lead_s: seconds to fire cues EARLY, to compensate for fixed output latency
 # (Bluetooth A2DP buffering). The operator measures the observed lag and sets it here.
-_DEFAULTS = {"bt_mac": None, "volume": 45, "lead_s": 0.4}
+# callup: announce the group before prep — attention, round, group, each pilot's
+# name, then the task. Kris, 2026-08-03: it sits BEFORE the prep clock starts, so
+# it costs dead air rather than the pilots' preparation time. Off by default,
+# because it is silent-but-slow on a base with no pilot name audio synced yet.
+_DEFAULTS = {"bt_mac": None, "volume": 45, "lead_s": 0.4, "callup": False}
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +66,17 @@ def get_lead() -> float:
         return max(0.0, float(load_config().get("lead_s", 0) or 0))
     except (TypeError, ValueError):
         return 0.0
+
+
+def get_callup() -> bool:
+    return bool(load_config().get("callup", False))
+
+
+def set_callup(on: bool) -> dict:
+    cfg = load_config()
+    cfg["callup"] = bool(on)
+    save_config(cfg)
+    return {"ok": True, "callup": cfg["callup"]}
 
 
 def set_lead(seconds: float) -> dict:

@@ -14,6 +14,38 @@ from frontend.audio import engine
 log = logging.getLogger("f3k")
 
 
+def _strip_zz(part: str) -> str:
+    """Drop a leading `ZZ` marker from a name part.
+
+    `ZZ` prefixes test and duplicate roster entries; it is not part of anyone's
+    name. Applied to both the pilot name and the audio filename so the two match
+    whichever side carries the marker.
+
+    ⚠ Requires literal `ZZ` followed by a CAPITAL, which is how the marker is
+    always written (`ZZPratley`, `ZZO'Reilly`). A real name like "Zzap" keeps its
+    letters — an earlier version stripped case-insensitively and turned it into
+    "ap".
+    """
+    if len(part) > 3 and part.startswith("ZZ") and part[2].isupper():
+        return part[2:]
+    return part
+
+
+def pilot_name_key(name: str) -> str:
+    """'David ZZPratley' -> 'pratley_david'. Empty if the name has no surname."""
+    parts = [p for p in (name or "").replace("_", " ").split() if p]
+    if len(parts) < 2:
+        return ""
+    parts = [_strip_zz(p) for p in parts]
+    return f"{parts[-1]}_{'_'.join(parts[:-1])}".lower()
+
+
+def audio_name_key(stem: str) -> str:
+    """'ZZPratley_David' -> 'pratley_david'. Mirrors pilot_name_key()."""
+    parts = [_strip_zz(p) for p in (stem or "").split("_") if p]
+    return "_".join(parts).lower()
+
+
 class CompetitionStateMachine:
     def __init__(self, server) -> None:
         self._server = server
@@ -366,9 +398,94 @@ class CompetitionStateMachine:
             await asyncio.sleep(sleep_s)
         return deadline + 1.0
 
+    # ── Pilot name ↔ audio file matching ─────────────────────────────────────
+    #
+    # GliderScore writes `Surname_Firstname.wav`. Our pilot rows hold one display
+    # name, so the key is derived rather than stored — we do not own the naming
+    # convention and should not pretend to.
+    #
+    # ⚠ A leading `ZZ` is stripped from every part, on BOTH sides. It is a marker
+    # in the roster (test entries, duplicates), not part of anybody's name, so a
+    # pilot stored as "Chris Barrenger" must still find `ZZBarrenger_Chris.wav`
+    # and the reverse. Without this, cleaning up a roster silently breaks every
+    # callup that used to work.
+    #
+    # ⚠ It does NOT remove `ZZ` from what is SPOKEN — GliderScore's synthesiser
+    # read the stored name when it generated the file, so the letters are inside
+    # the audio. Only regenerating the pack in GliderScore from clean names fixes
+    # that.
+
+    @staticmethod
+    def _callup_enabled() -> bool:
+        from frontend import audio_control
+        return audio_control.get_callup()
+
+    def _callup_sequence(self) -> list[str]:
+        """The audio files for the pilot callup, in order.
+
+        GliderScore generates every one of these into its Audio folder and they are
+        synced to the base by `tools/gs_sync.py` or the /import zip:
+
+            NextGroupToReadyBox → Round<N> → Group<M> → <each pilot> → <task>
+
+        Names are `Surname_Firstname.wav`, derived from the pilot's display name
+        rather than stored, because that is the convention GliderScore writes and
+        we do not own it. A pilot with no file is simply absent from the list —
+        /api/audio/pilot-coverage is how a CD finds that out at 08:00 rather than
+        at the ready box.
+        """
+        d = self._loaded
+        seq = ["NextGroupToReadyBox.wav",
+               f"Round{d['round_no']}.wav",
+               f"Group{d['group_no']}.wav"]
+
+        have = {audio_name_key(p.stem): p.name for p in engine.wav_dir().iterdir()
+                if p.is_file() and p.suffix.lower() in (".wav", ".mp3")} \
+               if engine.wav_dir().is_dir() else {}
+        for _pid, name in d["pilot_id_names"]:
+            key = pilot_name_key(name)
+            if key and key in have:
+                seq.append(have[key])
+            else:
+                log.info("[CALLUP] no name audio for %s", name)
+
+        # Task description last, so the pilots hear what they are about to fly
+        # immediately before the prep clock starts.
+        letter = d["task"]
+        seq.append(f"F3KTask_{letter}.wav" if d["discipline"] == "F3K"
+                   else f"F5KTask{letter}.wav")
+        return seq
+
+    async def _run_callup(self) -> None:
+        """Announce the group before prep starts. Kris: callup and the round task
+        announcement both sit BEFORE prep time, not inside it.
+
+        ⚠ The prep clock does not exist yet when this runs — that is the whole
+        point. MBT makes this a setting because the callup eats prep time when it
+        sits inside the window; putting it before means a six-pilot group costs
+        15-20 s of dead air instead of 15-20 s of the pilots' preparation.
+        """
+        self._state = "CALLUP"
+        await self._broadcast_ws({"type": "state_change", "state": "CALLUP"})
+        seq = self._callup_sequence()
+        log.info("[CALLUP] %d file(s): %s", len(seq), ", ".join(seq))
+        try:
+            played = await engine.play_sequence(seq)
+            log.info("[CALLUP] played %d/%d", played, len(seq))
+        except Exception:
+            # Never let the announcement stop the round starting.
+            log.exception("[CALLUP] failed — continuing to prep")
+
     async def _run_sequence(self) -> None:
         d = self._loaded
         loop = asyncio.get_event_loop()
+
+        # The callup runs BEFORE the audio schedule is anchored, because the
+        # schedule's zero is the start of prep and the callup is not part of prep.
+        if self._callup_enabled():
+            await self._run_callup()
+            if self._state != "CALLUP":       # aborted while announcing
+                return
 
         # Audio is driven by a single lead-compensated schedule anchored to *now*
         # (the start of PREP), so cues fire early enough to overcome fixed output
