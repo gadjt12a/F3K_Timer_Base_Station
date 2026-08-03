@@ -88,6 +88,11 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 from frontend import rules_review  # noqa: E402
 app.include_router(rules_review.router)
 
+# T8 browser-pass checklist (/checks). Own JSON store, same reasoning as the
+# rules review: scratch working must not be able to write to a competition DB.
+from frontend import ui_checks  # noqa: E402
+app.include_router(ui_checks.router)
+
 
 def _fmt_date(value: str) -> str:
     """YYYY-MM-DD → 22 Jul 2026; passes through anything that doesn't parse."""
@@ -1650,6 +1655,12 @@ async def _start_ota_autopush():
 @app.get("/settings")
 async def settings_get(request: Request):
     return templates.TemplateResponse(request, "settings.html", {"active": "settings"})
+
+
+@app.get("/checks")
+async def ui_checks_get(request: Request):
+    """The T8 browser pass, as a page you tick off while doing it."""
+    return templates.TemplateResponse(request, "ui_checks.html", {"active": "checks"})
 
 
 @app.get("/api/audio/status")

@@ -6,9 +6,11 @@ a regression is a competition-day failure, not a cosmetic one.
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -690,3 +692,59 @@ class EndpointTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UiChecksTests(unittest.TestCase):
+    """The T8 check sheet (/checks). Its own JSON store, never the competition DB.
+
+    ⚠ Route ORDER is the thing worth pinning here. `/api/ui-checks/reset` and
+    `/api/ui-checks/{check_id}` both match "reset", and FastAPI takes the first
+    declared — so with them the wrong way round, Reset answers 404 "no such
+    check" and silently does nothing. It did exactly that until it was tested.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        from frontend import ui_checks
+        self.mod = ui_checks
+        self._orig = ui_checks._STORE
+        ui_checks._STORE = Path(self.tmp) / "ui_checks.json"
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.mod._STORE = self._orig
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_reset_is_not_swallowed_by_the_id_route(self):
+        first = [c["id"] for s in self.mod.SECTIONS for c in s["checks"]][0]
+        self.client.post(f"/api/ui-checks/{first}", json={"status": "pass"})
+        self.assertEqual(self.client.get("/api/ui-checks").json()["counts"]["pass"], 1)
+        r = self.client.post("/api/ui-checks/reset")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.client.get("/api/ui-checks").json()["counts"]["pass"], 0)
+
+    def test_a_tick_survives_and_carries_its_note(self):
+        r = self.client.post("/api/ui-checks/i63-stale-fields",
+                             json={"status": "fail", "note": "leaderboard tab stale"})
+        self.assertEqual(r.status_code, 200)
+        state = self.client.get("/api/ui-checks").json()["state"]
+        self.assertEqual(state["i63-stale-fields"]["status"], "fail")
+        self.assertEqual(state["i63-stale-fields"]["note"], "leaderboard tab stale")
+
+    def test_unknown_check_and_bad_status_are_refused(self):
+        self.assertEqual(
+            self.client.post("/api/ui-checks/nope", json={"status": "pass"}).status_code, 404)
+        first = [c["id"] for s in self.mod.SECTIONS for c in s["checks"]][0]
+        self.assertEqual(
+            self.client.post(f"/api/ui-checks/{first}", json={"status": "banana"}).status_code,
+            400)
+
+    def test_every_check_is_complete_and_uniquely_identified(self):
+        """A check with no `why` becomes a ritual: click it, see something, tick it."""
+        ids = [c["id"] for s in self.mod.SECTIONS for c in s["checks"]]
+        self.assertEqual(len(ids), len(set(ids)), "duplicate check id")
+        for sec in self.mod.SECTIONS:
+            for c in sec["checks"]:
+                for key in ("title", "how", "expect", "why"):
+                    with self.subTest(check=c["id"], key=key):
+                        self.assertTrue(c.get(key), f"{c['id']} missing {key}")

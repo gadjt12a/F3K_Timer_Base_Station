@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}UI Check Sheet — Glide Base{% endblock %}
+{% block content %}
+<div x-data="uichecks()" x-init="init()" class="max-w-4xl">
+
+  <div class="flex items-center justify-between mb-2 flex-wrap gap-3">
+    <h1 class="text-2xl font-bold">T8 — UI Check Sheet</h1>
+    <div class="flex items-center gap-2 text-sm">
+      <a href="/api/ui-checks/export" target="_blank"
+         class="px-3 py-1.5 rounded border border-gray-600 text-gray-300 hover:bg-gray-700">Export</a>
+      <button @click="resetAll()"
+              class="px-3 py-1.5 rounded border border-red-700 text-red-300 hover:bg-red-900/40">
+        Start a fresh pass
+      </button>
+    </div>
+  </div>
+
+  <p class="text-sm text-gray-400 mb-4">
+    Everything a server-side test can reach is already tested. This is the half no test
+    can see: whether a control actually works when a human clicks it.
+    <span class="text-gray-500">Ticks are saved on the base station as you go — you can
+    close this and come back, or carry on from a phone.</span>
+  </p>
+
+  <!-- Progress -->
+  <div class="bg-gray-800 rounded-lg p-4 mb-6 sticky top-0 z-10 shadow-lg">
+    <div class="flex items-center gap-4 flex-wrap text-sm">
+      <span class="font-semibold text-gray-200">
+        <span x-text="done"></span> / <span x-text="total"></span> checked
+      </span>
+      <span class="text-green-400">✓ <span x-text="counts.pass"></span> pass</span>
+      <span class="text-red-400">✗ <span x-text="counts.fail"></span> fail</span>
+      <span class="text-gray-500">– <span x-text="counts.skip"></span> skipped</span>
+      <span class="text-gray-500 ml-auto" x-show="updated"
+            x-text="'last change ' + updated"></span>
+    </div>
+    <div class="mt-2 h-2 rounded bg-gray-700 overflow-hidden flex">
+      <div class="bg-green-600 h-full transition-all"
+           :style="'width:' + pct(counts.pass) + '%'"></div>
+      <div class="bg-red-600 h-full transition-all"
+           :style="'width:' + pct(counts.fail) + '%'"></div>
+      <div class="bg-gray-500 h-full transition-all"
+           :style="'width:' + pct(counts.skip) + '%'"></div>
+    </div>
+    <p x-show="counts.fail" class="text-xs text-red-300 mt-2">
+      A failure is only useful with a note — write what you saw, not that it failed.
+    </p>
+  </div>
+
+  <template x-for="sec in sections" :key="sec.id">
+    <section class="mb-8">
+      <h2 class="text-lg font-semibold text-gray-200 mb-1" x-text="sec.title"></h2>
+      <p class="text-sm text-gray-500 mb-3" x-show="sec.intro" x-text="sec.intro"></p>
+
+      <template x-for="c in sec.checks" :key="c.id">
+        <div class="rounded-lg mb-3 border transition-colors"
+             :class="{
+               'border-green-700 bg-green-950/20': st(c.id).status === 'pass',
+               'border-red-700 bg-red-950/20':     st(c.id).status === 'fail',
+               'border-gray-700 bg-gray-800/60':   st(c.id).status === 'skip',
+               'border-gray-700 bg-gray-800':      !st(c.id).status || st(c.id).status === 'todo'
+             }">
+          <div class="p-4">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <h3 class="font-semibold text-gray-100 flex-1 min-w-[16rem]" x-text="c.title"></h3>
+              <div class="flex gap-1 flex-shrink-0">
+                <button @click="set(c.id, 'pass')"
+                        :class="st(c.id).status === 'pass' ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                        class="px-3 py-1 rounded text-sm font-medium">✓ Pass</button>
+                <button @click="set(c.id, 'fail')"
+                        :class="st(c.id).status === 'fail' ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                        class="px-3 py-1 rounded text-sm font-medium">✗ Fail</button>
+                <button @click="set(c.id, 'skip')"
+                        :class="st(c.id).status === 'skip' ? 'bg-gray-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'"
+                        class="px-3 py-1 rounded text-sm font-medium">Skip</button>
+              </div>
+            </div>
+
+            <dl class="mt-2 text-sm space-y-1">
+              <div class="flex gap-2">
+                <dt class="text-gray-500 w-16 flex-shrink-0">Do</dt>
+                <dd class="text-gray-300" x-text="c.how"></dd>
+              </div>
+              <div class="flex gap-2">
+                <dt class="text-gray-500 w-16 flex-shrink-0">Expect</dt>
+                <dd class="text-gray-300" x-text="c.expect"></dd>
+              </div>
+              <div class="flex gap-2">
+                <dt class="text-gray-500 w-16 flex-shrink-0">Why</dt>
+                <dd class="text-gray-500 text-xs leading-relaxed pt-0.5" x-text="c.why"></dd>
+              </div>
+            </dl>
+
+            <!-- Notes: always available, but demanded on a failure. -->
+            <div class="mt-3" x-show="st(c.id).status === 'fail' || st(c.id).note || noteOpen[c.id]">
+              <textarea rows="2"
+                        class="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200"
+                        :placeholder="st(c.id).status === 'fail'
+                                      ? 'What happened? Exact wording, and what you clicked.'
+                                      : 'Note (optional)'"
+                        :value="st(c.id).note || ''"
+                        @change="setNote(c.id, $event.target.value)"></textarea>
+            </div>
+            <button x-show="!(st(c.id).status === 'fail' || st(c.id).note || noteOpen[c.id])"
+                    @click="noteOpen[c.id] = true"
+                    class="mt-2 text-xs text-gray-500 hover:text-gray-300">+ note</button>
+          </div>
+        </div>
+      </template>
+    </section>
+  </template>
+
+  <p class="text-xs text-gray-600 mb-8">
+    Checks are defined in <span class="font-mono">frontend/ui_checks.py</span> — adding one
+    is a commit, ticking one is not. Ticks live in
+    <span class="font-mono">~/f3k_checks/ui_checks.json</span>, outside the repo and outside
+    the competition database.
+  </p>
+</div>
+
+<script>
+function uichecks() {
+  return {
+    sections: [], state: {}, counts: {pass:0, fail:0, skip:0, todo:0},
+    total: 0, updated: '', noteOpen: {},
+
+    async init() { await this.load(); },
+
+    async load() {
+      const d = await (await fetch('/api/ui-checks')).json();
+      this.sections = d.sections;
+      this.state = d.state || {};
+      this.counts = d.counts;
+      this.total = d.total;
+      this.updated = d.updated ? d.updated.replace('T', ' ').replace('+00:00', ' UTC') : '';
+    },
+
+    st(id) { return this.state[id] || {}; },
+    get done() { return this.counts.pass + this.counts.fail + this.counts.skip; },
+    pct(n) { return this.total ? (n / this.total) * 100 : 0; },
+
+    async set(id, status) {
+      // Clicking the status you already have clears it — the only way back to
+      // "not looked at yet" without resetting the whole pass.
+      if (this.st(id).status === status) status = 'todo';
+      await this.save(id, status, this.st(id).note || '');
+      if (status === 'fail') this.noteOpen[id] = true;
+    },
+
+    async setNote(id, note) {
+      await this.save(id, this.st(id).status || 'todo', note);
+    },
+
+    async save(id, status, note) {
+      const r = await fetch('/api/ui-checks/' + id, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status, note})
+      });
+      if (!r.ok) { alert('Could not save that tick'); return; }
+      // Re-read rather than patching locally: the counts and the progress bar are
+      // server-derived, and a second device may have ticked something too.
+      await this.load();
+    },
+
+    async resetAll() {
+      if (!confirm('Clear every tick and start a fresh pass?\n\nThe current one is not kept.')) return;
+      await fetch('/api/ui-checks/reset', {method: 'POST'});
+      await this.load();
+    }
+  };
+}
+</script>
+{% endblock %}
