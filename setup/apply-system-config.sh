@@ -35,7 +35,7 @@
 
 set -uo pipefail   # deliberately NOT -e: failures are handled with rollback
 
-CONFIG_VERSION=3
+CONFIG_VERSION=4
 STATE_FILE=/var/lib/f3k/system-config.version
 BACKUP_DIR=/var/backups/f3k-system-config
 
@@ -69,13 +69,19 @@ MANAGED_PATHS=(
     # scan reports it on every single run, and a check that always cries wolf is
     # one everybody learns to skim past.
     /etc/systemd/system/f3k-timer-serial.service
+    /etc/systemd/journald.conf.d/50-f3k-persistent.conf
 )
 WATCH_DIRS=(
     /etc/hostapd /etc/dnsmasq.d /etc/nftables.d /etc/NetworkManager/conf.d
     /etc/modprobe.d /etc/cron.d /usr/local/bin /etc/systemd/system
+    /etc/systemd/journald.conf.d
 )
 
 CHANGES=()
+# Declared here, not in step 7: write_file() sets it and runs from step 1
+# onwards, so a later declaration would both trip `set -u` and RESET a failure
+# that had already happened.
+apply_failed=0
 hostapd_dirty=0
 dnsmasq_dirty=0
 reboot_needed=0
@@ -150,7 +156,24 @@ write_file() {
     fi
     if [ "$DRY_RUN" -eq 0 ]; then
         [ -f "$path" ] && backup "$path"
-        printf '%s' "$content" > "$path"
+        # ⚠ Create the parent. A drop-in directory such as
+        # /etc/systemd/journald.conf.d may not exist on a stock image, and
+        # without this the redirect below fails.
+        mkdir -p "$(dirname "$path")" || {
+            echo "  [FAILED]  $path (cannot create $(dirname "$path"))" >&2
+            apply_failed=1
+            return 1
+        }
+        # ⚠ And CHECK it. This used to be a bare redirect followed by an
+        # unconditional note(), so a write that failed still reported [CHANGED] —
+        # the script told the operator it had applied config it had not. Caught
+        # when the journald drop-in silently failed for the missing-directory
+        # reason above, and reported success in the same breath.
+        if ! printf '%s' "$content" > "$path" 2>/dev/null; then
+            echo "  [FAILED]  $path (write failed)" >&2
+            apply_failed=1
+            return 1
+        fi
         chmod "$mode" "$path"
     fi
     note "$path"
@@ -336,9 +359,46 @@ else
     skip "no NetworkManager leftovers"
 fi
 
+# ── 6b. Persistent journal ────────────────────────────────────────────────
+# Raspberry Pi OS ships /usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage
+# with Storage=volatile, so the journal lives in RAM and EVERY REBOOT DESTROYS
+# IT. That is a sensible default for an appliance that spares its SD card, and
+# the wrong one for a competition tool: the first time a base station misbehaves
+# in the field, the operator power-cycles it — which is precisely the action that
+# deletes the only evidence of what went wrong.
+#
+# Found the hard way: a tester lost the web UI mid-round on 2026-08-03, rebooted
+# to recover, and there was nothing left to read afterwards.
+#
+# An /etc drop-in wins over the vendor one in /usr/lib. Capped hard so this can
+# never fill the card — a fortnight of competitions is a few tens of MB.
+echo "6b. Persistent journal"
+write_file /etc/systemd/journald.conf.d/50-f3k-persistent.conf 644 '# Managed by apply-system-config.sh — do not edit by hand.
+# Overrides Raspberry Pi OS 40-rpi-volatile-storage.conf, which keeps the journal
+# in RAM. A base station that fails in the field must still be diagnosable after
+# the operator reboots it to get going again.
+[Journal]
+Storage=persistent
+SystemMaxUse=200M
+SystemMaxFileSize=20M
+MaxRetentionSec=1month
+'
+if [ "$DRY_RUN" -eq 0 ]; then
+    if [ ! -d /var/log/journal ]; then
+        install -d -g systemd-journal -m 2755 /var/log/journal
+        note "/var/log/journal (created)"
+    fi
+    # ⚠ Restarting journald is NOT enough. It keeps writing to /run (RAM) until
+    # it is told to migrate — normally systemd-journal-flush does that at boot,
+    # so without this the setting only takes effect after the next reboot, which
+    # is the very event whose logs we are trying to keep. Verified: /run went
+    # 8M -> 0 and /var/log/journal 4K -> 17M the moment this ran.
+    systemctl restart systemd-journald 2>/dev/null
+    journalctl --flush 2>/dev/null && skip "journal flushed to disk"
+fi
+
 echo
 echo "7. Service restarts"
-apply_failed=0
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "  (dry run — nothing restarted)"

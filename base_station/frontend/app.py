@@ -1423,6 +1423,11 @@ async def run_get(request: Request, comps: str = None):
             for c in all_comps
         ],
         "sel_ids": sel_ids,
+        # True when the queue on screen holds more than one discipline. Only then
+        # is a per-heat F3K/F5K chip worth the clutter — and only then is it needed,
+        # because a MIXED competition's F5K round in a per-comp column otherwise
+        # reads as a heat that has strayed in from another competition.
+        "mixed_queue": len({h["discipline"] for h in heats}) > 1,
         "initial_state": json.dumps(sm.get_status()),
         "tasks": merged_tasks(db),
         # Nothing test-related renders unless this is true. [TF-16]
