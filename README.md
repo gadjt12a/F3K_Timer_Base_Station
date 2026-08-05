@@ -60,6 +60,10 @@ base_station/
     ├── audio.py              # GliderScore-profile-driven audio cue engine
     ├── audio_control.py      # Bluetooth speaker control, volume, PCM health checks
     ├── gs_import.py          # GliderScore .mdb import via mdbtools
+    ├── display.py            # Field display feed — payload built for an LED PANEL, so
+    │                         #   /display and a future LED array are two renderers of
+    │                         #   one feed rather than two implementations
+    ├── ui_checks.py          # T8 browser-pass checklist (/checks); own JSON store
     ├── templates/            # Jinja2 + Tailwind + Alpine.js
     │   ├── base.html
     │   ├── setup.html
@@ -127,6 +131,8 @@ Two conventions came out of that pass and are worth keeping:
 | `/settings` | Audio volume + lead compensation, **Pilot callup** (global default for every heat — announces the group before the prep clock starts: attention → round → group → each pilot in draw order → task; names come from GliderScore's audio pack), Bluetooth speaker, **Connected Timers** (**Renumber** button — timer numbers persist in the DB across restarts, so this is the way to free a number held by a decommissioned or test timer) (T-prefixed IDs matching the timer's own screen; per-timer firmware version — green when it matches the cached timer firmware, orange when behind, light orange when the timer is *ahead*, which means this base station is the stale one and gets a banner saying so. Timers refuse a downgrade, so a stale base cannot undo a firmware update), competition DB backup/restore, **Software Update** (git pull base station code + Pi OS config + sync timer OTA firmware files; shows `build.N` version number + cached firmware version; smart health-poll reload — waits for server restart before navigating. A failed OS-config apply rolls itself back and reports why instead of reloading) |
 | `/reports/flight_cards/{id}` | Printable pilot flight cards (A4 landscape, 2×2 per page) — one card per pilot per discipline for the full comp; pre-filled from draw with Rd.Grp, full task name, and blank flight columns; F5K cards include paired Alt columns (blue tint); MIXED comps produce separate F3K and F5K cards per pilot; "🖨 Cards" button on Rounds page |
 | `/pilot` | Mobile read-only pilot view — state, live countdown, current heat + pilots, leaderboard link; captive-portal landing page for phones on F3K_OPS |
+| `/display` | **Field display** — full-screen phase clock in MBT's colours (prep WHITE, window GREEN, landing RED, gaps MAGENTA), round/heat, task, pilots. Standalone page, no nav: point any browser at it and tap for full screen. Wake-lock so a tablet does not sleep; shows **NO CONNECTION** rather than freezing on a stale clock. ⚠ One consumer of the feed (`/api/display/state`, `/ws/display`), whose payload is built for what an **LED panel** can show — that constraint is what makes a future LED array a drop-in rather than a rewrite. Colour is sent as a **name**, never a hex value. Nothing renders on the Pi |
+| `/checks` | T8 browser-pass check sheet — 19 checks with what to do, what to expect and which bug each catches; Pass/Fail/Skip with notes, progress, text export, reset |
 | `/health` | JSON status (timers connected) |
 | `/testmode` | **Unlinked by design.** POST a passcode to enable the round-clock fast-forward (`F3K_TEST_PASSCODE`, default in code — this is not a security boundary, it exists so a CD cannot stumble into it). Nothing test-related renders on `/run` until it is on, not even the endpoint name in view-source; `POST /api/run/fast-forward?to=N` 403s independently. Jumps the current phase (PREP/WORKING/LANDING) to N seconds and re-anchors the audio and the timers with it. ⚠ Distinct from `/api/run/skip`, which shortens **prep** only and is a legitimate CD control |
 
