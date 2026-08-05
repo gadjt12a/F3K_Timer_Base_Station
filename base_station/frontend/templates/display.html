@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F3K Display</title>
+<!--
+  Field display. ONE consumer of the feed in frontend/display.py — an LED array
+  will be another, reading the identical JSON.
+
+  ⚠ This page renders ONLY what the feed carries: a clock, a colour, two short
+  lines and a pilot list. That is not laziness, it is the constraint that makes
+  the LED array a drop-in later. Anything richer here would be something the
+  panel cannot follow, and the two displays would drift apart from that moment.
+
+  Deliberately standalone — no base.html, no Tailwind, no nav. It has to survive
+  on an old tablet, a TV browser or a cheap stick, and every dependency is
+  another thing to fail in a field with no internet.
+-->
+<style>
+  :root { --fg: #fff; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%; background: #000; color: var(--fg);
+    font-family: "DejaVu Sans", Arial, Helvetica, sans-serif;
+    overflow: hidden;
+    /* An operator's finger on a touch screen must not zoom or select anything. */
+    user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  #wrap {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 2vh 2vw;
+  }
+  /* Everything scales off the viewport, so the same page is right on a phone
+     held up at the line and on a 55" TV across the field. */
+  #label   { font-size: 6vh;  font-weight: 700; letter-spacing: .25em; opacity: .85; }
+  #clock   { font-size: 42vh; font-weight: 700; line-height: .95;
+             font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  #line1   { font-size: 8vh;  font-weight: 700; }
+  #line2   { font-size: 5vh;  opacity: .8; margin-top: .3vh; }
+  #pilots  { font-size: 3.4vh; opacity: .75; margin-top: 2vh; text-align: center;
+             line-height: 1.35; max-width: 92vw; }
+  .flash   { animation: f .5s steps(1) infinite; }
+  @keyframes f { 50% { opacity: .15; } }
+  /* Shown only when the feed is not arriving. A display that has silently frozen
+     on an old value is worse than one that admits it is lost — a pilot cannot
+     tell a stopped clock from a stopped round. */
+  #lost {
+    position: fixed; top: 0; left: 0; right: 0;
+    background: #b91c1c; color: #fff; font-size: 3vh; font-weight: 700;
+    text-align: center; padding: 1vh; display: none;
+  }
+  #idle { font-size: 7vh; opacity: .5; letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<div id="lost">NO CONNECTION TO BASE STATION</div>
+<div id="wrap">
+  <div id="label"></div>
+  <div id="clock">--:--</div>
+  <div id="line1"></div>
+  <div id="line2"></div>
+  <div id="pilots"></div>
+</div>
+
+<script>
+// MBT's colour names, resolved to values that read well on a backlit screen.
+// ⚠ The FEED sends the NAME. An LED panel will map the same names to whatever
+// its own hardware renders best, which is not what looks right on an LCD.
+const COLOUR = {
+  WHITE:   '#ffffff',
+  GREEN:   '#22c55e',
+  RED:     '#ef4444',
+  MAGENTA: '#e879f9',
+};
+
+const $ = id => document.getElementById(id);
+let lastAt = 0;
+
+function render(s) {
+  lastAt = Date.now();
+  $('lost').style.display = 'none';
+  document.documentElement.style.setProperty('--fg', COLOUR[s.colour] || '#fff');
+
+  $('label').textContent = s.label || '';
+  $('clock').textContent = s.phase === 'IDLE' ? '' : s.clock;
+  $('line1').textContent = s.line1 || '';
+  $('line2').textContent = s.line2 || '';
+  $('pilots').textContent = (s.pilots || []).join('   ·   ');
+
+  // Idle gets a word rather than a blank screen — a dark display looks broken.
+  if (s.phase === 'IDLE' && !s.line1) {
+    $('clock').textContent = 'READY';
+    $('clock').style.fontSize = '18vh';
+  } else {
+    $('clock').style.fontSize = '';
+  }
+
+  $('clock').classList.toggle('flash', !!s.flash);
+}
+
+// Websocket for the beat, with a poll as the safety net. Same lesson as [I-63]:
+// a renderer must not depend on one channel it cannot verify, and this one will
+// be left running unattended on a windowsill for a whole competition day.
+let ws = null;
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  try { ws = new WebSocket(`${proto}://${location.host}/ws/display`); }
+  catch (e) { return; }
+  ws.onmessage = ev => { try { render(JSON.parse(ev.data)); } catch (e) {} };
+  ws.onclose = () => { ws = null; setTimeout(connect, 2000); };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+}
+
+async function poll() {
+  // Cheap, and the only thing that recovers a display whose socket died in a way
+  // the browser never reported.
+  if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastAt < 4000) return;
+  try { render(await (await fetch('/api/display/state', {cache: 'no-store'})).json()); }
+  catch (e) {
+    if (Date.now() - lastAt > 10000) $('lost').style.display = 'block';
+  }
+}
+
+connect();
+poll();
+setInterval(poll, 2000);
+
+// Keep the screen awake. A tablet propped against the scoring tent that sleeps
+// after five minutes is not a display.
+if ('wakeLock' in navigator) {
+  const hold = () => navigator.wakeLock.request('screen').catch(() => {});
+  hold();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') hold();
+  });
+}
+
+// Tap anywhere for full screen — a TV browser or tablet has no F11.
+document.body.addEventListener('click', () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+});
+</script>
+</body>
+</html>

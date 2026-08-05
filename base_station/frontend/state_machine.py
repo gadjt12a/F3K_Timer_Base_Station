@@ -386,6 +386,22 @@ class CompetitionStateMachine:
     async def _broadcast_ws(self, data: dict) -> None:
         from frontend.app import manager
         await manager.broadcast(data)
+        # Field displays ride the same beat. Their payload is built separately and
+        # deliberately — see frontend/display.py — because a display must never
+        # have to parse the CD console's event stream to find a clock.
+        # ⚠ A phase change matters as much as a tick: without this, a display
+        # would sit on "PREP 0:00" until the next second arrived from somewhere.
+        if data.get("type") in ("tick", "state_change"):
+            await self._push_display()
+
+    async def _push_display(self) -> None:
+        """Never let a display cost the round. A renderer that has wedged, or a
+        websocket that will not drain, must not stall the state machine."""
+        try:
+            from frontend.display import feed
+            await feed.push(self)
+        except Exception:
+            log.exception("[DISPLAY] push failed — continuing the round")
 
     async def _broadcast_tick(self, remaining: int) -> None:
         d = self._loaded

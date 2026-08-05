@@ -748,3 +748,86 @@ class UiChecksTests(unittest.TestCase):
                 for key in ("title", "how", "expect", "why"):
                     with self.subTest(check=c["id"], key=key):
                         self.assertTrue(c.get(key), f"{c['id']} missing {key}")
+
+
+class DisplayFeedTests(unittest.TestCase):
+    """The field display feed — the contract a future LED array depends on.
+
+    ⚠ These tests exist because the LED panel is the SECOND consumer of this
+    payload and it does not exist yet. There will be no one to notice if the
+    shape drifts, until somebody plugs a panel in and finds it reads nothing.
+
+    The payload is deliberately built to what an LED PANEL can show — a clock, a
+    colour NAME, two short lines, a pilot list. Not to what a browser can.
+    """
+
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        self.db = init_db(self.path)
+        self.ids = _seed(self.db)
+        self.server = _FakeServer(self.db)
+        self.sm = CompetitionStateMachine(self.server)
+        app.state.server = self.server
+        app.state.state_machine = self.sm
+        self.server.state_machine = self.sm
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.path)
+
+    def test_payload_shape_is_stable(self):
+        """Every key an LED driver reads. Adding one is fine; removing or
+        renaming one breaks a device that may be an ESP32 nobody wants to
+        reflash on competition morning."""
+        s = self.client.get("/api/display/state").json()
+        for key in ("v", "phase", "colour", "label", "seconds", "clock",
+                    "line1", "line2", "pilots", "flash"):
+            with self.subTest(key=key):
+                self.assertIn(key, s)
+        self.assertEqual(s["v"], 1)
+
+    def test_colour_is_a_name_not_a_hex_value(self):
+        """An LED array and an LCD do not agree on what 'green' looks like, so
+        each renderer maps the name to what reads best on its own hardware."""
+        s = self.client.get("/api/display/state").json()
+        self.assertIn(s["colour"], {"WHITE", "GREEN", "RED", "MAGENTA"})
+
+    def test_phases_carry_mbt_colours(self):
+        """MBT's own vocabulary, from its options.txt. Pilots have read these for
+        years, and at thirty metres the colour arrives before the digits do."""
+        from frontend.display import feed
+        for state, colour in (("PREP", "WHITE"), ("WORKING", "GREEN"),
+                              ("LANDING", "RED"), ("CALLUP", "MAGENTA")):
+            with self.subTest(state=state):
+                self.sm._state = state
+                self.assertEqual(feed.snapshot(self.sm)["colour"], colour)
+
+    def test_flash_is_decided_by_the_feed_not_the_renderer(self):
+        """So every display flashes on the same second instead of each one
+        inventing its own threshold."""
+        from frontend.display import feed
+        self.sm._state = "WORKING"
+        self.sm._wt_remaining = 30
+        self.assertFalse(feed.snapshot(self.sm)["flash"])
+        self.sm._wt_remaining = 9
+        self.assertTrue(feed.snapshot(self.sm)["flash"])
+
+    def test_a_dead_display_cannot_disturb_a_round(self):
+        """A renderer left on a windowsill all day will drop off the network.
+        push() must swallow that, not raise into the state machine."""
+        import asyncio as _a
+
+        class _Wedged:
+            async def send_text(self, _):
+                raise RuntimeError("gone")
+
+        from frontend.display import feed
+        feed._clients.append(_Wedged())
+        try:
+            # asyncio.run, not get_event_loop — the latter raises on 3.14.
+            _a.run(feed.push(self.sm))
+        finally:
+            feed._clients.clear()
+        self.assertEqual(feed.client_count, 0, "a dead client must be dropped")

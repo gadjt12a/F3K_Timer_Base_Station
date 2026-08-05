@@ -93,6 +93,11 @@ app.include_router(rules_review.router)
 from frontend import ui_checks  # noqa: E402
 app.include_router(ui_checks.router)
 
+# Field display feed (/display, /api/display/state, /ws/display). The payload is
+# built for what an LED PANEL can show, so the web page and a future LED array
+# are two renderers of one feed rather than two implementations. See display.py.
+from frontend import display as display_mod  # noqa: E402
+
 
 def _fmt_date(value: str) -> str:
     """YYYY-MM-DD → 22 Jul 2026; passes through anything that doesn't parse."""
@@ -1666,6 +1671,12 @@ async def settings_get(request: Request):
 async def ui_checks_get(request: Request):
     """The T8 browser pass, as a page you tick off while doing it."""
     return templates.TemplateResponse(request, "ui_checks.html", {"active": "checks"})
+
+
+# Registered here, after `templates` exists — the display page needs it, and the
+# feed needs `app`. Nothing renders on the base station: this only serves the
+# payload and the page, and somebody else's CPU draws it.
+display_mod.register(app, templates)
 
 
 @app.get("/api/audio/status")
