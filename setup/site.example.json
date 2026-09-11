@@ -1,0 +1,81 @@
+{
+  "_readme": [
+    "STRAWMAN — nothing reads this file yet. See DEPLOYMENT.md section 3.",
+    "Proposal: this becomes the single source of truth for per-box identity.",
+    "apply-system-config.sh would RENDER hostapd/dnsmasq/nftables from it, and the",
+    "app would READ it for the captive-portal address, ports and display headers —",
+    "so no literal SSID, passphrase or subnet survives in the scripts or the Python.",
+    "Copy to setup/site.json (gitignored, per-box). Values below are the current",
+    "hardcoded defaults, so this file describes the existing Pi exactly."
+  ],
+
+  "schemaVersion": 1,
+
+  "site": {
+    "clubName": "",
+    "venue": "",
+    "countryCode": "NZ",
+    "timezone": "Pacific/Auckland"
+  },
+
+  "networks": {
+    "timer": {
+      "ssid": "F3K_BASE",
+      "passphrase": "f3ktimer",
+      "radio": {
+        "matchDriver": "mt76x2u",
+        "fallbackInterface": "wlan1"
+      },
+      "hwMode": "g",
+      "channel": 6,
+      "address": "192.168.10.1",
+      "netmask": "255.255.255.0",
+      "dhcp": {
+        "start": "192.168.10.10",
+        "end": "192.168.10.50",
+        "lease": "24h"
+      },
+      "captivePortal": false
+    },
+
+    "ops": {
+      "ssid": "F3K_OPS",
+      "passphrase": "f3kmanage",
+      "radio": {
+        "matchDriver": "brcmfmac",
+        "fallbackInterface": "wlan0"
+      },
+      "hwMode": "g",
+      "channel": 11,
+      "address": "192.168.20.1",
+      "netmask": "255.255.255.0",
+      "dhcp": {
+        "start": "192.168.20.10",
+        "end": "192.168.20.50",
+        "lease": "24h"
+      },
+      "captivePortal": true,
+      "captiveLandingPath": "/pilot"
+    }
+  },
+
+  "services": {
+    "hostname": "f3kbase",
+    "webPort": 8080,
+    "captiveRedirectFromPort": 80,
+    "timerTcpPort": 8765
+  },
+
+  "audio": {
+    "_note": "Supersedes base_station/audio_config.json if adopted. bt_mac is written by the pairing flow, not hand-edited. Do not tune leadSeconds from headphone tests — it is calibrated against the competition speaker.",
+    "btMac": null,
+    "volume": 45,
+    "leadSeconds": 0.4,
+    "callup": false
+  },
+
+  "updates": {
+    "channel": "stable",
+    "_channels": ["stable", "development"]
+  }
+}
