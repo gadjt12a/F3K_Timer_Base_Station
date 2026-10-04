@@ -1,0 +1,144 @@
+@page { size: A4 portrait; margin: 9mm 10mm 7mm 10mm; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  font-size: 7.9pt;
+  line-height: 1.2;
+  color: #15181c;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ── Masthead ───────────────────────────────────────────── */
+header {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 10mm;
+  border-bottom: 2pt solid #15181c;
+  padding-bottom: 1.4mm; margin-bottom: 1.9mm;
+}
+.brand { font-size: 7.4pt; font-weight: 700; letter-spacing: 0.16em;
+         text-transform: uppercase; color: #6b7280; margin-bottom: 0.8mm; }
+h1 { font-size: 15pt; font-weight: 700; margin: 0; letter-spacing: -0.012em; }
+.sub { font-size: 7.7pt; color: #4b5563; margin-top: 0.8mm; max-width: 130mm; }
+.docno { text-align: right; flex-shrink: 0; }
+.docno .n { font-size: 18pt; font-weight: 700; line-height: 0.9; color: #c8ccd2; }
+.docno .l { font-size: 6.6pt; font-weight: 700; letter-spacing: 0.13em;
+            text-transform: uppercase; color: #6b7280; }
+
+/* ── Columns ────────────────────────────────────────────── */
+.cols { display: flex; gap: 5.5mm; align-items: flex-start; }
+.col { flex: 1; min-width: 0; }
+
+/* ── Sections ───────────────────────────────────────────── */
+/* No break-inside:avoid here. These are one-pagers: if the content fits, nothing
+   breaks, and if it very nearly fits, "avoid" is what throws a whole section onto
+   a second page instead of letting it sit tight on the first. */
+section { margin-bottom: 1.7mm; }
+h2 {
+  font-size: 8.1pt; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #15181c;
+  margin: 0 0 1.1mm 0; padding-bottom: 0.5mm;
+  border-bottom: 0.6pt solid #c8ccd2;
+}
+h2 .tag { float: right; font-weight: 600; letter-spacing: 0;
+          text-transform: none; color: #6b7280; font-size: 7.6pt; }
+h3 { font-size: 8pt; font-weight: 700; margin: 1.5mm 0 0.7mm 0; }
+p { margin: 0 0 1mm 0; }
+.muted { color: #5a616b; }
+.tight { margin-bottom: 1mm; }
+
+/* ── Numbered steps ─────────────────────────────────────── */
+ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+ol.steps > li {
+  counter-increment: s; position: relative;
+  padding-left: 5.6mm; margin-bottom: 1.05mm;
+}
+ol.steps > li::before {
+  content: counter(s);
+  position: absolute; left: 0; top: 0.1mm;
+  width: 4.3mm; height: 4.3mm; border-radius: 50%;
+  background: #15181c; color: #fff;
+  font-size: 6.6pt; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+/* Opt-in, because ":first-child" also matches a <b> that has text in front of
+   it - which turns "press <b>Connect</b>." into a line of its own. */
+ol.steps > li b.lead { display: block; }
+
+ul { margin: 0 0 1.5mm 0; padding-left: 3.6mm; }
+ul li { margin-bottom: 0.5mm; }
+ul.plain { list-style: none; padding-left: 0; }
+ul.plain li { padding-left: 3.6mm; position: relative; }
+ul.plain li::before { content: "–"; position: absolute; left: 0; color: #9aa1aa; }
+
+/* ── Tables ─────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-bottom: 1mm; }
+th {
+  text-align: left; font-size: 6.8pt; font-weight: 700;
+  letter-spacing: 0.07em; text-transform: uppercase; color: #5a616b;
+  border-bottom: 0.6pt solid #9aa1aa; padding: 0 1.6mm 0.7mm 0;
+}
+td { padding: 0.52mm 1.4mm 0.52mm 0; border-bottom: 0.4pt solid #e2e5e9;
+     vertical-align: top; }
+td:last-child, th:last-child { padding-right: 0; }
+tr:last-child td { border-bottom: none; }
+table.zebra tbody tr:nth-child(even) { background: #f4f5f7; }
+table.zebra td { padding-left: 1.4mm; }
+
+/* ── Inline bits ────────────────────────────────────────── */
+code, .mono { font-family: Consolas, "Courier New", monospace; font-size: 7.25pt; }
+code { background: #eef0f3; padding: 0.3mm 1mm; border-radius: 1pt;
+       white-space: nowrap; }
+.key {
+  display: inline-block; min-width: 3.6mm; text-align: center;
+  font-weight: 700; font-size: 7.4pt;
+  border: 0.7pt solid #15181c; border-radius: 1.2pt;
+  padding: 0 0.9mm; background: #fff;
+}
+.pill { display: inline-block; font-size: 6.8pt; font-weight: 700;
+        letter-spacing: 0.05em; text-transform: uppercase;
+        padding: 0.3mm 1.4mm; border-radius: 6pt; background: #15181c; color: #fff; }
+.pill.g { background: #1f7a3d; } .pill.r { background: #a52121; }
+.pill.y { background: #a86a05; } .pill.b { background: #1d4f91; }
+.pill.gr { background: #6b7280; }
+
+/* ── Callouts ───────────────────────────────────────────── */
+.note, .warn {
+  border-left: 2pt solid #9aa1aa; background: #f4f5f7;
+  padding: 1mm 1.8mm; margin: 0 0 1.2mm 0; font-size: 7.35pt;
+}
+.warn { border-left-color: #a52121; background: #fbf0f0; }
+.note > b:first-child, .warn > b:first-child {
+  display: block; font-size: 7pt; letter-spacing: 0.07em;
+  text-transform: uppercase; margin-bottom: 0.5mm;
+}
+.warn > b:first-child { color: #8c1c1c; }
+.note > b:first-child { color: #4b5563; }
+
+/* ── Checklist ──────────────────────────────────────────── */
+ul.check { list-style: none; padding-left: 0; }
+ul.check li { padding-left: 4.4mm; position: relative; margin-bottom: 0.68mm; }
+ul.check li::before {
+  content: ""; position: absolute; left: 0; top: 0.5mm;
+  width: 2.9mm; height: 2.9mm; border: 0.8pt solid #15181c; border-radius: 0.8pt;
+}
+
+/* ── Flow strip ─────────────────────────────────────────── */
+.flow { display: flex; align-items: stretch; gap: 0; margin-bottom: 1.4mm; }
+.flow .st { flex: 1; text-align: center; padding: 0.9mm 0.4mm;
+            border: 0.6pt solid #c8ccd2; border-right: none; }
+.flow .st:last-child { border-right: 0.6pt solid #c8ccd2; }
+.flow .st .n { font-size: 7.4pt; font-weight: 700; letter-spacing: 0.05em; }
+.flow .st .d { font-size: 6.6pt; color: #5a616b; }
+.flow .st.on { background: #15181c; }
+.flow .st.on .n { color: #fff; } .flow .st.on .d { color: #c8ccd2; }
+
+/* ── Footer ─────────────────────────────────────────────── */
+footer {
+  border-top: 0.6pt solid #c8ccd2; margin-top: 1.3mm; padding-top: 0.9mm;
+  display: flex; justify-content: space-between;
+  font-size: 6.9pt; color: #6b7280;
+}

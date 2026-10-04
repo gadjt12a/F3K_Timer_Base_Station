@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Running a Competition</title>
+<link rel="stylesheet" href="sheet.css">
+</head><body>
+
+<header>
+  <div>
+    <div class="brand">Glide Base &middot; F3K / F5K Timer System</div>
+    <h1>Running the Competition</h1>
+    <div class="sub">The CD drives one screen. The base station owns the clock, speaks the call&#8209;up
+      and the cues, drives every timer watch in step, and writes down each flight as it is flown.</div>
+  </div>
+  <div class="docno"><div class="n">03</div><div class="l">Sheet</div></div>
+</header>
+
+<div class="cols">
+  <div class="col">
+    <section>
+      <h2>The screens, and who looks at them</h2>
+      <table class="zebra">
+        <thead><tr><th style="width:24%">Page</th><th>What it is for</th></tr></thead>
+        <tbody>
+          <tr><td><b>Run</b> <span class="muted">CD</span></td>
+              <td>Heat queue, live clock, START / ABORT, timer status, flight log. The one that matters.</td></tr>
+          <tr><td><b>Results</b> <span class="muted">scorer</span></td>
+              <td>Every recorded flight; add or delete one by hand to fix something.</td></tr>
+          <tr><td><b>Leaderboard</b> <span class="muted">anyone</span></td>
+              <td>Live standings. Marked <b>unofficial</b> for an imported comp.</td></tr>
+          <tr><td><code>/display</code> &middot; <code>/pilot</code></td>
+              <td>Read&#8209;only live views: full&#8209;screen for a field display
+                  (<span class="key">F11</span>), phone&#8209;sized for pilots.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2>Once, before the first heat</h2>
+      <ul class="check">
+        <li><b class="lead">Settings &rarr; Audio</b> &mdash; output chosen, volume set, <b>Test</b> audible
+            <i>from where the pilots stand</i></li>
+        <li><b class="lead">Settings &rarr; Audio &rarr; Call&#8209;up</b> &mdash; default on or off for the day</li>
+        <li><b class="lead">Settings &rarr; Connected Timers</b> &mdash; all present, all on the <b>same firmware</b></li>
+        <li>Watches numbered (<b>Renumber</b>), charged, handed to the right callers</li>
+        <li><b class="lead">Rounds</b> &mdash; the round&nbsp;1 draw reads correctly</li>
+      </ul>
+      <p class="muted">The protocol is versioned, so a mixed fleet is a mixed protocol. The base
+        updates stale watches by itself &mdash; but only while no heat is loaded.</p>
+    </section>
+  </div>
+</div>
+
+<section>
+  <h2>The heat cycle <span class="tag">repeat per heat &mdash; the clock runs itself from START</span></h2>
+  <div class="flow">
+    <div class="st"><div class="n">IDLE</div><div class="d">load a heat</div></div>
+    <div class="st on"><div class="n">CALL-UP</div><div class="d">names read out</div></div>
+    <div class="st on"><div class="n">PREP</div><div class="d">countdown + beeps</div></div>
+    <div class="st on"><div class="n">WORKING</div><div class="d">the round itself</div></div>
+    <div class="st on"><div class="n">LANDING</div><div class="d">landing window</div></div>
+    <div class="st"><div class="n">IDLE</div><div class="d">times are in</div></div>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <ol class="steps">
+        <li><b class="lead">Click the next heat in the queue.</b> It goes <span class="pill y">Loaded</span> and the
+          pilot list reaches the watches at once &mdash; before prep, so there is time to choose.</li>
+        <li><b class="lead">Each caller picks their pilot on the watch.</b>
+          <span class="key">L</span>&nbsp;/&nbsp;<span class="key">R</span> to scroll,
+          <b>hold <span class="key">R</span></b> to confirm &mdash; the name then replaces
+          <span class="mono">BASE&nbsp;OK</span>.</li>
+        <li><b class="lead">Press <span class="pill g">START</span>.</b> The base now runs everything &mdash;
+          call&#8209;up, prep countdown and beeps, the long tone at window open, the time calls, the
+          landing window. A watch with no pilot picked raises a yellow panel, but nothing stops you
+          starting.</li>
+        <li><b class="lead">Flight times arrive by themselves</b> as each flight is stopped, into the log on the
+          right. Back at IDLE, mark the heat <span class="pill g">&check; Done</span> and load the
+          next; completed heats sink to the bottom of the queue.</li>
+      </ol>
+    </div>
+    <div class="col">
+      <h3 style="margin-top:0">The buttons on the Run screen</h3>
+      <table>
+        <tbody>
+          <tr><td style="width:30%"><span class="pill g">START</span></td>
+              <td>Begins the sequence. Needs a loaded heat.</td></tr>
+          <tr><td><span class="pill r">ABORT</span></td>
+              <td>Stops the round dead, <b>heat stays loaded</b> &mdash; so you can re&#8209;run it.</td></tr>
+          <tr><td><span class="pill gr">&#10005; Clear</span></td>
+              <td>Puts the heat down <i>without</i> running it.</td></tr>
+          <tr><td><span class="pill b">&#128266; Call-up</span></td>
+              <td>On or off <b>for this heat only</b>; an amber dot means it is overriding the
+                  Settings default.</td></tr>
+          <tr><td><span class="pill y">Skip to 1:00</span></td>
+              <td>During prep, when everyone is already on the line.</td></tr>
+          <tr><td><span class="pill g">&check; Done</span></td>
+              <td>Marks the heat complete. <b>&#8617; Undo</b> reverses it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The watch, during a round</h2>
+  <div class="cols">
+    <div class="col">
+      <table>
+        <tbody>
+          <tr><td style="width:32%"><span class="key">R</span> click</td>
+              <td><b>Start / stop the flight</b> &mdash; the one button that matters. The screen reads
+                  <span class="mono">FLYING&nbsp;(3)</span>: the launch number, which is what a
+                  launch&#8209;limited task needs.</td></tr>
+          <tr><td><span class="key">L</span> click</td>
+              <td><b>Scratch</b> the flight just recorded (confirm with <span class="key">R</span>).
+                  On a Poker round it <b>declares the next call</b> instead.</td></tr>
+          <tr><td>At time up</td>
+              <td>The results screen ranks the best times by colour. <span class="key">L</span> pages a
+                  long log, and opens <b>Round&nbsp;Recall</b> &mdash; the watch's own record of the
+                  last three rounds.</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Start buttons are locked while the watch is connected &mdash; the base owns
+        round starts &mdash; and unlock in the last two seconds of prep. A launch before the window
+        opens is flagged red, scores zero, and <b>still consumes a launch</b>.</p>
+    </div>
+    <div class="col">
+      <h3 style="margin-top:0">F5K &mdash; altitude entry</h3>
+      <p class="tight">After time up the watch asks for each flight's motor&#8209;cut altitude in turn:</p>
+      <table>
+        <tbody>
+          <tr><td style="width:32%"><span class="key">R</span> click</td><td>+1&nbsp;m &mdash; ones digit, rolls 9&nbsp;&rarr;&nbsp;0</td></tr>
+          <tr><td><span class="key">L</span> click</td><td>+10&nbsp;m &mdash; tens digit, rolls 100&nbsp;&rarr;&nbsp;0</td></tr>
+          <tr><td><b>hold <span class="key">R</span></b></td><td>Confirm, move to the next flight</td></tr>
+        </tbody>
+      </table>
+      <h3>Target tasks &mdash; Poker and Ladder</h3>
+      <p class="muted">The base tells the watch which task and how to fly it. The flight clock counts
+        <b>down to the target</b> &mdash; that is what the timekeeper calls to the pilot &mdash; and
+        landing flashes <span class="mono">ACHIEVED</span> or <span class="mono">MISSED</span>. Only
+        an achieved call scores, so the time&#8209;up list shows the call beside the flown time.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>When something needs fixing, and how the day ends</h2>
+  <div class="cols">
+    <div class="col">
+      <h3 style="margin-top:0">Fixing things</h3>
+      <table>
+        <tbody>
+          <tr><td style="width:42%"><b>Wrong time recorded</b></td>
+              <td><i>Results</i> &rarr; delete it, add it back correctly</td></tr>
+          <tr><td><b>Heat must be re&#8209;flown</b></td>
+              <td><span class="pill r">ABORT</span>, delete that heat's flights on <i>Results</i>,
+                  <span class="pill g">START</span> again</td></tr>
+          <tr><td><b>Watch drops out</b></td>
+              <td>It times on alone and re&#8209;sends on reconnect; nothing is lost</td></tr>
+          <tr><td><b>Wrong heat loaded</b></td>
+              <td><span class="pill gr">&#10005; Clear</span>, load the right one; swapping
+                  mid&#8209;round is refused</td></tr>
+        </tbody>
+      </table>
+      <p class="muted"><b>CSV fallback:</b> <b>GliderScore &rarr; Export</b> also offers a CSV. After
+        importing it, check the pilots matched &mdash; it carries the base station's own pilot IDs,
+        not GliderScore's numbers.</p>
+    </div>
+    <div class="col">
+      <h3 style="margin-top:0">Results back to GliderScore</h3>
+      <ol class="steps">
+        <li>On <b>GliderScore &rarr; Export</b>, download <b>F3KSync.exe</b> onto the CD's PC.</li>
+        <li>Run it, point it at the GliderScore folder, enter the base station's URL, press
+          <b>Connect</b>.</li>
+        <li>Choose the competition and press <b>Sync Scores</b>.</li>
+      </ol>
+      <div class="note"><b>Always finish in GliderScore</b>
+        The base records flight times; drops, normalisation and penalties belong to GliderScore, so
+        the day's last action is <b>Recalculate</b> there. Copy the results from
+        <b>Settings &rarr; Data Backup</b> first.</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>Sheet 03 of 03 &mdash; Running the Competition</span>
+  <span>Glide Base &middot; F3K / F5K Timer System</span>
+</footer>
+
+</body></html>

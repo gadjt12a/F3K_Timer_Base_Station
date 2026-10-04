@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Load a Competition</title>
+<link rel="stylesheet" href="sheet.css">
+</head><body>
+
+<header>
+  <div>
+    <div class="brand">Glide Base &middot; F3K / F5K Timer System</div>
+    <h1>Loading a Competition from GliderScore</h1>
+    <div class="sub">GliderScore stays the scoring authority. You build the competition there as you
+      always have; the base station imports it so the timers and the audio know what is being flown,
+      and hands the flight times back at the end of the day.</div>
+  </div>
+  <div class="docno"><div class="n">02</div><div class="l">Sheet</div></div>
+</header>
+
+<section>
+  <h2>Before you start</h2>
+  <div class="cols">
+    <div class="col">
+      <ul class="plain">
+        <li>GliderScore&nbsp;6 on a Windows PC, with the competition <b>already fully built</b>:
+          pilots entered, rounds created, a task set on every round, and the group draw done.</li>
+        <li>It must be an <b>F3K or F5K</b> competition &mdash; the import list hides everything else.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <ul class="plain">
+        <li>A way to move one file across &mdash; join the PC to <code>F3K_OPS</code>, or carry it by
+          USB stick to whatever you are browsing from.</li>
+        <li>The base station powered up and the web UI open (Sheet&nbsp;01).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Import it <span class="tag">GliderScore &rarr; Import</span></h2>
+  <div class="cols">
+    <div class="col">
+      <ol class="steps">
+        <li><b class="lead">Find the GliderScore database.</b> It is <code>GliderScoreData.mdb</code>, normally in
+          <code>C:\GliderScore6\</code>. Close GliderScore so the file is not mid&#8209;write, then
+          take a <b>copy</b> &mdash; the base station never touches your original.</li>
+        <li><b class="lead">Upload it.</b> Open <b>GliderScore &rarr; Import</b>, choose the <code>.mdb</code>
+          under <i>Step&nbsp;1</i> and press <b>Upload</b>. It is a big file; give it a few seconds.
+          The copy stays on the Pi until you upload another, which replaces it.</li>
+      </ol>
+    </div>
+    <div class="col">
+      <ol class="steps" style="counter-reset: s 2">
+        <li><b class="lead">Pick the competition.</b> <i>Step&nbsp;2</i> lists every F3K and F5K competition in
+          that database with its date, venue, pilot count and how many rounds have tasks set. Check
+          those match, then press <b>Import</b> on the right row.</li>
+        <li><b class="lead">You land on Comp&nbsp;Setup.</b> The competition is now on the base station. Nothing
+          has reached the timers yet &mdash; that happens when you load a heat on <i>Run</i>.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<div class="cols">
+  <div class="col">
+    <section>
+      <h2>What comes across</h2>
+      <table>
+        <tbody>
+          <tr><td style="width:34%"><b>Pilots</b></td><td>Names and the competition entry list</td></tr>
+          <tr><td><b>Rounds</b></td><td>Round number, task letter, working time</td></tr>
+          <tr><td><b>Group draw</b></td><td>Which pilot flies in which heat, per round</td></tr>
+          <tr><td><b>Discipline</b></td><td>Per round &mdash; a mixed comp stays mixed</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Scores, penalties and drops are <b>not</b> imported. The base station records
+        flight times; GliderScore does the scoring.</p>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2>Check it landed</h2>
+      <ul class="check">
+        <li><b class="lead">Comp&nbsp;Setup</b> &mdash; listed, with the right pilot count</li>
+        <li><b class="lead">Rounds</b> &mdash; every round shows its task letter, name and working time</li>
+        <li><b class="lead">Rounds</b> &mdash; heats list real names, not <span class="mono">TBD</span></li>
+        <li>The round count matches GliderScore</li>
+      </ul>
+      <p class="muted">A <span class="mono">TBD</span> slot is a deliberate placeholder for a heat one
+        pilot short. <span class="mono">TBD</span> everywhere means the draw was never done in
+        GliderScore.</p>
+    </section>
+  </div>
+</div>
+
+<section>
+  <h2>The structure is locked after import <span class="tag">and that is the point</span></h2>
+  <p class="tight">Rounds, tasks and the draw come from GliderScore, so the base station will not let
+    you edit them &mdash; <i>Rounds</i> shows <b>&ldquo;Structure locked&rdquo;</b> and the Draw,
+    Add&nbsp;Round and Edit controls are gone. Two copies of the draw that disagree is exactly the
+    failure this prevents. <b>Change it in GliderScore and re&#8209;import.</b> Re&#8209;importing the
+    same competition is refused, so to take a changed draw you must first delete it from
+    <b>Comp&nbsp;Setup</b> &mdash; which also deletes any flights already recorded against it. Do
+    that before the day starts, not during.</p>
+</section>
+
+<section>
+  <h2>Load the audio pack <span class="tag">optional &mdash; but it is what reads the pilots' names out</span></h2>
+  <div class="cols">
+    <div class="col">
+      <p class="tight">GliderScore builds a folder of <code>.wav</code> files per competition &mdash;
+        one per pilot name, plus round, group and task announcements &mdash; in
+        <code>C:\GliderScore6\Audio</code>. The base station owns the speaker, so they have to be here.</p>
+      <ol class="steps">
+        <li><b class="lead">Zip the Audio folder</b> on the GliderScore PC.</li>
+        <li><b class="lead">Upload the zip</b> on the same <b>GliderScore &rarr; Import</b> page. It reports how
+          many files were added, updated and already current.</li>
+      </ol>
+    </div>
+    <div class="col">
+      <div class="warn"><b>Pilot name files are regenerated per competition</b>
+        A base station that was current last weekend has no recording for any pilot who has joined
+        since. Re&#8209;upload the whole folder each event &mdash; only new and changed files get
+        written, so it is cheap, and it is the intended way to use it.</div>
+      <p class="muted">Without the pack the competition still runs perfectly; the call&#8209;up simply
+        has no name to speak. Round and task cues are unaffected.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Or build one by hand <span class="tag">no GliderScore needed &mdash; good for a club day or a quick test</span></h2>
+  <div class="cols">
+    <div class="col">
+      <ol class="steps">
+        <li><b class="lead">Comp&nbsp;Setup &rarr; New&nbsp;Competition.</b> Name it, choose the discipline (F3K,
+          F5K or mixed).</li>
+        <li><b class="lead">Add pilots</b> from the <i>Pilot Registry</i>, or add new names &mdash; there is a bulk
+          paste&#8209;in import too.</li>
+        <li><b class="lead">Rounds &rarr; +&nbsp;Add&nbsp;Round.</b> Choose the task; the working time comes with
+          it. Repeat per round.</li>
+      </ol>
+    </div>
+    <div class="col">
+      <ol class="steps" style="counter-reset: s 3">
+        <li><b class="lead">Press Draw on each round.</b> Round&nbsp;1 is random; later rounds use FAI
+          reverse&#8209;standings snake seeding off the live results. Or build heats by hand with
+          <b>+&nbsp;Group</b>.</li>
+        <li><b class="lead">If you will export to GliderScore</b>
+          set the matching <b>GliderScore CompNo</b> on <i>Comp&nbsp;Setup</i> now, so the export
+          lines up with the right competition.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="note"><b>Worth knowing before the day</b>
+    A hand&#8209;built competition is <b>not</b> locked &mdash; you can add rounds and redraw as you
+    go, which is what makes it good for a club day. &nbsp;&middot;&nbsp; For an imported competition
+    the <i>Leaderboard</i> is labelled <b>unofficial</b>: it is there so the CD can watch live
+    standings, but GliderScore owns the drops, the normalisation and the result the pilots are given.
+    &nbsp;&middot;&nbsp; F5K motor&#8209;cut altitudes are entered on the watch during the round, not
+    imported.</div>
+</section>
+
+<footer>
+  <span>Sheet 02 of 03 &mdash; Loading a Competition from GliderScore</span>
+  <span>Glide Base &middot; F3K / F5K Timer System</span>
+</footer>
+
+</body></html>

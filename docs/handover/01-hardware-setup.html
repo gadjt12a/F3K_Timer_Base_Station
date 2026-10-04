@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Hardware Setup</title>
+<link rel="stylesheet" href="sheet.css">
+</head><body>
+
+<header>
+  <div>
+    <div class="brand">Glide Base &middot; F3K / F5K Timer System</div>
+    <h1>Hardware Setup &amp; First Power-On</h1>
+    <div class="sub">Everything in this kit is already built, flashed and configured. Nothing to
+      image, install or flash &mdash; plug it together, power it up, connect a phone, and it runs.</div>
+  </div>
+  <div class="docno"><div class="n">01</div><div class="l">Sheet</div></div>
+</header>
+
+<section>
+  <h2>What is in the kit <span class="tag">WiFi passwords and the SSH login are on the card supplied with the kit</span></h2>
+  <table class="zebra">
+    <thead><tr><th style="width:28%">Item</th><th style="width:24%">What it is</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><b>Raspberry&nbsp;Pi&nbsp;4 base station</b></td><td>Runs the whole system</td>
+          <td>USB&#8209;C power supply. The <b>MT7612U USB WiFi adapter</b> is already fitted &mdash; leave it in.</td></tr>
+      <tr><td><b>ESP32&#8209;S3 timer watch</b></td><td>The caller's stopwatch</td>
+          <td>Waveshare 1.75&quot; round AMOLED. Internal battery, charges over USB&#8209;C.</td></tr>
+      <tr><td><b>Bluetooth speaker</b></td><td>Field audio &mdash; calls and cues</td>
+          <td>UE WONDERBOOM, already paired to the Pi.</td></tr>
+      <tr><td><b>Your own phone or laptop</b></td><td>The CD's console</td>
+          <td>Any modern browser. Nothing to install.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Power on, in this order</h2>
+  <div class="cols">
+    <div class="col">
+      <ol class="steps">
+        <li><b class="lead">Speaker first.</b> Power the WONDERBOOM on and wait for its ready tone. The Pi
+          reconnects to a speaker that is already awake; one woken later needs a nudge from
+          <i>Settings</i>.</li>
+        <li><b class="lead">Pi next.</b> Plug in the USB&#8209;C supply and allow <b>45&ndash;60&nbsp;s</b> to boot
+          and raise both WiFi networks.</li>
+        <li><b class="lead">Watch last.</b> Short press the top&#8209;left button (<span class="key">L</span>). It
+          finds the timer network by itself.</li>
+      </ol>
+      <div class="warn"><b>Never hold the top-right button at power-on</b>
+        Holding <span class="key">R</span> at boot forces ESP32 download mode and the screen stays
+        blank. Power&nbsp;cycle it without touching any button.</div>
+    </div>
+    <div class="col">
+      <h3 style="margin-top:0">Connect your console</h3>
+      <table>
+        <tbody>
+          <tr><td style="width:32%"><b>Over WiFi</b><br><span class="muted">in the field</span></td>
+              <td>Join <code>F3K_OPS</code>, then open <code>http://192.168.20.1:8080</code>. Any
+                  address you type is redirected there, so <code>go</code> in the bar is enough.</td></tr>
+          <tr><td><b>Over ethernet</b><br><span class="muted">on a desk</span></td>
+              <td>Patch the Pi into your router and open <code>http://f3kbase.local:8080</code>.
+                  Needed only for software updates &mdash; it is the Pi's one route to the internet.</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">You should land on a dark page headed <b>GLIDE BASE</b>, with the tabs
+        <i>Comp&nbsp;Setup &middot; Rounds &middot; Run &middot; Results &middot; Leaderboard &middot;
+        GliderScore &middot; Settings</i>.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The three networks <span class="tag">kept separate on purpose &mdash; the timer network carries no internet traffic</span></h2>
+  <table class="zebra">
+    <thead><tr><th style="width:18%">Network</th><th style="width:19%">Interface</th>
+      <th style="width:22%">Address</th><th>Who joins it</th></tr></thead>
+    <tbody>
+      <tr><td><code>F3K_BASE</code></td><td>wlan1 &mdash; USB adapter</td><td><code>192.168.10.1</code></td>
+          <td><b>Timer watches only.</b> Do not join this with a phone.</td></tr>
+      <tr><td><code>F3K_OPS</code></td><td>wlan0 &mdash; onboard</td><td><code>192.168.20.1</code></td>
+          <td>CD, scorer and spectator phones or tablets.</td></tr>
+      <tr><td><code>eth0</code></td><td>wired</td><td>DHCP &mdash; <code>f3kbase.local</code></td>
+          <td>Optional. Internet for software updates only.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<div class="cols">
+  <div class="col">
+    <section>
+      <h2>Set the audio up</h2>
+      <p class="tight">In <b>Settings &rarr; Audio Output</b>, pick one and press <b>Test</b>:</p>
+      <table>
+        <tbody>
+          <tr><td style="width:30%"><b>Bluetooth</b></td><td>Click the paired WONDERBOOM to connect.
+            The competition setup.</td></tr>
+          <tr><td><b>3.5&nbsp;mm Stereo</b></td><td>A powered speaker in the Pi's jack. Works with no
+            setup at all.</td></tr>
+          <tr><td><b>USB Audio</b></td><td>Only selectable with a USB sound device plugged in.</td></tr>
+        </tbody>
+      </table>
+      <p class="muted"><b>Lead</b> fires every cue a set number of seconds early to cancel
+        Bluetooth's playback delay, and is tuned for this speaker. On the 3.5&nbsp;mm jack set it back
+        to&nbsp;0 &mdash; and only tune it against the speaker you will compete with.</p>
+    </section>
+  </div>
+  <div class="col">
+    <section>
+      <h2>Confirm it is all up</h2>
+      <ul class="check">
+        <li>Web UI loads, nav bar present</li>
+        <li><b class="lead">Settings &rarr; Connected Timers</b> lists the watch with a firmware version</li>
+        <li>The watch shows <span class="mono">T1</span> and green <span class="mono">BASE&nbsp;OK</span></li>
+        <li><b class="lead">Settings &rarr; Audio</b> shows the speaker connected; <b>Test</b> is audible</li>
+        <li>Battery percentage showing on the watch</li>
+      </ul>
+      <p class="muted">Grey <span class="mono">BASE&hellip;</span> means still associating &mdash;
+        give it 20&nbsp;s. Grey that never clears means the USB adapter did not come up; reboot with
+        it plugged in.</p>
+    </section>
+  </div>
+</div>
+
+<section>
+  <h2>The watch's two buttons <span class="tag">stopwatch orientation &mdash; both buttons at 12 o'clock</span></h2>
+  <div class="cols">
+    <div class="col">
+      <table class="zebra">
+        <thead><tr><th style="width:22%">Button</th><th style="width:20%">Position</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><span class="key">L</span> &mdash; power key</td><td>top&#8209;left</td>
+              <td>Secondary: scratch, step a setting, page the log, open Round&nbsp;Recall.</td></tr>
+          <tr><td><span class="key">R</span> &mdash; BOOT</td><td>top&#8209;right</td>
+              <td>Primary: start and stop the flight, confirm, navigate. Hold to confirm.</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Holding <span class="key">L</span> is a hardware power&#8209;off the firmware
+        never sees, so a long press always means <span class="key">R</span>.</p>
+    </div>
+    <div class="col">
+      <h3 style="margin-top:0">Two things that look like faults</h3>
+      <ul class="plain">
+        <li><b class="lead">The screen goes black.</b> AMOLED burn&#8209;in protection &mdash; it blanks after two
+          minutes idle and any button wakes it. A live round never blanks.</li>
+        <li><b class="lead">Start buttons dead at idle.</b> Correct: the base owns round starts while the watch is
+          connected. They unlock in the last two seconds of prep.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Reference</h2>
+  <div class="cols">
+    <div class="col">
+      <h3 style="margin-top:0">If something is wrong</h3>
+      <table>
+        <tbody>
+          <tr><td style="width:40%"><b>Web UI will not load</b></td>
+              <td>Check you are on <code>F3K_OPS</code>, not home WiFi</td></tr>
+          <tr><td><b>A WiFi network missing</b></td>
+              <td><code>systemctl status hostapd</code>; reseat the adapter</td></tr>
+          <tr><td><b>Watch will not connect</b></td>
+              <td>Power&nbsp;cycle the watch; the base needs nothing</td></tr>
+          <tr><td><b>No audio</b></td>
+              <td>Wake the speaker, re&#8209;click it in Settings, check volume</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <h3 style="margin-top:0">Admin &amp; shutdown</h3>
+      <table>
+        <tbody>
+          <tr><td style="width:40%">SSH host</td><td><code>pi@f3kbase.local</code> &mdash; login on the card</td></tr>
+          <tr><td>Health check</td><td><code>curl http://localhost:8080/health</code></td></tr>
+          <tr><td>Logs</td><td><code>journalctl -u f3k-server -n 50</code></td></tr>
+          <tr><td>Shut down</td><td><code>sudo poweroff</code>, then wait for the green LED to stop</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Pulling power will not lose flights &mdash; they are written as they are
+        flown &mdash; but copy the results from <b>Settings &rarr; Data Backup</b> first.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="warn"><b>Please leave these alone &mdash; this is a working dev rig on loan</b>
+    Do not re&#8209;flash the watch, reset the Pi's network config, run anything under
+    <code>setup/</code>, or press <b>Settings &rarr; Update&nbsp;from&nbsp;GitHub</b>. Everything an
+    evaluation needs is in the web UI; nothing requires SSH.</div>
+</section>
+
+<footer>
+  <span>Sheet 01 of 03 &mdash; Hardware Setup &amp; First Power-On</span>
+  <span>Glide Base &middot; F3K / F5K Timer System</span>
+</footer>
+
+</body></html>
