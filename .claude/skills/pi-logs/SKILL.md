@@ -19,8 +19,8 @@ If a number is given, use it as the line count. Default: 50 lines.
 
 Run:
 
-```powershell
-ssh -i "$env:USERPROFILE\.ssh\f3k_pi" pi@f3kpi "sudo journalctl -u f3k-server -n <N> --no-pager"
+```bash
+ssh -i ~/.ssh/f3k_pi pi@f3kpi "sudo journalctl -u f3k-server -n <N> --no-pager"
 ```
 
 Where `<N>` is the line count (default 50).

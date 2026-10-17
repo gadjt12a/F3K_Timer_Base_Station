@@ -16,18 +16,18 @@ Optional: a short summary of what was built (e.g. "added backup/restore to setti
 
 ## Step 1 — Understand what changed
 
-Run `git diff HEAD` (or `git diff HEAD~1..HEAD` if changes are already committed) in the base station repo to see which files changed. Also check `C:\Kris\Projects\F3K_Timer_1` if firmware files may have changed.
+Run `git diff HEAD` (or `git diff HEAD~1..HEAD` if changes are already committed) in the base station repo to see which files changed. Also check `$HOME/Projects/Repos/F3K_Timer_1` if firmware files may have changed.
 
-```powershell
-git -C "C:\Kris\Projects\F3K_Timer_Project" diff HEAD
-git -C "C:\Kris\Projects\F3K_Timer_1" diff HEAD
+```bash
+git -C "~/Projects/Repos/F3K_Timer_Project" diff HEAD
+git -C "$HOME/Projects/Repos/F3K_Timer_1" diff HEAD
 ```
 
 Identify: which subsystem changed (base station, firmware, or both), what features were added/fixed, what's still pending.
 
 ## Step 2 — Update SESSION_STATE.md
 
-File: `C:\Kris\Projects\F3K_Timer_Project\SESSION_STATE.md`
+File: `~/Projects/Repos/F3K_Timer_Project\SESSION_STATE.md`
 
 - Update `*Last updated:*` line with today's date and a brief session label
 - In **Immediate Next Steps**: mark completed items with ~~strikethrough~~ + **DONE (session N)**; remove or reorder based on current priority
@@ -36,7 +36,7 @@ File: `C:\Kris\Projects\F3K_Timer_Project\SESSION_STATE.md`
 
 ## Step 3 — Update README.md (base station)
 
-File: `C:\Kris\Projects\F3K_Timer_Project\README.md`
+File: `~/Projects/Repos/F3K_Timer_Project\README.md`
 
 Update only the sections that are now stale:
 
@@ -47,7 +47,7 @@ Update only the sections that are now stale:
 
 ## Step 4 — Update NEXT_SESSION_PROMPT.md
 
-File: `C:\Kris\Projects\F3K_Timer_Project\NEXT_SESSION_PROMPT.md`
+File: `~/Projects/Repos/F3K_Timer_Project\NEXT_SESSION_PROMPT.md`
 
 Replace only the `### Where we are (end of session N)` section:
 
@@ -59,9 +59,9 @@ Do not change "## PROMPT TO PASTE", "### How to work", or any other section.
 
 ## Step 5 — Update timer README (if firmware changed)
 
-File: `C:\Kris\Projects\F3K_Timer_1\README.md`
+File: `$HOME/Projects/Repos/F3K_Timer_1/README.md`
 
-Only if `C:\Kris\Projects\F3K_Timer_1\src\` files changed.
+Only if `$HOME/Projects/Repos/F3K_Timer_1/src/` files changed.
 
 - **Features** section: add new firmware features (one bullet each, concise)
 - **State Machine** diagram: update if new states were added
@@ -71,12 +71,12 @@ Only if `C:\Kris\Projects\F3K_Timer_1\src\` files changed.
 
 `SESSION_STATE.md` and `NEXT_SESSION_PROMPT.md` are **gitignored** (local workflow files only — do not force-add them). Only stage the committed docs:
 
-```powershell
+```bash
 # Stage base station README
-git -C "C:\Kris\Projects\F3K_Timer_Project" add README.md
+git -C "~/Projects/Repos/F3K_Timer_Project" add README.md
 
 # Stage timer README only if it changed
-git -C "C:\Kris\Projects\F3K_Timer_1" add README.md
+git -C "$HOME/Projects/Repos/F3K_Timer_1" add README.md
 ```
 
 ## Step 7 — Report

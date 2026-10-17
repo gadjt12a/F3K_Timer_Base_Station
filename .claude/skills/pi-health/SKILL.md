@@ -12,8 +12,8 @@ Verify the Raspberry Pi f3k-server service is active and the HTTP API is respond
 
 Run a single combined check:
 
-```powershell
-ssh -i "$env:USERPROFILE\.ssh\f3k_pi" pi@f3kpi "sudo systemctl is-active f3k-server && curl -s http://localhost:8080/health"
+```bash
+ssh -i ~/.ssh/f3k_pi pi@f3kpi "sudo systemctl is-active f3k-server && curl -s http://localhost:8080/health"
 ```
 
 Report:
@@ -22,6 +22,6 @@ Report:
 
 If either check fails, automatically fetch the last 30 log lines to help diagnose:
 
-```powershell
-ssh -i "$env:USERPROFILE\.ssh\f3k_pi" pi@f3kpi "sudo journalctl -u f3k-server -n 30 --no-pager"
+```bash
+ssh -i ~/.ssh/f3k_pi pi@f3kpi "sudo journalctl -u f3k-server -n 30 --no-pager"
 ```
